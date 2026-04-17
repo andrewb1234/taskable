@@ -22,6 +22,8 @@ node_modules/
 .yarn/
 web/dist/
 web/.vite/
+web/.tsbuild/
+web/*.tsbuildinfo
 
 # Local state
 data/
