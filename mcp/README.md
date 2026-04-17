@@ -31,6 +31,10 @@ key **must** match the one in the FastAPI process's `.env`.
 
 | Tool                        | Action                                             |
 | --------------------------- | -------------------------------------------------- |
+| `get_all_projects`          | `GET /projects`                                    |
+| `create_project`            | `POST /projects` (`name`, `description`)           |
+| `create_subproject`         | `POST /projects/{id}/subprojects`                  |
+| `create_ticket`             | `POST /subprojects/{id}/tickets`                   |
 | `read_subproject_context`   | `GET /agent/context/{id}` — LLM-flat text brief    |
 | `get_active_tasks`          | `GET /projects/{id}/subprojects`                   |
 | `update_ticket_status`      | `PATCH /tickets/{id}` (`status`, `assignee=AGENT`) |
