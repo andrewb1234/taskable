@@ -5,11 +5,18 @@ over MCP stdio. The underlying REST API must be reachable on
 ``TASKABLE_API_URL`` (default ``http://localhost:8000/api/v1``).
 
 Tools — kept in lock-step with ``docs/mcp.md``:
-    1. ``read_subproject_context(subproject_id)``
-    2. ``get_active_tasks(project_id)``
-    3. ``update_ticket_status(ticket_id, status)``
-    4. ``link_mr(ticket_id, url)``
-    5. ``leave_comment(ticket_id, content)``
+    Read:
+        1. ``get_all_projects()``
+        2. ``get_active_tasks(project_id)``
+        3. ``read_subproject_context(subproject_id)``
+    Create:
+        4. ``create_project(name, description)``
+        5. ``create_subproject(project_id, name, context_brief)``
+        6. ``create_ticket(subproject_id, title, description, assignee)``
+    Mutate:
+        7. ``update_ticket_status(ticket_id, status)``
+        8. ``link_mr(ticket_id, url)``
+        9. ``leave_comment(ticket_id, content)``
 
 Docstrings are intentionally verbose so LLM clients have precise schemas and
 behavioral expectations without having to re-read the spec.
@@ -34,6 +41,7 @@ API_URL = os.getenv("TASKABLE_API_URL", "http://localhost:8000/api/v1").rstrip("
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 
 VALID_TICKET_STATUSES = {"TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"}
+VALID_TICKET_ASSIGNEES = {"HUMAN", "AGENT", "UNASSIGNED"}
 
 server: Server = Server("copilot-workspace")
 
@@ -59,6 +67,127 @@ async def _request(method: str, path: str, **kwargs: Any) -> httpx.Response:
 
 
 # ---- Tool implementations -------------------------------------------------
+
+
+async def get_all_projects() -> str:
+    """List every project in the workspace with their IDs.
+
+    Calls ``GET /api/v1/projects``. Intended as the first tool an agent uses
+    to orient itself before drilling into a specific project's subprojects.
+    """
+    response = await _request("GET", "/projects")
+    if response.status_code != 200:
+        return (
+            f"ERROR: list projects failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    projects = response.json()
+    if not projects:
+        return "No projects exist yet. Use create_project to create one."
+
+    lines = ["# Projects"]
+    for project in projects:
+        desc = (project.get("description") or "").strip()
+        suffix = f" — {desc}" if desc else ""
+        lines.append(f"- id={project['id']} | {project['name']}{suffix}")
+    return "\n".join(lines)
+
+
+async def create_project(name: str, description: str) -> str:
+    """Create a new top-level project.
+
+    Calls ``POST /api/v1/projects`` with ``{"name": name, "description":
+    description}``. Returns the new project's ID so subsequent
+    ``create_subproject`` calls can wire to it.
+    """
+    response = await _request(
+        "POST",
+        "/projects",
+        json={"name": name, "description": description},
+    )
+    if response.status_code != 201:
+        return (
+            f"ERROR: create project failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    project = response.json()
+    return (
+        f"Created project #{project['id']}: {project['name']}. "
+        f"Use this id when calling create_subproject."
+    )
+
+
+async def create_subproject(
+    project_id: int, name: str, context_brief: str
+) -> str:
+    """Create a subproject (sprint-like unit) under an existing project.
+
+    Calls ``POST /api/v1/projects/{project_id}/subprojects`` with
+    ``{"name": name, "context_brief": context_brief}``. The context brief is
+    the primary thing an agent later reads via ``read_subproject_context``, so
+    it should be rich and goal-oriented.
+    """
+    response = await _request(
+        "POST",
+        f"/projects/{int(project_id)}/subprojects",
+        json={"name": name, "context_brief": context_brief},
+    )
+    if response.status_code == 404:
+        return f"ERROR: project {project_id} does not exist."
+    if response.status_code != 201:
+        return (
+            f"ERROR: create subproject failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    subproject = response.json()
+    return (
+        f"Created subproject #{subproject['id']} "
+        f"(project={subproject['project_id']}): {subproject['name']}."
+    )
+
+
+async def create_ticket(
+    subproject_id: int,
+    title: str,
+    description: str,
+    assignee: str,
+) -> str:
+    """Create a new ticket inside a subproject.
+
+    Calls ``POST /api/v1/subprojects/{subproject_id}/tickets`` with
+    ``{"title": title, "description": description, "assignee": assignee}``.
+    ``assignee`` must be one of HUMAN, AGENT, or UNASSIGNED (case-insensitive
+    on the way in; normalized before the request). New tickets always start
+    in TODO status — use ``update_ticket_status`` afterwards to move them.
+    """
+    assignee_upper = assignee.upper()
+    if assignee_upper not in VALID_TICKET_ASSIGNEES:
+        return (
+            f"ERROR: invalid assignee '{assignee}'. "
+            f"Valid values: {sorted(VALID_TICKET_ASSIGNEES)}."
+        )
+
+    response = await _request(
+        "POST",
+        f"/subprojects/{int(subproject_id)}/tickets",
+        json={
+            "title": title,
+            "description": description,
+            "assignee": assignee_upper,
+        },
+    )
+    if response.status_code == 404:
+        return f"ERROR: subproject {subproject_id} does not exist."
+    if response.status_code != 201:
+        return (
+            f"ERROR: create ticket failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    ticket = response.json()
+    return (
+        f"Created ticket #{ticket['id']} [{ticket['status']}/{ticket['assignee']}] "
+        f"{ticket['title']} (subproject={ticket['subproject_id']})."
+    )
 
 
 async def read_subproject_context(subproject_id: int) -> str:
@@ -171,6 +300,92 @@ async def leave_comment(ticket_id: int, content: str) -> str:
 
 TOOLS: list[Tool] = [
     Tool(
+        name="get_all_projects",
+        description=(
+            "List every project in the workspace (id + name + description). "
+            "Call this first when you have no project context."
+        ),
+        inputSchema={"type": "object", "properties": {}, "required": []},
+    ),
+    Tool(
+        name="create_project",
+        description=(
+            "Create a new top-level project. Returns the new project's ID "
+            "so you can create subprojects underneath it."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Short, human-readable project name.",
+                    "minLength": 1,
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Longer prose explaining the project's purpose.",
+                },
+            },
+            "required": ["name", "description"],
+        },
+    ),
+    Tool(
+        name="create_subproject",
+        description=(
+            "Create a sprint-like subproject under an existing project. "
+            "The context_brief will be surfaced verbatim to future agents "
+            "via read_subproject_context, so make it rich and goal-oriented."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "integer",
+                    "description": "ID of the parent project (from get_all_projects).",
+                },
+                "name": {"type": "string", "minLength": 1},
+                "context_brief": {
+                    "type": "string",
+                    "description": "Multi-sentence brief describing goals, scope, and constraints.",
+                },
+            },
+            "required": ["project_id", "name", "context_brief"],
+        },
+    ),
+    Tool(
+        name="create_ticket",
+        description=(
+            "Create a new ticket inside a subproject. Tickets always start "
+            "in TODO status; use update_ticket_status to move them. "
+            "Assignee must be HUMAN, AGENT, or UNASSIGNED."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "subproject_id": {
+                    "type": "integer",
+                    "description": "ID of the parent subproject.",
+                },
+                "title": {"type": "string", "minLength": 1},
+                "description": {
+                    "type": "string",
+                    "description": "Task details, acceptance criteria, links.",
+                },
+                "assignee": {
+                    "type": "string",
+                    "enum": sorted(VALID_TICKET_ASSIGNEES),
+                    "description": "Who owns the ticket on creation.",
+                },
+            },
+            "required": [
+                "subproject_id",
+                "title",
+                "description",
+                "assignee",
+            ],
+        },
+    ),
+    Tool(
         name="read_subproject_context",
         description=(
             "Return the full flattened context for a subproject, including "
@@ -263,6 +478,10 @@ TOOLS: list[Tool] = [
 
 
 TOOL_DISPATCH = {
+    "get_all_projects": get_all_projects,
+    "create_project": create_project,
+    "create_subproject": create_subproject,
+    "create_ticket": create_ticket,
     "read_subproject_context": read_subproject_context,
     "get_active_tasks": get_active_tasks,
     "update_ticket_status": update_ticket_status,

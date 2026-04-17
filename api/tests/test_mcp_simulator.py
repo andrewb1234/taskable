@@ -215,8 +215,15 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
         tools = (await client.recv())["result"]["tools"]
         tool_names = {t["name"] for t in tools}
         assert tool_names == {
-            "read_subproject_context",
+            # Read
+            "get_all_projects",
             "get_active_tasks",
+            "read_subproject_context",
+            # Create
+            "create_project",
+            "create_subproject",
+            "create_ticket",
+            # Mutate
             "update_ticket_status",
             "link_mr",
             "leave_comment",
@@ -333,3 +340,125 @@ async def test_mcp_simulator_rejects_bad_status(live_api: dict[str, str]) -> Non
             await asyncio.wait_for(proc.wait(), timeout=5)
         except asyncio.TimeoutError:
             proc.kill()
+
+
+@pytest.mark.integration
+async def test_mcp_simulator_creation_flow(live_api: dict[str, str]) -> None:
+    """End-to-end creation flow via the four new tools.
+
+    Walks the path an agent would take when bootstrapping a workspace from
+    scratch: get_all_projects (empty) -> create_project -> create_subproject
+    -> create_ticket. Asserts each MCP response parses correctly AND that the
+    resulting DB rows exist with the expected parent/child linkage.
+    """
+    proc = await _spawn_mcp(live_api["base_url"])
+    try:
+        client = MCPClient(proc)
+        await _initialize(client)
+
+        async def call(name: str, arguments: dict) -> str:
+            await client.send(
+                "tools/call", {"name": name, "arguments": arguments}
+            )
+            payload = await client.recv()
+            assert "result" in payload, payload
+            return payload["result"]["content"][0]["text"]
+
+        # 1. create_project
+        created = await call(
+            "create_project",
+            {
+                "name": "MCP Creation Flow",
+                "description": "Exercised by test_mcp_simulator_creation_flow",
+            },
+        )
+        assert created.startswith("Created project #"), created
+        project_id = int(created.split("#")[1].split(":")[0])
+
+        # 2. get_all_projects now includes our new project.
+        listing = await call("get_all_projects", {})
+        assert f"id={project_id}" in listing, listing
+        assert "MCP Creation Flow" in listing
+
+        # 3. create_subproject under it.
+        created_sp = await call(
+            "create_subproject",
+            {
+                "project_id": project_id,
+                "name": "Creation sub",
+                "context_brief": "Ship the four new MCP creation tools.",
+            },
+        )
+        assert created_sp.startswith("Created subproject #"), created_sp
+        subproject_id = int(created_sp.split("#")[1].split(" ")[0])
+
+        # 4. create_ticket under that subproject.
+        created_t = await call(
+            "create_ticket",
+            {
+                "subproject_id": subproject_id,
+                "title": "Wire up tool",
+                "description": "Implement the MCP handler and register it.",
+                "assignee": "AGENT",
+            },
+        )
+        assert created_t.startswith("Created ticket #"), created_t
+        assert "[TODO/AGENT]" in created_t, created_t
+        ticket_id = int(created_t.split("#")[1].split(" ")[0])
+
+        # 5. Bogus assignee should be rejected (same dual-layer behavior as
+        #    the status test: SDK schema-check or handler guard).
+        await client.send(
+            "tools/call",
+            {
+                "name": "create_ticket",
+                "arguments": {
+                    "subproject_id": subproject_id,
+                    "title": "Bad assignee",
+                    "description": "Should not be created.",
+                    "assignee": "ROBOT",
+                },
+            },
+        )
+        bad = await client.recv()
+        body = (
+            json.dumps(bad["error"])
+            if "error" in bad
+            else bad["result"]["content"][0]["text"]
+        )
+        assert "ROBOT" in body, body
+    finally:
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            proc.kill()
+
+    # DB-level verification: parent chain is intact and nothing extra leaked.
+    conn = sqlite3.connect(live_api["db_path"])
+    try:
+        row = conn.execute(
+            "SELECT name FROM project WHERE id = ?", (project_id,)
+        ).fetchone()
+        assert row and row[0] == "MCP Creation Flow"
+
+        row = conn.execute(
+            "SELECT project_id, name FROM subproject WHERE id = ?",
+            (subproject_id,),
+        ).fetchone()
+        assert row == (project_id, "Creation sub")
+
+        row = conn.execute(
+            "SELECT subproject_id, status, assignee, title FROM ticket "
+            "WHERE id = ?",
+            (ticket_id,),
+        ).fetchone()
+        assert row == (subproject_id, "TODO", "AGENT", "Wire up tool")
+
+        # Verify the "bad assignee" attempt didn't persist.
+        rejected = conn.execute(
+            "SELECT COUNT(*) FROM ticket WHERE title = 'Bad assignee'"
+        ).fetchone()[0]
+        assert rejected == 0
+    finally:
+        conn.close()
