@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / Vite
+node_modules/
+.npm
+.yarn/
+web/dist/
+web/.vite/
+
+# Local state
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+.windsurf/
+
+# Docker volumes
+sqlite_data/
