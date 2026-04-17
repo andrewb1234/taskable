@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "taskable": {
+      "command": "/absolute/path/to/taskable/.venv/bin/python",
+      "args": ["/absolute/path/to/taskable/mcp/mcp_server.py"],
+      "env": {
+        "TASKABLE_API_URL": "http://localhost:8000/api/v1",
+        "AGENT_API_KEY": "<paste the same key as in your .env>"
+      }
+    }
+  }
+}

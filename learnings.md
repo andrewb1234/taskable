@@ -52,6 +52,11 @@ Each entry MUST use this template:
 - **Friction:** `sqlalchemy.exc.InvalidRequestError: ... expression "relationship("list['Subproject']")" seems to be using a generic class as the argument to relationship()`. Cause: `from __future__ import annotations` converts `list["Subproject"]` into a literal string, and SQLAlchemy's relationship introspection cannot unwrap stringified generics at class construction time.
 - **Resolution:** Removed `from __future__ import annotations` from `api/models/entities.py` and switched to `typing.List[...]`. Kept the future import elsewhere where it helps. Added a header comment so future edits don't re-introduce the import. 17/17 API tests now green.
 
+### 2026-04-17T07:35:00Z — Folder-name collision: `mcp/` vs installed `mcp` package
+- **Context:** After `pip install mcp>=1.1`, attempted `python -c "import mcp.mcp_server"` to smoke-test tool definitions.
+- **Friction:** `ModuleNotFoundError: No module named 'mcp.mcp_server'` because our local `mcp/` directory has no `__init__.py` so it isn't a package; Python resolves `mcp` to the installed SDK instead.
+- **Resolution:** Don't make `mcp/` a package. Invoke `python mcp/mcp_server.py` directly (Python prepends the script's directory to `sys.path`, so `import mcp` still resolves to the installed SDK). Documented in `mcp/README.md`. If we ever need to import the server module programmatically, do `sys.path.insert(0, "mcp"); import mcp_server`.
+
 ### 2026-04-17T07:13:30Z — Decision: MR route is attach-only for MVP
 - **Context:** `POST /tickets/{id}/mr` is described as "attach MR link or trigger branch generation."
 - **Friction:** Scope of branch generation is undefined; `GITHUB_PAT` is mentioned but MCP tool `link_mr` only attaches.
