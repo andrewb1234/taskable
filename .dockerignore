@@ -1,0 +1,17 @@
+.venv/
+node_modules/
+web/node_modules/
+web/dist/
+web/.vite/
+web/.tsbuild/
+data/
+*.db
+*.sqlite*
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.github/
+.DS_Store
+.env
+.env.*
