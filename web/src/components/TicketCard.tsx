@@ -34,6 +34,9 @@ export function TicketCard({
   return (
     <button
       draggable
+      data-testid={`ticket-${ticket.id}`}
+      data-ticket-id={ticket.id}
+      data-status={ticket.status}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onClick}

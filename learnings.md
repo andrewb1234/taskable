@@ -52,6 +52,26 @@ Each entry MUST use this template:
 - **Friction:** `sqlalchemy.exc.InvalidRequestError: ... expression "relationship("list['Subproject']")" seems to be using a generic class as the argument to relationship()`. Cause: `from __future__ import annotations` converts `list["Subproject"]` into a literal string, and SQLAlchemy's relationship introspection cannot unwrap stringified generics at class construction time.
 - **Resolution:** Removed `from __future__ import annotations` from `api/models/entities.py` and switched to `typing.List[...]`. Kept the future import elsewhere where it helps. Added a header comment so future edits don't re-introduce the import. 17/17 API tests now green.
 
+### 2026-04-17T17:05:00Z — Playwright `baseURL` strips its path when request paths start with `/`
+- **Context:** Wrote a Playwright realtime spec with `request.newContext({ baseURL: "http://127.0.0.1:8000/api/v1" })` and `api.post("/projects", ...)`. The request returned `404 {"detail":"Not Found"}`.
+- **Friction:** Playwright resolves paths via the WHATWG URL algorithm. A leading-slash request path is treated as absolute and **replaces** the baseURL's path, turning `http://.../api/v1` + `/projects` into `http://.../projects`. Invisible until you add error logging.
+- **Resolution:** Give the baseURL a trailing slash AND use relative paths without a leading slash. Documented inline in `web/tests/realtime.spec.ts`. All subsequent paths (`projects`, `subprojects/{id}/tickets`, etc.) are relative.
+
+### 2026-04-17T17:00:00Z — Packaging the MCP server with a flat `py-modules`
+- **Context:** Wanted `pipx install ./mcp` / `uv tool install ./mcp` to produce a stable `taskable-mcp` binary so Windsurf configs can avoid venv-relative paths.
+- **Friction:** Standard `setuptools.packages.find` would try to treat `mcp/` itself as a package but that conflicts with our rule that `mcp/` must NOT be a Python package (shadowing the upstream `mcp` SDK). Also conflicts with the flat single-file layout we actually have.
+- **Resolution:** Used `[tool.setuptools] py-modules = ["mcp_server"]` plus an empty `packages.find` to declare a flat one-module wheel. Confirmed with `pip install -e ./mcp && taskable-mcp` running a full JSON-RPC handshake.
+
+### 2026-04-17T16:55:00Z — Host-mounted SQLite beats named volumes for single-user local apps
+- **Context:** The spec originally set `DATABASE_URL=sqlite:///./data/taskable.db` and the docker-compose used a `sqlite_data:` named volume.
+- **Friction:** Both paths meant the user had to `docker exec` or traverse Docker's hidden volume mountpoint to back up / inspect the DB. The relative `./data/` form also broke when anyone ran `git clean -fdx`.
+- **Resolution:** Defaulted to `~/.taskable/taskable.db` in `api/config.py`, bind-mounted `${HOME}/.taskable` → `/app/data` in docker-compose. `~` isn't expanded by compose; `$HOME` is, so the compose YAML uses the latter. Now users can open the DB with any desktop SQLite tool.
+
+### 2026-04-17T16:50:00Z — pytest-asyncio on Python 3.14 emits DeprecationWarnings we can't filter
+- **Context:** Every test run prints 10 DeprecationWarnings from `pytest_asyncio/plugin.py` about `asyncio.set_event_loop_policy` / `asyncio.get_event_loop_policy`.
+- **Friction:** No `filterwarnings` regex in `pytest.ini` makes them go away. They fire inside pytest-asyncio's own fixture lifecycle, which runs *after* pytest has already installed our configured filters.
+- **Resolution:** Kept the filters that CAN work, documented the rest inline so the next contributor doesn't chase the same wall. Will revisit once `pytest-asyncio` ships a 3.14-native release.
+
 ### 2026-04-17T07:35:00Z — Folder-name collision: `mcp/` vs installed `mcp` package
 - **Context:** After `pip install mcp>=1.1`, attempted `python -c "import mcp.mcp_server"` to smoke-test tool definitions.
 - **Friction:** `ModuleNotFoundError: No module named 'mcp.mcp_server'` because our local `mcp/` directory has no `__init__.py` so it isn't a package; Python resolves `mcp` to the installed SDK instead.

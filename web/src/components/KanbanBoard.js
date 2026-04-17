@@ -64,7 +64,7 @@ export function KanbanBoard({ subproject, onTicketClick, onSubprojectRefetch, })
 function KanbanColumn({ status, tickets, subprojectId, onTicketClick, onCreated, onDropTicket, onDragStart, onDragEnd, isDropTarget, }) {
     const [hover, setHover] = useState(false);
     const [creating, setCreating] = useState(false);
-    return (_jsxs("section", { onDragOver: (e) => {
+    return (_jsxs("section", { "data-testid": `column-${status}`, "data-status": status, onDragOver: (e) => {
             if (!isDropTarget)
                 return;
             e.preventDefault();

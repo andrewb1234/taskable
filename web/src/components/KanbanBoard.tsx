@@ -141,6 +141,8 @@ function KanbanColumn({
   const [creating, setCreating] = useState(false);
   return (
     <section
+      data-testid={`column-${status}`}
+      data-status={status}
       onDragOver={(e) => {
         if (!isDropTarget) return;
         e.preventDefault();

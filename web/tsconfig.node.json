@@ -11,7 +11,8 @@
     "noEmit": false,
     "emitDeclarationOnly": true,
     "declaration": true,
-    "outDir": "./.tsbuild/node"
+    "outDir": "./.tsbuild/node",
+    "types": ["node"]
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "playwright.config.ts", "tests/**/*.ts"]
 }
