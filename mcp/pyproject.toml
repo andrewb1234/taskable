@@ -1,0 +1,51 @@
+# Build manifest for the standalone Taskable MCP server.
+#
+# Why this exists: the Windsurf / Claude Desktop MCP config has to point at a
+# stable command. Hard-coding `<repo>/.venv/bin/python` works until you move
+# the repo or recreate the venv. Installing this package globally via pipx or
+# uv tool gives you a `taskable-mcp` console script that lives outside the
+# repo, so the IDE config is durable.
+#
+# Install:
+#   pipx install ./mcp           # recommended
+#   uv tool install ./mcp        # alternative
+#   pip install ./mcp            # works inside an existing venv
+#
+# After install, run with `taskable-mcp` (stdio).
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskable-mcp"
+version = "0.1.0"
+description = "MCP stdio server bridging agent IDEs to the Taskable REST API."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Taskable Contributors" }]
+keywords = ["mcp", "taskable", "agent", "stdio"]
+dependencies = [
+    "mcp>=1.1,<2",
+    "httpx>=0.27,<0.29",
+    "python-dotenv>=1.0,<2",
+]
+
+[project.scripts]
+taskable-mcp = "mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/andrewb1234/taskable"
+Repository = "https://github.com/andrewb1234/taskable"
+
+[tool.setuptools]
+# Flat layout: a single top-level module (`mcp_server.py`) becomes the
+# importable name. We deliberately do NOT make `mcp/` a Python package
+# because that would shadow the upstream `mcp` SDK at runtime.
+py-modules = ["mcp_server"]
+
+[tool.setuptools.packages.find]
+# Disable automatic package discovery to keep the wheel minimal.
+where = ["."]
+include = []

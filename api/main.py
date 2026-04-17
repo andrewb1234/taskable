@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.config import get_settings
 from api.database import init_db
 from api.routes import agent, comments, events, projects, subprojects, tickets
+from api.version import __version__, git_sha
 
 
 @asynccontextmanager
@@ -34,7 +35,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="Taskable Co-Pilot Workspace API",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 
@@ -46,7 +47,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    api_v1 = FastAPI(title="Taskable API v1", version="0.1.0")
+    api_v1 = FastAPI(title="Taskable API v1", version=__version__)
     api_v1.include_router(projects.router)
     api_v1.include_router(subprojects.router)
     api_v1.include_router(tickets.router)
@@ -57,8 +58,14 @@ def create_app() -> FastAPI:
     app.mount("/api/v1", api_v1)
 
     @app.get("/healthz", tags=["meta"])
-    def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+    def healthz() -> dict[str, str | None]:
+        # Enriched with version + git sha so deployments are debuggable at a
+        # glance. Both fields are safe to expose publicly (no secrets).
+        return {
+            "status": "ok",
+            "version": __version__,
+            "git_sha": git_sha(),
+        }
 
     return app
 

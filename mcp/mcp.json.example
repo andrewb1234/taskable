@@ -1,8 +1,15 @@
 {
+  "_comment": "Pick option A (pipx/uv install) for a stable console script, or option B (venv) when you don't want to install globally. The bootstrap.py script writes whichever one suits your environment.",
   "mcpServers": {
     "taskable": {
-      "command": "/absolute/path/to/taskable/.venv/bin/python",
-      "args": ["/absolute/path/to/taskable/mcp/mcp_server.py"],
+      "// Option A": "After 'pipx install ./mcp' or 'uv tool install ./mcp'",
+      "command": "taskable-mcp",
+      "args": [],
+
+      "// Option B": "Direct venv invocation (no global install needed)",
+      "// command": "/absolute/path/to/taskable/.venv/bin/python",
+      "// args": ["/absolute/path/to/taskable/mcp/mcp_server.py"],
+
       "env": {
         "TASKABLE_API_URL": "http://localhost:8000/api/v1",
         "AGENT_API_KEY": "<paste the same key as in your .env>"

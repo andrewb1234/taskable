@@ -3,6 +3,11 @@
 #
 # The MCP server is NOT containerized. Per docs/deployment.md, it runs
 # locally via stdio and points at the api container's published port.
+#
+# State note: SQLite is bind-mounted from the HOST at ~/.taskable so users can
+# back it up, copy it, or open it with a desktop SQLite GUI without ever
+# needing `docker exec`. Override TASKABLE_DATA_DIR in .env if you need an
+# alternate path.
 
 services:
   api:
@@ -19,7 +24,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - sqlite_data:/app/data
+      # ~ is not expanded by docker-compose; rely on $HOME for portability.
+      - ${TASKABLE_DATA_DIR:-${HOME}/.taskable}:/app/data
     networks:
       - copilot_net
     healthcheck:
@@ -48,6 +54,4 @@ networks:
   copilot_net:
     driver: bridge
 
-volumes:
-  sqlite_data:
-    driver: local
+# No named volumes — we bind-mount the host directory above for portability.

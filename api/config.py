@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Default SQLite location: a hidden folder in the user's home directory so the
+# DB survives `git clean`, is trivial to back up / inspect with desktop tools,
+# and stays consistent across bare-metal and docker-bind-mount deployments.
+# Override with the DATABASE_URL env var when you need something else (eg.
+# `:memory:` in tests, a Postgres URL in production).
+_DEFAULT_DB_DIR = Path.home() / ".taskable"
+_DEFAULT_DB_PATH = _DEFAULT_DB_DIR / "taskable.db"
+_DEFAULT_DATABASE_URL = f"sqlite:///{_DEFAULT_DB_PATH}"
 
 
 class Settings(BaseSettings):
@@ -12,7 +22,7 @@ class Settings(BaseSettings):
 
     agent_api_key: str = "dev-agent-key-change-me"
     github_pat: str | None = None
-    database_url: str = "sqlite:///./data/taskable.db"
+    database_url: str = _DEFAULT_DATABASE_URL
     cors_origins: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
