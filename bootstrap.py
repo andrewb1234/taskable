@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""Interactive zero-config setup for a fresh Taskable clone.
+
+What this does, in order:
+
+1. Creates `.venv/` at the repo root if missing and installs backend + MCP deps.
+2. Prompts for an ``AGENT_API_KEY`` (or offers to generate one with
+   ``secrets.token_hex(32)``).
+3. Writes a minimal ``.env`` at the repo root.
+4. Detects the Windsurf MCP config file (typically
+   ``~/.codeium/windsurf/mcp_config.json``). If found, merges a ``taskable``
+   server block into it, preserving all other servers and re-using the best
+   available invocation style:
+
+   * If ``taskable-mcp`` is on ``$PATH`` (pipx / uv install)  → use it.
+   * Else                                                      → point at the
+     venv's Python + absolute path to ``mcp/mcp_server.py``.
+
+5. Prints the next-step commands.
+
+The script is idempotent: re-running it updates the existing ``.env`` /
+``mcp_config.json`` in place and leaves the venv alone if already built.
+
+Run from the repo root::
+
+    python3 bootstrap.py
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import secrets
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parent
+VENV_DIR = REPO_ROOT / ".venv"
+ENV_FILE = REPO_ROOT / ".env"
+API_REQ = REPO_ROOT / "api" / "requirements.txt"
+MCP_DIR = REPO_ROOT / "mcp"
+MCP_SERVER = MCP_DIR / "mcp_server.py"
+DEFAULT_WINDSURF_CONFIG = (
+    Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
+)
+
+COLOR_GREEN = "\033[92m"
+COLOR_YELLOW = "\033[93m"
+COLOR_RED = "\033[91m"
+COLOR_RESET = "\033[0m"
+COLOR_DIM = "\033[2m"
+
+
+def log(icon: str, msg: str, color: str = "") -> None:
+    print(f"{color}{icon}  {msg}{COLOR_RESET}")
+
+
+def ok(msg: str) -> None:
+    log("✓", msg, COLOR_GREEN)
+
+
+def warn(msg: str) -> None:
+    log("!", msg, COLOR_YELLOW)
+
+
+def fatal(msg: str) -> None:
+    log("✗", msg, COLOR_RED)
+    sys.exit(1)
+
+
+def step(title: str) -> None:
+    print()
+    print(f"\033[1m── {title} ──{COLOR_RESET}")
+
+
+# ---- Virtualenv ----------------------------------------------------------
+
+
+def venv_python() -> Path:
+    """Absolute path to the Python interpreter inside `.venv/`."""
+    return VENV_DIR / ("Scripts" if os.name == "nt" else "bin") / "python"
+
+
+def ensure_venv() -> None:
+    step("Virtualenv")
+    if VENV_DIR.exists():
+        ok(f".venv already exists at {VENV_DIR}")
+    else:
+        log("…", "Creating .venv (this takes ~10 seconds)")
+        subprocess.check_call([sys.executable, "-m", "venv", str(VENV_DIR)])
+        ok(f"Created {VENV_DIR}")
+
+    py = venv_python()
+    log("…", "Installing backend dependencies")
+    subprocess.check_call([
+        str(py), "-m", "pip", "install", "--quiet",
+        "--disable-pip-version-check", "-r", str(API_REQ),
+    ])
+    log("…", "Installing MCP server (editable)")
+    subprocess.check_call([
+        str(py), "-m", "pip", "install", "--quiet",
+        "--disable-pip-version-check", "-e", str(MCP_DIR),
+    ])
+    ok("Python deps installed")
+
+
+# ---- Key prompt + .env ---------------------------------------------------
+
+
+def prompt_api_key() -> str:
+    step("Agent API Key")
+    existing = _read_existing_key()
+    if existing:
+        warn(f"Found existing AGENT_API_KEY in .env (len={len(existing)}).")
+        reply = input("Reuse it? [Y/n] ").strip().lower()
+        if reply in {"", "y", "yes"}:
+            return existing
+
+    print()
+    print("The AGENT_API_KEY is a SHARED SECRET between:")
+    print("  • the FastAPI backend   (read from .env)")
+    print("  • the MCP stdio server  (sent as 'Authorization: Bearer ...')")
+    print("It is NOT issued by any third party. You invent it locally.")
+    print()
+    reply = input(
+        "Press Enter to generate one with `secrets.token_hex(32)` "
+        "or paste your own: "
+    ).strip()
+    if not reply:
+        reply = secrets.token_hex(32)
+        ok(f"Generated key ({len(reply)} hex chars)")
+    else:
+        if len(reply) < 16:
+            warn("Key is shorter than 16 chars; consider something longer.")
+    return reply
+
+
+def _read_existing_key() -> str | None:
+    if not ENV_FILE.exists():
+        return None
+    for line in ENV_FILE.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("AGENT_API_KEY="):
+            return line.split("=", 1)[1].strip().strip("\"'")
+    return None
+
+
+def write_env(api_key: str) -> None:
+    step(".env file")
+    # Preserve any extra keys the user already had.
+    existing_lines: list[str] = []
+    if ENV_FILE.exists():
+        existing_lines = [
+            l for l in ENV_FILE.read_text().splitlines()
+            if not l.strip().startswith("AGENT_API_KEY=")
+        ]
+    body = "\n".join(existing_lines).rstrip() + "\n" if existing_lines else ""
+    if not body:
+        body = (
+            "# Autogenerated by bootstrap.py. Re-run to rotate the key.\n"
+            "GITHUB_PAT=\n"
+            "VITE_API_URL=http://localhost:8000/api/v1\n"
+        )
+    body += f"AGENT_API_KEY={api_key}\n"
+    ENV_FILE.write_text(body)
+    ok(f"Wrote {ENV_FILE}")
+
+
+# ---- Windsurf MCP config merge -------------------------------------------
+
+
+def resolve_mcp_command() -> dict[str, Any]:
+    """Choose the most durable command+args form for the MCP server."""
+    global_tool = shutil.which("taskable-mcp")
+    venv_bin_tool = VENV_DIR / "bin" / "taskable-mcp"
+    if global_tool:
+        return {"command": "taskable-mcp", "args": []}
+    if venv_bin_tool.exists():
+        return {"command": str(venv_bin_tool), "args": []}
+    # Fallback: venv python + absolute script path.
+    return {
+        "command": str(venv_python()),
+        "args": [str(MCP_SERVER)],
+    }
+
+
+def merge_windsurf_config(api_key: str) -> Path | None:
+    step("Windsurf MCP config")
+    target = _locate_windsurf_config()
+    if target is None:
+        warn(
+            "Could not find a Windsurf MCP config. Skipping. "
+            f"Expected at {DEFAULT_WINDSURF_CONFIG}."
+        )
+        return None
+
+    current: dict[str, Any] = {}
+    if target.exists() and target.stat().st_size > 0:
+        try:
+            current = json.loads(target.read_text())
+        except json.JSONDecodeError as exc:
+            backup = target.with_suffix(target.suffix + ".bak")
+            shutil.copy(target, backup)
+            warn(
+                f"Existing config was not valid JSON ({exc}). "
+                f"Backed it up to {backup} and rewriting."
+            )
+            current = {}
+
+    cmd = resolve_mcp_command()
+    servers = current.setdefault("mcpServers", {})
+    servers["taskable"] = {
+        **cmd,
+        "env": {
+            "TASKABLE_API_URL": "http://localhost:8000/api/v1",
+            "AGENT_API_KEY": api_key,
+        },
+    }
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(current, indent=2) + "\n")
+    ok(f"Patched {target}")
+    log(
+        "→",
+        f"Using command: {cmd['command']} "
+        + (" ".join(cmd["args"]) if cmd["args"] else "(no args)"),
+        COLOR_DIM,
+    )
+    return target
+
+
+def _locate_windsurf_config() -> Path | None:
+    # Explicit override wins (used by tests and power users with unusual
+    # installations).
+    override = os.environ.get("TASKABLE_WINDSURF_CONFIG")
+    if override:
+        return Path(override).expanduser()
+
+    if DEFAULT_WINDSURF_CONFIG.parent.is_dir():
+        return DEFAULT_WINDSURF_CONFIG
+    # Fall back to common alternates on unusual installs.
+    candidates = [
+        Path.home() / ".windsurf" / "mcp_config.json",
+        Path.home() / "Library" / "Application Support" / "Windsurf" / "mcp_config.json",
+    ]
+    for candidate in candidates:
+        if candidate.parent.is_dir():
+            return candidate
+    return None
+
+
+# ---- Next-steps summary --------------------------------------------------
+
+
+def print_summary(patched: Path | None) -> None:
+    step("All set")
+    print(f"  {COLOR_GREEN}✓{COLOR_RESET} .venv ready")
+    print(f"  {COLOR_GREEN}✓{COLOR_RESET} .env written")
+    if patched:
+        print(f"  {COLOR_GREEN}✓{COLOR_RESET} Windsurf MCP config merged ({patched})")
+    else:
+        print(f"  {COLOR_YELLOW}!{COLOR_RESET} Windsurf MCP config NOT updated (not found)")
+    print()
+    print("Next steps:")
+    print(f"  1. Start the API    : {COLOR_DIM}source .venv/bin/activate && "
+          f"uvicorn api.main:app --reload{COLOR_RESET}")
+    print(f"  2. Start the UI     : {COLOR_DIM}cd web && npm install && npm run dev{COLOR_RESET}")
+    print(f"  3. Seed demo data   : {COLOR_DIM}python3 scripts/seed_demo.py{COLOR_RESET}")
+    print(f"  4. Restart Windsurf : so it loads the new MCP server block")
+    print()
+
+
+# ---- Main ----------------------------------------------------------------
+
+
+def main() -> int:
+    print("\033[1mTaskable bootstrap\033[0m")
+    print(f"Repo root: {REPO_ROOT}")
+
+    if not API_REQ.exists():
+        fatal(f"Missing {API_REQ}. Are you running from the repo root?")
+
+    ensure_venv()
+    api_key = prompt_api_key()
+    write_env(api_key)
+    patched = merge_windsurf_config(api_key)
+    print_summary(patched)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
