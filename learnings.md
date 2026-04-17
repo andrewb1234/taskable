@@ -47,6 +47,11 @@ Each entry MUST use this template:
 - **Friction:** Direct use would spam DeprecationWarnings during tests.
 - **Resolution:** Added `api/utils/time.py::utcnow()` returning a timezone-naive UTC datetime via `datetime.now(timezone.utc).replace(tzinfo=None)`. One-line swap if we later want timezone-aware storage.
 
+### 2026-04-17T07:22:00Z — SQLAlchemy mapper vs PEP 563 string annotations
+- **Context:** First pytest run after scaffolding the API surface. All 16 DB-touching tests failed identically.
+- **Friction:** `sqlalchemy.exc.InvalidRequestError: ... expression "relationship("list['Subproject']")" seems to be using a generic class as the argument to relationship()`. Cause: `from __future__ import annotations` converts `list["Subproject"]` into a literal string, and SQLAlchemy's relationship introspection cannot unwrap stringified generics at class construction time.
+- **Resolution:** Removed `from __future__ import annotations` from `api/models/entities.py` and switched to `typing.List[...]`. Kept the future import elsewhere where it helps. Added a header comment so future edits don't re-introduce the import. 17/17 API tests now green.
+
 ### 2026-04-17T07:13:30Z — Decision: MR route is attach-only for MVP
 - **Context:** `POST /tickets/{id}/mr` is described as "attach MR link or trigger branch generation."
 - **Friction:** Scope of branch generation is undefined; `GITHUB_PAT` is mentioned but MCP tool `link_mr` only attaches.

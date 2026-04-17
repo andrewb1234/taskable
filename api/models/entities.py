@@ -3,12 +3,15 @@
 Schema aligned to ``docs/db_schema.md``. Relationships are defined so
 ``GET /subprojects/{id}`` can return nested tickets and ``GET /tickets/{id}``
 can return threaded comments in one round trip.
+
+We deliberately do NOT use ``from __future__ import annotations`` here:
+SQLAlchemy's relationship mapper introspects the type annotation at class
+construction time and expects concrete generics (e.g. ``list["Subproject"]``)
+rather than stringified PEP 563 forms.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -30,7 +33,7 @@ class Project(SQLModel, table=True):
     description: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
-    subprojects: list["Subproject"] = Relationship(
+    subprojects: List["Subproject"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -46,7 +49,7 @@ class Subproject(SQLModel, table=True):
     status: SubprojectStatus = Field(default=SubprojectStatus.PLANNING)
 
     project: Optional[Project] = Relationship(back_populates="subprojects")
-    tickets: list["Ticket"] = Relationship(
+    tickets: List["Ticket"] = Relationship(
         back_populates="subproject",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -64,11 +67,11 @@ class Ticket(SQLModel, table=True):
     mr_link: Optional[str] = Field(default=None)
 
     subproject: Optional[Subproject] = Relationship(back_populates="tickets")
-    comments: list["Comment"] = Relationship(
+    comments: List["Comment"] = Relationship(
         back_populates="ticket",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    audit_logs: list["AuditLog"] = Relationship(
+    audit_logs: List["AuditLog"] = Relationship(
         back_populates="ticket",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
