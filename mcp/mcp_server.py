@@ -17,6 +17,13 @@ Tools — kept in lock-step with ``docs/mcp.md``:
         7. ``update_ticket_status(ticket_id, status)``
         8. ``link_mr(ticket_id, url)``
         9. ``leave_comment(ticket_id, content)``
+    Knowledge tree (PRD / TDD synthesis upstream of tickets):
+        10. ``list_knowledge_nodes(project_id)``
+        11. ``read_knowledge_node(node_id)``
+        12. ``create_knowledge_node(project_id, title, node_type, content,
+                                    parent_id?, source_refs?)``
+        13. ``update_knowledge_node(node_id, title?, node_type?, content?,
+                                    parent_id?, source_refs?)``
 
 Docstrings are intentionally verbose so LLM clients have precise schemas and
 behavioral expectations without having to re-read the spec.
@@ -42,6 +49,7 @@ AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 
 VALID_TICKET_STATUSES = {"TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"}
 VALID_TICKET_ASSIGNEES = {"HUMAN", "AGENT", "UNASSIGNED"}
+VALID_KNOWLEDGE_NODE_TYPES = {"RAW", "SUMMARY", "PRD", "TDD"}
 
 server: Server = Server("copilot-workspace")
 
@@ -295,6 +303,173 @@ async def leave_comment(ticket_id: int, content: str) -> str:
     return f"Posted comment #{comment['id']} on ticket #{comment['ticket_id']}."
 
 
+# ---- Knowledge tree tools -------------------------------------------------
+#
+# The knowledge tree lives upstream of subprojects and tickets. Typical agent
+# flow: read files via the host IDE's built-in tools → call
+# ``create_knowledge_node(RAW, ...)`` to persist the excerpts with source
+# pointers → iteratively compress with ``create_knowledge_node(SUMMARY,
+# parent_id=...)`` → emit a ``create_knowledge_node(PRD, ...)`` that the
+# human reviews in the UI before breakdown.
+
+
+async def list_knowledge_nodes(project_id: int) -> str:
+    """Return a compact plain-text outline of a project's knowledge tree.
+
+    Calls ``GET /agent/projects/{project_id}/knowledge``. The outline is
+    pre-indented and only includes ``[TYPE #id] title`` plus source-ref
+    previews — body text is omitted on purpose so the agent can fit the map
+    in its context window and drill down with ``read_knowledge_node``.
+    """
+    response = await _request(
+        "GET", f"/agent/projects/{int(project_id)}/knowledge"
+    )
+    if response.status_code == 404:
+        return f"ERROR: project {project_id} does not exist."
+    if response.status_code != 200:
+        return (
+            f"ERROR: knowledge map request failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    return response.text
+
+
+async def read_knowledge_node(node_id: int) -> str:
+    """Return the full content of a single knowledge node.
+
+    Calls ``GET /agent/knowledge/{node_id}``. Use this after
+    ``list_knowledge_nodes`` has surfaced an interesting ``[TYPE #id]``
+    breadcrumb you want to expand.
+    """
+    response = await _request("GET", f"/agent/knowledge/{int(node_id)}")
+    if response.status_code == 404:
+        return f"ERROR: knowledge node {node_id} does not exist."
+    if response.status_code != 200:
+        return (
+            f"ERROR: knowledge node read failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    return response.text
+
+
+async def create_knowledge_node(
+    project_id: int,
+    title: str,
+    node_type: str,
+    content: str,
+    parent_id: int | None = None,
+    source_refs: list[str] | None = None,
+) -> str:
+    """Persist a new knowledge node under a project.
+
+    Calls ``POST /projects/{project_id}/knowledge``.
+
+    * ``node_type`` must be one of ``RAW``, ``SUMMARY``, ``PRD``, ``TDD``
+      (case-insensitive on the way in, normalized before the request).
+    * ``parent_id`` nests the node underneath an existing summary so the
+      human reviewer can drill down from high-level to raw source. Must
+      reference a node in the *same* project.
+    * ``source_refs`` is a free-form list of string pointers — absolute
+      file paths (``/Users/me/project/api/main.py``), URLs, or
+      ``node:<id>`` back-links. These are the breadcrumbs the human follows
+      to audit the compression step.
+    """
+    node_type_upper = node_type.upper()
+    if node_type_upper not in VALID_KNOWLEDGE_NODE_TYPES:
+        return (
+            f"ERROR: invalid node_type '{node_type}'. "
+            f"Valid values: {sorted(VALID_KNOWLEDGE_NODE_TYPES)}."
+        )
+
+    payload: dict[str, Any] = {
+        "title": title,
+        "node_type": node_type_upper,
+        "content": content,
+        "source_refs": list(source_refs) if source_refs else [],
+    }
+    if parent_id is not None:
+        payload["parent_id"] = int(parent_id)
+
+    response = await _request(
+        "POST",
+        f"/projects/{int(project_id)}/knowledge",
+        json=payload,
+    )
+    if response.status_code == 404:
+        return f"ERROR: project {project_id} does not exist."
+    if response.status_code == 400:
+        return f"ERROR: {response.json().get('detail', response.text)}"
+    if response.status_code != 201:
+        return (
+            f"ERROR: create knowledge node failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    node = response.json()
+    suffix = f" (parent=#{node['parent_id']})" if node.get("parent_id") else ""
+    return (
+        f"Created knowledge node #{node['id']} [{node['node_type']}]"
+        f" {node['title']}{suffix}."
+    )
+
+
+async def update_knowledge_node(
+    node_id: int,
+    title: str | None = None,
+    node_type: str | None = None,
+    content: str | None = None,
+    parent_id: int | None = None,
+    source_refs: list[str] | None = None,
+) -> str:
+    """Patch an existing knowledge node.
+
+    Calls ``PATCH /knowledge/{node_id}``. Any parameter left as ``None``
+    is excluded from the request body so partial updates don't clobber
+    unrelated fields. Typical uses:
+
+    * Promote a SUMMARY to a PRD after the human reviews it.
+    * Re-parent a node when reorganizing the tree.
+    * Append newly discovered source references.
+    """
+    payload: dict[str, Any] = {}
+    if title is not None:
+        payload["title"] = title
+    if node_type is not None:
+        node_type_upper = node_type.upper()
+        if node_type_upper not in VALID_KNOWLEDGE_NODE_TYPES:
+            return (
+                f"ERROR: invalid node_type '{node_type}'. "
+                f"Valid values: {sorted(VALID_KNOWLEDGE_NODE_TYPES)}."
+            )
+        payload["node_type"] = node_type_upper
+    if content is not None:
+        payload["content"] = content
+    if parent_id is not None:
+        payload["parent_id"] = int(parent_id)
+    if source_refs is not None:
+        payload["source_refs"] = list(source_refs)
+
+    if not payload:
+        return "ERROR: no fields provided to update."
+
+    response = await _request(
+        "PATCH", f"/knowledge/{int(node_id)}", json=payload
+    )
+    if response.status_code == 404:
+        return f"ERROR: knowledge node {node_id} does not exist."
+    if response.status_code == 400:
+        return f"ERROR: {response.json().get('detail', response.text)}"
+    if response.status_code != 200:
+        return (
+            f"ERROR: update knowledge node failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    node = response.json()
+    return (
+        f"Updated knowledge node #{node['id']} [{node['node_type']}]"
+        f" {node['title']}."
+    )
+
+
 # ---- MCP wiring -----------------------------------------------------------
 
 
@@ -474,6 +649,117 @@ TOOLS: list[Tool] = [
             "required": ["ticket_id", "content"],
         },
     ),
+    Tool(
+        name="list_knowledge_nodes",
+        description=(
+            "Return a compact plain-text outline of a project's knowledge "
+            "tree (raw excerpts, summaries, PRDs, TDDs). Call this BEFORE "
+            "drafting a PRD/TDD so you know which branches already exist "
+            "and can drill down with read_knowledge_node instead of "
+            "re-reading raw files."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "integer",
+                    "description": "ID of the project whose knowledge tree you want.",
+                }
+            },
+            "required": ["project_id"],
+        },
+    ),
+    Tool(
+        name="read_knowledge_node",
+        description=(
+            "Return the full title, source references, and body content "
+            "of a single knowledge node. Use after list_knowledge_nodes "
+            "has surfaced an interesting breadcrumb you want to expand."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "integer",
+                    "description": "ID of the knowledge node to read.",
+                }
+            },
+            "required": ["node_id"],
+        },
+    ),
+    Tool(
+        name="create_knowledge_node",
+        description=(
+            "Persist a new knowledge node under a project. Use RAW for "
+            "pasted file excerpts (with absolute paths in source_refs), "
+            "SUMMARY for compressed abstractions over existing nodes, and "
+            "PRD/TDD for synthesized specifications the human will review "
+            "before breakdown. Set parent_id to nest a node under a "
+            "summary so the reviewer can drill down."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "integer"},
+                "title": {"type": "string", "minLength": 1},
+                "node_type": {
+                    "type": "string",
+                    "enum": sorted(VALID_KNOWLEDGE_NODE_TYPES),
+                    "description": "RAW, SUMMARY, PRD, or TDD.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": (
+                        "Full body text. For RAW, paste the file excerpt. "
+                        "For SUMMARY/PRD/TDD, write the synthesized prose."
+                    ),
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "description": (
+                        "Optional ID of an existing node to nest under. "
+                        "Must be in the same project."
+                    ),
+                },
+                "source_refs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Absolute file paths, URLs, or node:<id> back-links "
+                        "that justify this node's existence."
+                    ),
+                },
+            },
+            "required": ["project_id", "title", "node_type", "content"],
+        },
+    ),
+    Tool(
+        name="update_knowledge_node",
+        description=(
+            "Patch an existing knowledge node. Omit any field you don't "
+            "want to change. Use this to promote SUMMARY → PRD after "
+            "review, re-parent nodes, or append newly discovered "
+            "source_refs."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "integer"},
+                "title": {"type": "string", "minLength": 1},
+                "node_type": {
+                    "type": "string",
+                    "enum": sorted(VALID_KNOWLEDGE_NODE_TYPES),
+                },
+                "content": {"type": "string"},
+                "parent_id": {"type": "integer"},
+                "source_refs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["node_id"],
+        },
+    ),
 ]
 
 
@@ -487,6 +773,10 @@ TOOL_DISPATCH = {
     "update_ticket_status": update_ticket_status,
     "link_mr": link_mr,
     "leave_comment": leave_comment,
+    "list_knowledge_nodes": list_knowledge_nodes,
+    "read_knowledge_node": read_knowledge_node,
+    "create_knowledge_node": create_knowledge_node,
+    "update_knowledge_node": update_knowledge_node,
 }
 
 

@@ -21,7 +21,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import get_settings
 from api.database import init_db
-from api.routes import agent, comments, events, projects, subprojects, tickets
+from api.routes import (
+    agent,
+    comments,
+    events,
+    knowledge,
+    projects,
+    subprojects,
+    tickets,
+)
 from api.version import __version__, git_sha
 
 
@@ -52,6 +60,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(subprojects.router)
     api_v1.include_router(tickets.router)
     api_v1.include_router(comments.router)
+    api_v1.include_router(knowledge.router)
     api_v1.include_router(events.router)
     api_v1.include_router(agent.router)
 

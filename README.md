@@ -162,8 +162,26 @@ make e2e          # playwright realtime spec
 | POST   | `/api/v1/tickets/{id}/mr`                           | Attach MR, emits `MR_LINKED`. |
 | GET    | `/api/v1/tickets/{id}/comments`                     |                               |
 | POST   | `/api/v1/tickets/{id}/comments`                     |                               |
+| GET    | `/api/v1/projects/{id}/knowledge`                   | Flat list; client builds tree.|
+| POST   | `/api/v1/projects/{id}/knowledge`                   | Creates a `KnowledgeNode`.    |
+| GET    | `/api/v1/knowledge/{id}`                            | Single node detail.           |
+| PATCH  | `/api/v1/knowledge/{id}`                            | Re-parent / retype / edit.    |
+| DELETE | `/api/v1/knowledge/{id}`                            | Cascades to descendants.      |
 | GET    | `/api/v1/events`                                    | SSE stream (heartbeat 15s).   |
 | GET    | `/api/v1/agent/context/{id}`                        | **Bearer required.**          |
+| GET    | `/api/v1/agent/projects/{id}/knowledge`             | **Bearer required** (outline).|
+| GET    | `/api/v1/agent/knowledge/{id}`                      | **Bearer required** (detail). |
+
+### Knowledge tree (upstream of tickets)
+
+Each project owns a tree of `KnowledgeNode` entries — `RAW` pastes, `SUMMARY`
+compressions, and drafted `PRD` / `TDD` specifications — that sits between "I
+have an idea" and "break it into tickets." The agent drives it through four
+MCP tools (`list_knowledge_nodes`, `read_knowledge_node`, `create_knowledge_node`,
+`update_knowledge_node`); the human reviews and edits the same nodes in the
+`Workspace` **Knowledge** tab. Mutations broadcast
+`KNOWLEDGE_NODE_CREATED|UPDATED|DELETED` over SSE so the tree panel stays live
+without a reload. Design rationale and friction log: `learnings.md`.
 
 `GET /tickets/{id}` was added beyond the original spec so the client-side SSE-driven targeted refetch described in `docs/client_server.md` has a route to hit. Logged in `learnings.md`.
 

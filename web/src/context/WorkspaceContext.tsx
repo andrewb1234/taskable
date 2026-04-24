@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 
+export type WorkspaceView = "subproject" | "knowledge";
+
 interface WorkspaceState {
   activeProjectId: number | null;
   activeSubprojectId: number | null;
@@ -14,6 +16,8 @@ interface WorkspaceState {
   setActiveSubprojectId: (id: number | null) => void;
   activeTicketId: number | null;
   openTicket: (id: number | null) => void;
+  view: WorkspaceView;
+  setView: (view: WorkspaceView) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceState | null>(null);
@@ -26,6 +30,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [activeTicketId, setActiveTicketId] = useState<number | null>(null);
+  const [view, setView] = useState<WorkspaceView>("subproject");
 
   const setActiveProjectId = useCallback((id: number | null) => {
     setActiveProjectIdRaw(id);
@@ -46,6 +51,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setActiveSubprojectId,
       activeTicketId,
       openTicket,
+      view,
+      setView,
     }),
     [
       activeProjectId,
@@ -53,6 +60,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       activeTicketId,
       setActiveProjectId,
       openTicket,
+      view,
     ],
   );
 

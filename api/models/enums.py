@@ -38,6 +38,21 @@ class AuditAction(str, Enum):
     MR_LINKED = "MR_LINKED"
 
 
+class KnowledgeNodeType(str, Enum):
+    """Category tag for a ``KnowledgeNode``.
+
+    * ``RAW``      — raw pastable source (file excerpt, doc passage, URL dump).
+    * ``SUMMARY``  — an agent-authored abstraction over one or more children.
+    * ``PRD``      — a Product Requirements Document synthesized from summaries.
+    * ``TDD``      — a Technical Design Document synthesized from summaries.
+    """
+
+    RAW = "RAW"
+    SUMMARY = "SUMMARY"
+    PRD = "PRD"
+    TDD = "TDD"
+
+
 class SSEAction(str, Enum):
     """Vocabulary of events broadcast over ``GET /api/v1/events``."""
 
@@ -48,3 +63,6 @@ class SSEAction(str, Enum):
     TICKET_UPDATED = "TICKET_UPDATED"
     COMMENT_CREATED = "COMMENT_CREATED"
     MR_LINKED = "MR_LINKED"
+    KNOWLEDGE_NODE_CREATED = "KNOWLEDGE_NODE_CREATED"
+    KNOWLEDGE_NODE_UPDATED = "KNOWLEDGE_NODE_UPDATED"
+    KNOWLEDGE_NODE_DELETED = "KNOWLEDGE_NODE_DELETED"

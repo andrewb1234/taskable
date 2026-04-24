@@ -21,3 +21,15 @@ export const ASSIGNEE_LABELS = {
     AGENT: "Agent",
     UNASSIGNED: "Unassigned",
 };
+export const KNOWLEDGE_NODE_TYPES = [
+    "RAW",
+    "SUMMARY",
+    "PRD",
+    "TDD",
+];
+export const KNOWLEDGE_NODE_TYPE_LABELS = {
+    RAW: "Raw",
+    SUMMARY: "Summary",
+    PRD: "PRD",
+    TDD: "TDD",
+};

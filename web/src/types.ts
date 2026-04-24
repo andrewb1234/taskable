@@ -25,7 +25,12 @@ export type SSEAction =
   | "TICKET_CREATED"
   | "TICKET_UPDATED"
   | "COMMENT_CREATED"
-  | "MR_LINKED";
+  | "MR_LINKED"
+  | "KNOWLEDGE_NODE_CREATED"
+  | "KNOWLEDGE_NODE_UPDATED"
+  | "KNOWLEDGE_NODE_DELETED";
+
+export type KnowledgeNodeType = "RAW" | "SUMMARY" | "PRD" | "TDD";
 
 export interface Project {
   id: number;
@@ -104,4 +109,31 @@ export const ASSIGNEE_LABELS: Record<TicketAssignee, string> = {
   HUMAN: "Human",
   AGENT: "Agent",
   UNASSIGNED: "Unassigned",
+};
+
+export interface KnowledgeNode {
+  id: number;
+  project_id: number;
+  parent_id: number | null;
+  title: string;
+  node_type: KnowledgeNodeType;
+  content: string;
+  source_refs: string[];
+  created_by: ActorRole;
+  created_at: string;
+  updated_at: string;
+}
+
+export const KNOWLEDGE_NODE_TYPES: KnowledgeNodeType[] = [
+  "RAW",
+  "SUMMARY",
+  "PRD",
+  "TDD",
+];
+
+export const KNOWLEDGE_NODE_TYPE_LABELS: Record<KnowledgeNodeType, string> = {
+  RAW: "Raw",
+  SUMMARY: "Summary",
+  PRD: "PRD",
+  TDD: "TDD",
 };

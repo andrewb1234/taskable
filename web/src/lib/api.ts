@@ -8,6 +8,8 @@
 
 import type {
   Comment,
+  KnowledgeNode,
+  KnowledgeNodeType,
   Project,
   Subproject,
   SubprojectDetail,
@@ -134,6 +136,47 @@ export const linkTicketMR = (id: number, url: string) =>
     method: "POST",
     body: JSON.stringify({ url }),
   });
+
+// ---- Knowledge nodes ----------------------------------------------------
+
+export const listKnowledgeNodes = (projectId: number) =>
+  request<KnowledgeNode[]>(`/projects/${projectId}/knowledge`);
+
+export const getKnowledgeNode = (id: number) =>
+  request<KnowledgeNode>(`/knowledge/${id}`);
+
+export const createKnowledgeNode = (
+  projectId: number,
+  payload: {
+    title: string;
+    node_type?: KnowledgeNodeType;
+    content?: string;
+    parent_id?: number | null;
+    source_refs?: string[];
+  },
+) =>
+  request<KnowledgeNode>(`/projects/${projectId}/knowledge`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const updateKnowledgeNode = (
+  id: number,
+  payload: Partial<{
+    title: string;
+    node_type: KnowledgeNodeType;
+    content: string;
+    parent_id: number | null;
+    source_refs: string[];
+  }>,
+) =>
+  request<KnowledgeNode>(`/knowledge/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+
+export const deleteKnowledgeNode = (id: number) =>
+  request<void>(`/knowledge/${id}`, { method: "DELETE" });
 
 // ---- Comments -----------------------------------------------------------
 

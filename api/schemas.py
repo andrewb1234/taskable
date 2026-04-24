@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.models.enums import (
     ActorRole,
     AuditAction,
+    KnowledgeNodeType,
     SubprojectStatus,
     TicketAssignee,
     TicketStatus,
@@ -141,3 +142,37 @@ class TicketDetail(TicketRead):
 
     comments: list[CommentRead] = Field(default_factory=list)
     audit_logs: list[AuditLogRead] = Field(default_factory=list)
+
+
+# ---- KnowledgeNode -------------------------------------------------------
+
+
+class KnowledgeNodeCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    node_type: KnowledgeNodeType = KnowledgeNodeType.RAW
+    content: str = ""
+    parent_id: Optional[int] = None
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class KnowledgeNodeUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    node_type: Optional[KnowledgeNodeType] = None
+    content: Optional[str] = None
+    parent_id: Optional[int] = None
+    source_refs: Optional[list[str]] = None
+
+
+class KnowledgeNodeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    parent_id: Optional[int] = None
+    title: str
+    node_type: KnowledgeNodeType
+    content: str
+    source_refs: list[str] = Field(default_factory=list)
+    created_by: ActorRole
+    created_at: datetime
+    updated_at: datetime

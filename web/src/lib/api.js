@@ -70,6 +70,18 @@ export const linkTicketMR = (id, url) => request(`/tickets/${id}/mr`, {
     method: "POST",
     body: JSON.stringify({ url }),
 });
+// ---- Knowledge nodes ----------------------------------------------------
+export const listKnowledgeNodes = (projectId) => request(`/projects/${projectId}/knowledge`);
+export const getKnowledgeNode = (id) => request(`/knowledge/${id}`);
+export const createKnowledgeNode = (projectId, payload) => request(`/projects/${projectId}/knowledge`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+});
+export const updateKnowledgeNode = (id, payload) => request(`/knowledge/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+});
+export const deleteKnowledgeNode = (id) => request(`/knowledge/${id}`, { method: "DELETE" });
 // ---- Comments -----------------------------------------------------------
 export const createComment = (ticketId, payload) => request(`/tickets/${ticketId}/comments`, {
     method: "POST",

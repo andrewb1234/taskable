@@ -5,6 +5,7 @@ export function WorkspaceProvider({ children }) {
     const [activeProjectId, setActiveProjectIdRaw] = useState(null);
     const [activeSubprojectId, setActiveSubprojectId] = useState(null);
     const [activeTicketId, setActiveTicketId] = useState(null);
+    const [view, setView] = useState("subproject");
     const setActiveProjectId = useCallback((id) => {
         setActiveProjectIdRaw(id);
         // Switching project invalidates subproject/ticket context.
@@ -21,12 +22,15 @@ export function WorkspaceProvider({ children }) {
         setActiveSubprojectId,
         activeTicketId,
         openTicket,
+        view,
+        setView,
     }), [
         activeProjectId,
         activeSubprojectId,
         activeTicketId,
         setActiveProjectId,
         openTicket,
+        view,
     ]);
     return (_jsx(WorkspaceContext.Provider, { value: value, children: children }));
 }

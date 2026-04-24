@@ -227,6 +227,11 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
             "update_ticket_status",
             "link_mr",
             "leave_comment",
+            # Knowledge tree
+            "list_knowledge_nodes",
+            "read_knowledge_node",
+            "create_knowledge_node",
+            "update_knowledge_node",
         }
 
         # tools/call -> update_ticket_status (the mutation under test)
@@ -460,5 +465,110 @@ async def test_mcp_simulator_creation_flow(live_api: dict[str, str]) -> None:
             "SELECT COUNT(*) FROM ticket WHERE title = 'Bad assignee'"
         ).fetchone()[0]
         assert rejected == 0
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+async def test_mcp_simulator_knowledge_flow(live_api: dict[str, str]) -> None:
+    """End-to-end knowledge tree build via the MCP wire protocol.
+
+    Exercises the full upstream planning loop: a SUMMARY parent, a nested
+    RAW child, a listed outline, a drilled-down read, and an update that
+    promotes SUMMARY → PRD. Persistence is verified against the live SQLite.
+    """
+    proc = await _spawn_mcp(live_api["base_url"])
+    try:
+        client = MCPClient(proc)
+        await _initialize(client)
+
+        async def call(name: str, arguments: dict) -> str:
+            await client.send(
+                "tools/call", {"name": name, "arguments": arguments}
+            )
+            payload = await client.recv()
+            assert "result" in payload, payload
+            return payload["result"]["content"][0]["text"]
+
+        # Seed a project directly via the MCP so the test is hermetic.
+        project_msg = await call(
+            "create_project",
+            {
+                "name": "Knowledge Flow",
+                "description": "Exercised by test_mcp_simulator_knowledge_flow",
+            },
+        )
+        project_id = int(project_msg.split("#")[1].split(":")[0])
+
+        # 1. create_knowledge_node (SUMMARY at the root)
+        summary_msg = await call(
+            "create_knowledge_node",
+            {
+                "project_id": project_id,
+                "title": "Architecture overview",
+                "node_type": "SUMMARY",
+                "content": "FastAPI + SQLModel + React via SSE.",
+                "source_refs": ["/abs/README.md"],
+            },
+        )
+        assert summary_msg.startswith("Created knowledge node #"), summary_msg
+        summary_id = int(summary_msg.split("#")[1].split(" ")[0])
+
+        # 2. create_knowledge_node (RAW child nested under the summary)
+        child_msg = await call(
+            "create_knowledge_node",
+            {
+                "project_id": project_id,
+                "title": "api/main.py",
+                "node_type": "RAW",
+                "content": "from fastapi import FastAPI\napp = FastAPI()",
+                "parent_id": summary_id,
+                "source_refs": ["/abs/api/main.py"],
+            },
+        )
+        child_id = int(child_msg.split("#")[1].split(" ")[0])
+        assert f"parent=#{summary_id}" in child_msg, child_msg
+
+        # 3. list_knowledge_nodes returns a hierarchical outline.
+        outline = await call(
+            "list_knowledge_nodes", {"project_id": project_id}
+        )
+        assert f"[SUMMARY #{summary_id}]" in outline, outline
+        assert f"[RAW #{child_id}]" in outline, outline
+        # Child line is indented under parent line.
+        assert outline.index(f"#{summary_id}") < outline.index(f"#{child_id}")
+
+        # 4. read_knowledge_node surfaces source refs + content.
+        detail = await call("read_knowledge_node", {"node_id": child_id})
+        assert "/abs/api/main.py" in detail, detail
+        assert "from fastapi import FastAPI" in detail, detail
+
+        # 5. update_knowledge_node promotes SUMMARY → PRD.
+        promoted = await call(
+            "update_knowledge_node",
+            {"node_id": summary_id, "node_type": "PRD"},
+        )
+        assert "[PRD]" in promoted, promoted
+    finally:
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            proc.kill()
+
+    # DB-level verification: parent chain + type promotion persisted.
+    conn = sqlite3.connect(live_api["db_path"])
+    try:
+        row = conn.execute(
+            "SELECT node_type, parent_id FROM knowledgenode WHERE id = ?",
+            (summary_id,),
+        ).fetchone()
+        assert row == ("PRD", None)
+
+        row = conn.execute(
+            "SELECT node_type, parent_id FROM knowledgenode WHERE id = ?",
+            (child_id,),
+        ).fetchone()
+        assert row == ("RAW", summary_id)
     finally:
         conn.close()

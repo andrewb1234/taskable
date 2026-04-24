@@ -13,11 +13,13 @@ rather than stringified PEP 563 forms.
 from datetime import datetime
 from typing import List, Optional
 
+from sqlalchemy import Column, JSON
 from sqlmodel import Field, Relationship, SQLModel
 
 from api.models.enums import (
     ActorRole,
     AuditAction,
+    KnowledgeNodeType,
     SubprojectStatus,
     TicketAssignee,
     TicketStatus,
@@ -34,6 +36,10 @@ class Project(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
     subprojects: List["Subproject"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    knowledge_nodes: List["KnowledgeNode"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -103,3 +109,43 @@ class AuditLog(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=utcnow, nullable=False)
 
     ticket: Optional[Ticket] = Relationship(back_populates="audit_logs")
+
+
+class KnowledgeNode(SQLModel, table=True):
+    """Self-referential node in the per-project knowledge tree.
+
+    Upstream of subprojects and tickets: this is where agents persist raw
+    research material, compressed summaries, and drafted PRD/TDD artifacts
+    for a project. A tree (single ``parent_id``) is sufficient for v1 —
+    relaxing to a DAG would require a separate edges table.
+
+    ``source_refs`` stores arbitrary string pointers (absolute file paths,
+    URLs, or ``node:<id>`` breadcrumbs) so a human can trace a summary back
+    to its origin without the agent having to re-read the raw content.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True)
+    parent_id: Optional[int] = Field(
+        default=None, foreign_key="knowledgenode.id", index=True
+    )
+
+    title: str
+    node_type: KnowledgeNodeType = Field(default=KnowledgeNodeType.RAW)
+    content: str = Field(default="")
+    source_refs: List[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, default=list)
+    )
+    created_by: ActorRole = Field(default=ActorRole.AGENT)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    project: Optional[Project] = Relationship(back_populates="knowledge_nodes")
+    parent: Optional["KnowledgeNode"] = Relationship(
+        back_populates="children",
+        sa_relationship_kwargs={"remote_side": "KnowledgeNode.id"},
+    )
+    children: List["KnowledgeNode"] = Relationship(
+        back_populates="parent",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
