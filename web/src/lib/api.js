@@ -45,6 +45,7 @@ export const createProject = (payload) => request("/projects", {
     method: "POST",
     body: JSON.stringify(payload),
 });
+export const deleteProject = (id) => request(`/projects/${id}`, { method: "DELETE" });
 // ---- Subprojects --------------------------------------------------------
 export const listSubprojects = (projectId) => request(`/projects/${projectId}/subprojects`);
 export const getSubproject = (id) => request(`/subprojects/${id}`);
@@ -56,6 +57,7 @@ export const updateSubproject = (id, payload) => request(`/subprojects/${id}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
 });
+export const deleteSubproject = (id) => request(`/subprojects/${id}`, { method: "DELETE" });
 // ---- Tickets ------------------------------------------------------------
 export const getTicket = (id) => request(`/tickets/${id}`);
 export const createTicket = (subprojectId, payload) => request(`/subprojects/${subprojectId}/tickets`, {
@@ -70,6 +72,7 @@ export const linkTicketMR = (id, url) => request(`/tickets/${id}/mr`, {
     method: "POST",
     body: JSON.stringify({ url }),
 });
+export const deleteTicket = (id) => request(`/tickets/${id}`, { method: "DELETE" });
 // ---- Knowledge nodes ----------------------------------------------------
 export const listKnowledgeNodes = (projectId) => request(`/projects/${projectId}/knowledge`);
 export const getKnowledgeNode = (id) => request(`/knowledge/${id}`);

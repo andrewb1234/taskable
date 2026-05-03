@@ -17,13 +17,18 @@ Tools — kept in lock-step with ``docs/mcp.md``:
         7. ``update_ticket_status(ticket_id, status)``
         8. ``link_mr(ticket_id, url)``
         9. ``leave_comment(ticket_id, content)``
+    Delete (cascading):
+        10. ``delete_project(project_id)``
+        11. ``delete_subproject(subproject_id)``
+        12. ``delete_ticket(ticket_id)``
     Knowledge tree (PRD / TDD synthesis upstream of tickets):
-        10. ``list_knowledge_nodes(project_id)``
-        11. ``read_knowledge_node(node_id)``
-        12. ``create_knowledge_node(project_id, title, node_type, content,
+        13. ``list_knowledge_nodes(project_id)``
+        14. ``read_knowledge_node(node_id)``
+        15. ``create_knowledge_node(project_id, title, node_type, content,
                                     parent_id?, source_refs?)``
-        13. ``update_knowledge_node(node_id, title?, node_type?, content?,
+        16. ``update_knowledge_node(node_id, title?, node_type?, content?,
                                     parent_id?, source_refs?)``
+        17. ``delete_knowledge_node(node_id)``
 
 Docstrings are intentionally verbose so LLM clients have precise schemas and
 behavioral expectations without having to re-read the spec.
@@ -285,6 +290,75 @@ async def link_mr(ticket_id: int, url: str) -> str:
         )
     ticket = response.json()
     return f"Linked MR on ticket #{ticket['id']}: {ticket['mr_link']}"
+
+
+async def delete_project(project_id: int) -> str:
+    """Delete a project and cascade its subprojects, tickets, and knowledge nodes.
+
+    Calls ``DELETE /api/v1/projects/{project_id}``. Irreversible — every
+    subproject, ticket, comment, audit log, and knowledge node under the
+    project is removed. Use with care.
+    """
+    response = await _request("DELETE", f"/projects/{int(project_id)}")
+    if response.status_code == 404:
+        return f"ERROR: project {project_id} does not exist."
+    if response.status_code != 204:
+        return (
+            f"ERROR: delete project failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    return f"Deleted project #{project_id} and all nested subprojects, tickets, and knowledge nodes."
+
+
+async def delete_subproject(subproject_id: int) -> str:
+    """Delete a subproject and cascade its tickets and audit trail.
+
+    Calls ``DELETE /api/v1/subprojects/{subproject_id}``. Leaves the parent
+    project intact.
+    """
+    response = await _request("DELETE", f"/subprojects/{int(subproject_id)}")
+    if response.status_code == 404:
+        return f"ERROR: subproject {subproject_id} does not exist."
+    if response.status_code != 204:
+        return (
+            f"ERROR: delete subproject failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    return f"Deleted subproject #{subproject_id} and all its tickets."
+
+
+async def delete_ticket(ticket_id: int) -> str:
+    """Delete a ticket and cascade its comments and audit logs.
+
+    Calls ``DELETE /api/v1/tickets/{ticket_id}``. Leaves the parent
+    subproject intact.
+    """
+    response = await _request("DELETE", f"/tickets/{int(ticket_id)}")
+    if response.status_code == 404:
+        return f"ERROR: ticket {ticket_id} does not exist."
+    if response.status_code != 204:
+        return (
+            f"ERROR: delete ticket failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    return f"Deleted ticket #{ticket_id}."
+
+
+async def delete_knowledge_node(node_id: int) -> str:
+    """Delete a knowledge node and cascade its children.
+
+    Calls ``DELETE /api/v1/knowledge/{node_id}``. Descendant RAW/SUMMARY/
+    PRD/TDD nodes nested under this one are removed too.
+    """
+    response = await _request("DELETE", f"/knowledge/{int(node_id)}")
+    if response.status_code == 404:
+        return f"ERROR: knowledge node {node_id} does not exist."
+    if response.status_code != 204:
+        return (
+            f"ERROR: delete knowledge node failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    return f"Deleted knowledge node #{node_id} and any descendants."
 
 
 async def leave_comment(ticket_id: int, content: str) -> str:
@@ -650,6 +724,62 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
+        name="delete_project",
+        description=(
+            "Delete a project and cascade every subproject, ticket, comment, "
+            "audit log, and knowledge node under it. Irreversible."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "integer"},
+            },
+            "required": ["project_id"],
+        },
+    ),
+    Tool(
+        name="delete_subproject",
+        description=(
+            "Delete a subproject and cascade its tickets, comments, and audit "
+            "logs. Leaves the parent project intact."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "subproject_id": {"type": "integer"},
+            },
+            "required": ["subproject_id"],
+        },
+    ),
+    Tool(
+        name="delete_ticket",
+        description=(
+            "Delete a ticket and cascade its comments and audit logs. Leaves "
+            "the parent subproject intact."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "integer"},
+            },
+            "required": ["ticket_id"],
+        },
+    ),
+    Tool(
+        name="delete_knowledge_node",
+        description=(
+            "Delete a knowledge node and cascade its descendants. Use when "
+            "pruning stale research or retiring a superseded PRD/TDD."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "integer"},
+            },
+            "required": ["node_id"],
+        },
+    ),
+    Tool(
         name="list_knowledge_nodes",
         description=(
             "Return a compact plain-text outline of a project's knowledge "
@@ -773,6 +903,10 @@ TOOL_DISPATCH = {
     "update_ticket_status": update_ticket_status,
     "link_mr": link_mr,
     "leave_comment": leave_comment,
+    "delete_project": delete_project,
+    "delete_subproject": delete_subproject,
+    "delete_ticket": delete_ticket,
+    "delete_knowledge_node": delete_knowledge_node,
     "list_knowledge_nodes": list_knowledge_nodes,
     "read_knowledge_node": read_knowledge_node,
     "create_knowledge_node": create_knowledge_node,

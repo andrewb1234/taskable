@@ -71,6 +71,9 @@ export const createProject = (payload: {
     body: JSON.stringify(payload),
   });
 
+export const deleteProject = (id: number) =>
+  request<void>(`/projects/${id}`, { method: "DELETE" });
+
 // ---- Subprojects --------------------------------------------------------
 
 export const listSubprojects = (projectId: number) =>
@@ -96,6 +99,9 @@ export const updateSubproject = (
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+
+export const deleteSubproject = (id: number) =>
+  request<void>(`/subprojects/${id}`, { method: "DELETE" });
 
 // ---- Tickets ------------------------------------------------------------
 
@@ -136,6 +142,9 @@ export const linkTicketMR = (id: number, url: string) =>
     method: "POST",
     body: JSON.stringify({ url }),
   });
+
+export const deleteTicket = (id: number) =>
+  request<void>(`/tickets/${id}`, { method: "DELETE" });
 
 // ---- Knowledge nodes ----------------------------------------------------
 

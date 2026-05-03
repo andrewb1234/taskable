@@ -227,6 +227,11 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
             "update_ticket_status",
             "link_mr",
             "leave_comment",
+            # Delete
+            "delete_project",
+            "delete_subproject",
+            "delete_ticket",
+            "delete_knowledge_node",
             # Knowledge tree
             "list_knowledge_nodes",
             "read_knowledge_node",

@@ -128,6 +128,28 @@ async def update_ticket(
     return ticket
 
 
+@router.delete(
+    "/{ticket_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_ticket(ticket_id: int, session: SessionDep) -> None:
+    """Delete a ticket and cascade its comments and audit logs."""
+    ticket = _get_or_404(session, ticket_id)
+    subproject_id = ticket.subproject_id
+    session.delete(ticket)
+    session.commit()
+
+    await get_broadcaster().publish(
+        Event(
+            action=SSEAction.TICKET_DELETED,
+            entity="ticket",
+            entity_id=ticket_id,
+            parent_id=subproject_id,
+        )
+    )
+    return None
+
+
 @router.post(
     "/{ticket_id}/mr",
     response_model=TicketRead,

@@ -77,6 +77,28 @@ async def update_subproject(
     return subproject
 
 
+@router.delete(
+    "/{subproject_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_subproject(subproject_id: int, session: SessionDep) -> None:
+    """Delete a subproject and cascade its tickets, comments, and audit logs."""
+    subproject = _get_or_404(session, subproject_id)
+    project_id = subproject.project_id
+    session.delete(subproject)
+    session.commit()
+
+    await get_broadcaster().publish(
+        Event(
+            action=SSEAction.SUBPROJECT_DELETED,
+            entity="subproject",
+            entity_id=subproject_id,
+            parent_id=project_id,
+        )
+    )
+    return None
+
+
 @router.post(
     "/{subproject_id}/tickets",
     response_model=TicketRead,

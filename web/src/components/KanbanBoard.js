@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
-import { createTicket, updateTicket } from "@/lib/api";
+import { createTicket, deleteTicket, updateTicket } from "@/lib/api";
 import { ASSIGNEE_LABELS, TICKET_STATUSES, TICKET_STATUS_LABELS, } from "@/types";
 import { cn } from "@/lib/utils";
 export function KanbanBoard({ subproject, onTicketClick, onSubprojectRefetch, }) {
@@ -38,6 +38,17 @@ export function KanbanBoard({ subproject, onTicketClick, onSubprojectRefetch, })
         }
         return grouped;
     }, [subproject.tickets, optimistic]);
+    const handleDelete = useCallback(async (ticket) => {
+        if (!window.confirm(`Delete ticket "${ticket.title}"?`))
+            return;
+        try {
+            await deleteTicket(ticket.id);
+            onSubprojectRefetch();
+        }
+        catch {
+            onSubprojectRefetch();
+        }
+    }, [onSubprojectRefetch]);
     const handleDrop = useCallback(async (targetStatus) => {
         if (draggingId == null)
             return;
@@ -59,9 +70,9 @@ export function KanbanBoard({ subproject, onTicketClick, onSubprojectRefetch, })
             onSubprojectRefetch();
         }
     }, [draggingId, subproject.tickets, onSubprojectRefetch]);
-    return (_jsx("div", { className: "flex-1 overflow-hidden px-4 py-4", children: _jsx("div", { className: "flex h-full gap-3 overflow-x-auto", children: TICKET_STATUSES.map((status) => (_jsx(KanbanColumn, { status: status, tickets: ticketsByStatus[status], subprojectId: subproject.id, onTicketClick: onTicketClick, onCreated: onSubprojectRefetch, onDropTicket: () => handleDrop(status), onDragStart: (id) => setDraggingId(id), onDragEnd: () => setDraggingId(null), isDropTarget: draggingId != null }, status))) }) }));
+    return (_jsx("div", { className: "flex-1 overflow-hidden px-4 py-4", children: _jsx("div", { className: "flex h-full gap-3 overflow-x-auto", children: TICKET_STATUSES.map((status) => (_jsx(KanbanColumn, { status: status, tickets: ticketsByStatus[status], subprojectId: subproject.id, onTicketClick: onTicketClick, onTicketDelete: handleDelete, onCreated: onSubprojectRefetch, onDropTicket: () => handleDrop(status), onDragStart: (id) => setDraggingId(id), onDragEnd: () => setDraggingId(null), isDropTarget: draggingId != null }, status))) }) }));
 }
-function KanbanColumn({ status, tickets, subprojectId, onTicketClick, onCreated, onDropTicket, onDragStart, onDragEnd, isDropTarget, }) {
+function KanbanColumn({ status, tickets, subprojectId, onTicketClick, onTicketDelete, onCreated, onDropTicket, onDragStart, onDragEnd, isDropTarget, }) {
     const [hover, setHover] = useState(false);
     const [creating, setCreating] = useState(false);
     return (_jsxs("section", { "data-testid": `column-${status}`, "data-status": status, onDragOver: (e) => {
@@ -75,7 +86,7 @@ function KanbanColumn({ status, tickets, subprojectId, onTicketClick, onCreated,
         }, className: cn("kanban-column flex h-full w-80 shrink-0 flex-col rounded-lg border border-border bg-background/40 transition-colors", hover && "border-primary/60 bg-primary/5"), children: [_jsxs("header", { className: "flex items-center justify-between border-b border-border px-3 py-2", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("h3", { className: "text-xs font-semibold uppercase tracking-wider text-muted-foreground", children: TICKET_STATUS_LABELS[status] }), _jsx("span", { className: "rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground", children: tickets.length })] }), status === "TODO" && (_jsx(Button, { size: "icon", variant: "ghost", className: "h-6 w-6", onClick: () => setCreating((v) => !v), "aria-label": "New ticket", children: _jsx(Plus, { className: "h-3.5 w-3.5" }) }))] }), _jsxs("div", { className: "flex-1 space-y-2 overflow-y-auto p-2", children: [creating && (_jsx(NewTicketForm, { subprojectId: subprojectId, onClose: () => setCreating(false), onCreated: () => {
                             onCreated();
                             setCreating(false);
-                        } })), tickets.map((ticket) => (_jsx(TicketCard, { ticket: ticket, onClick: () => onTicketClick(ticket.id), onDragStart: (e) => {
+                        } })), tickets.map((ticket) => (_jsx(TicketCard, { ticket: ticket, onClick: () => onTicketClick(ticket.id), onDelete: () => onTicketDelete(ticket), onDragStart: (e) => {
                             onDragStart(ticket.id);
                             e.dataTransfer.effectAllowed = "move";
                             e.dataTransfer.setData("text/plain", String(ticket.id));

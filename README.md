@@ -20,7 +20,7 @@ A local-first task management system designed for **synchronous collaboration be
 
 - `api/` — FastAPI backend (SQLModel entities, routes, SSE broadcaster, pytest).
 - `web/` — Vite + React + Tailwind UI with `useSSE` reactive refetch.
-- `mcp/` — Python MCP stdio server exposing 5 agent tools.
+- `mcp/` — Python MCP stdio server exposing the agent tool catalogue.
 - `docker/` — two-service docker-compose stack.
 
 ## What is `AGENT_API_KEY`?
@@ -152,13 +152,16 @@ make e2e          # playwright realtime spec
 | GET    | `/api/v1/projects`                                  |                               |
 | POST   | `/api/v1/projects`                                  |                               |
 | GET    | `/api/v1/projects/{id}`                             |                               |
+| DELETE | `/api/v1/projects/{id}`                             | Cascades subprojects + knowledge. |
 | GET    | `/api/v1/projects/{id}/subprojects`                 |                               |
 | POST   | `/api/v1/projects/{id}/subprojects`                 |                               |
 | GET    | `/api/v1/subprojects/{id}`                          | Returns nested tickets.       |
 | PATCH  | `/api/v1/subprojects/{id}`                          |                               |
+| DELETE | `/api/v1/subprojects/{id}`                          | Cascades tickets + audit.     |
 | POST   | `/api/v1/subprojects/{id}/tickets`                  |                               |
 | GET    | `/api/v1/tickets/{id}`                              | Nested comments + audit logs. |
 | PATCH  | `/api/v1/tickets/{id}`                              | Writes audit entries.         |
+| DELETE | `/api/v1/tickets/{id}`                              | Cascades comments + audit.    |
 | POST   | `/api/v1/tickets/{id}/mr`                           | Attach MR, emits `MR_LINKED`. |
 | GET    | `/api/v1/tickets/{id}/comments`                     |                               |
 | POST   | `/api/v1/tickets/{id}/comments`                     |                               |
@@ -184,6 +187,35 @@ MCP tools (`list_knowledge_nodes`, `read_knowledge_node`, `create_knowledge_node
 without a reload. Design rationale and friction log: `learnings.md`.
 
 `GET /tickets/{id}` was added beyond the original spec so the client-side SSE-driven targeted refetch described in `docs/client_server.md` has a route to hit. Logged in `learnings.md`.
+
+### Resizable panels
+
+Three draggable gutters let the human reshape the layout:
+
+- **Sidebar ↔ workspace** — horizontal, persisted as `taskable.sidebar.width`.
+- **Knowledge tree ↔ editor** — horizontal, persisted as `taskable.knowledge.treeWidth`.
+- **Subproject header ↔ Kanban** — vertical, persisted as `taskable.kanban.headerHeight`.
+
+All three share one primitive, `ResizableSplit` (`web/src/components/ui/resizable-split.tsx`),
+which is dependency-free and stores sizes in `localStorage`. Min/max bounds
+keep panes from collapsing past usefulness.
+
+### Deletion
+
+Every layer (project, subproject, ticket, knowledge node) supports hard
+delete via the REST API, MCP tools (`delete_project`, `delete_subproject`,
+`delete_ticket`, `delete_knowledge_node`), and hover-revealed trash icons in
+the UI. Deletes cascade through SQLModel relationships and broadcast
+`PROJECT_DELETED | SUBPROJECT_DELETED | TICKET_DELETED | KNOWLEDGE_NODE_DELETED`
+over SSE so other panes reconcile immediately.
+
+### Live source-reference chips
+
+Knowledge-node `source_refs` entries of the form `node:<id>` render above the
+textarea as clickable pills showing the target node's live title and type
+badge. Clicking a pill selects that node; if the referenced node has been
+deleted, the pill turns red and is marked `GONE`. Non-`node:` entries (file
+paths, URLs) render as muted monospace chips.
 
 ## Auth model
 

@@ -40,6 +40,14 @@ key **must** match the one in the FastAPI process's `.env`.
 | `update_ticket_status`      | `PATCH /tickets/{id}` (`status`, `assignee=AGENT`) |
 | `link_mr`                   | `POST /tickets/{id}/mr`                            |
 | `leave_comment`             | `POST /tickets/{id}/comments` (`author=AGENT`)     |
+| `delete_project`            | `DELETE /projects/{id}`                            |
+| `delete_subproject`         | `DELETE /subprojects/{id}`                         |
+| `delete_ticket`             | `DELETE /tickets/{id}`                             |
+| `list_knowledge_nodes`      | `GET /agent/projects/{id}/knowledge`               |
+| `read_knowledge_node`       | `GET /agent/knowledge/{id}`                        |
+| `create_knowledge_node`     | `POST /projects/{id}/knowledge`                    |
+| `update_knowledge_node`     | `PATCH /knowledge/{id}`                            |
+| `delete_knowledge_node`     | `DELETE /knowledge/{id}`                           |
 
 ## Notes
 

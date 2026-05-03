@@ -53,6 +53,32 @@ def get_project(project_id: int, session: SessionDep) -> Project:
     return project
 
 
+@router.delete(
+    "/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_project(project_id: int, session: SessionDep) -> None:
+    """Delete a project and cascade its subprojects, tickets, and knowledge nodes.
+
+    The ORM relationships on ``Project`` have ``cascade="all, delete-orphan"``
+    so a single ``session.delete`` sweeps the tree.
+    """
+    project = session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    session.delete(project)
+    session.commit()
+
+    await get_broadcaster().publish(
+        Event(
+            action=SSEAction.PROJECT_DELETED,
+            entity="project",
+            entity_id=project_id,
+        )
+    )
+    return None
+
+
 @router.get(
     "/{project_id}/subprojects",
     response_model=list[SubprojectRead],

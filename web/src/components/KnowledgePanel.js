@@ -1,9 +1,10 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Plus, Save, Sparkles, Trash2, X, } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, Plus, Save, Sparkles, Trash2, X, } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResizableSplit } from "@/components/ui/resizable-split";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -66,21 +67,23 @@ export function KnowledgePanel({ projectId, lastEvent }) {
             return next;
         });
     }
-    return (_jsxs("div", { className: "flex flex-1 overflow-hidden", children: [_jsxs("aside", { className: "flex w-80 shrink-0 flex-col border-r border-border bg-card/20", children: [_jsxs("header", { className: "flex items-center justify-between border-b border-border px-4 py-3", children: [_jsxs("div", { children: [_jsx("h3", { className: "text-sm font-semibold tracking-tight", children: "Knowledge Tree" }), _jsx("p", { className: "text-[11px] text-muted-foreground", children: "Raw \u2192 Summary \u2192 PRD / TDD" })] }), _jsxs(Button, { size: "sm", variant: "outline", className: "h-7 px-2 text-xs", onClick: () => setCreatingUnder("root"), children: [_jsx(Plus, { className: "mr-1 h-3 w-3" }), "Root node"] })] }), _jsx(ScrollArea, { className: "flex-1", children: _jsxs("div", { className: "px-2 py-2", children: [nodes.loading && !nodes.data && (_jsxs("div", { className: "flex items-center gap-2 px-2 py-4 text-xs text-muted-foreground", children: [_jsx(Loader2, { className: "h-3 w-3 animate-spin" }), "Loading\u2026"] })), nodes.error && (_jsx("p", { className: "px-2 py-2 text-xs text-destructive-foreground/80", children: nodes.error.message })), nodes.data && nodes.data.length === 0 && (_jsxs("p", { className: "px-2 py-4 text-xs text-muted-foreground", children: ["No knowledge nodes yet. Use the agent's", " ", _jsx("span", { className: "font-mono", children: "create_knowledge_node" }), " tool or click ", _jsx("em", { children: "Root node" }), " to start."] })), creatingUnder === "root" && (_jsx("div", { className: "mb-2", children: _jsx(NewNodeForm, { projectId: projectId, parentId: null, onCancel: () => setCreatingUnder(null), onCreated: (node) => {
-                                            setCreatingUnder(null);
-                                            setSelectedId(node.id);
-                                            nodes.refetch();
-                                        } }) })), _jsx(TreeBranch, { parentId: null, depth: 0, childrenByParent: childrenByParent, selectedId: selectedId, expanded: expanded, creatingUnder: creatingUnder, onSelect: setSelectedId, onToggle: toggleExpanded, onStartCreate: (id) => {
-                                        setCreatingUnder(id);
-                                        setExpanded((prev) => new Set(prev).add(id));
-                                    }, onCancelCreate: () => setCreatingUnder(null), onCreated: (node) => {
-                                        setCreatingUnder(null);
-                                        setSelectedId(node.id);
-                                        nodes.refetch();
-                                    }, projectId: projectId })] }) })] }), _jsx("section", { className: "flex flex-1 flex-col overflow-hidden", children: selectedNode ? (_jsx(NodeEditor, { node: selectedNode, onSaved: () => nodes.refetch(), onDeleted: () => {
-                        setSelectedId(null);
-                        nodes.refetch();
-                    } }, selectedNode.id)) : (_jsx("div", { className: "flex flex-1 items-center justify-center text-sm text-muted-foreground", children: "Select a node on the left to review or edit." })) })] }));
+    const tree = (_jsxs("aside", { className: "flex h-full w-full flex-col border-r border-border bg-card/20", children: [_jsxs("header", { className: "flex items-center justify-between border-b border-border px-4 py-3", children: [_jsxs("div", { children: [_jsx("h3", { className: "text-sm font-semibold tracking-tight", children: "Knowledge Tree" }), _jsx("p", { className: "text-[11px] text-muted-foreground", children: "Raw \u2192 Summary \u2192 PRD / TDD" })] }), _jsxs(Button, { size: "sm", variant: "outline", className: "h-7 px-2 text-xs", onClick: () => setCreatingUnder("root"), children: [_jsx(Plus, { className: "mr-1 h-3 w-3" }), "Root node"] })] }), _jsx(ScrollArea, { className: "flex-1", children: _jsxs("div", { className: "px-2 py-2", children: [nodes.loading && !nodes.data && (_jsxs("div", { className: "flex items-center gap-2 px-2 py-4 text-xs text-muted-foreground", children: [_jsx(Loader2, { className: "h-3 w-3 animate-spin" }), "Loading\u2026"] })), nodes.error && (_jsx("p", { className: "px-2 py-2 text-xs text-destructive-foreground/80", children: nodes.error.message })), nodes.data && nodes.data.length === 0 && (_jsxs("p", { className: "px-2 py-4 text-xs text-muted-foreground", children: ["No knowledge nodes yet. Use the agent's", " ", _jsx("span", { className: "font-mono", children: "create_knowledge_node" }), " tool or click ", _jsx("em", { children: "Root node" }), " to start."] })), creatingUnder === "root" && (_jsx("div", { className: "mb-2", children: _jsx(NewNodeForm, { projectId: projectId, parentId: null, onCancel: () => setCreatingUnder(null), onCreated: (node) => {
+                                    setCreatingUnder(null);
+                                    setSelectedId(node.id);
+                                    nodes.refetch();
+                                } }) })), _jsx(TreeBranch, { parentId: null, depth: 0, childrenByParent: childrenByParent, selectedId: selectedId, expanded: expanded, creatingUnder: creatingUnder, onSelect: setSelectedId, onToggle: toggleExpanded, onStartCreate: (id) => {
+                                setCreatingUnder(id);
+                                setExpanded((prev) => new Set(prev).add(id));
+                            }, onCancelCreate: () => setCreatingUnder(null), onCreated: (node) => {
+                                setCreatingUnder(null);
+                                setSelectedId(node.id);
+                                nodes.refetch();
+                            }, projectId: projectId })] }) })] }));
+    const editor = (_jsx("section", { className: "flex h-full w-full flex-1 flex-col overflow-hidden", children: selectedNode ? (_jsx(NodeEditor, { node: selectedNode, allNodes: nodes.data ?? [], onSaved: () => nodes.refetch(), onSelectNode: setSelectedId, onDeleted: () => {
+                setSelectedId(null);
+                nodes.refetch();
+            } }, selectedNode.id)) : (_jsx("div", { className: "flex flex-1 items-center justify-center text-sm text-muted-foreground", children: "Select a node on the left to review or edit." })) }));
+    return (_jsx(ResizableSplit, { direction: "horizontal", defaultSize: 320, minSize: 240, maxSize: 640, storageKey: "taskable.knowledge.treeWidth", first: tree, second: editor }));
 }
 function TreeBranch(props) {
     const siblings = props.childrenByParent.get(props.parentId) ?? [];
@@ -118,13 +121,40 @@ function NewNodeForm({ projectId, parentId, onCancel, onCreated, }) {
     }
     return (_jsxs("form", { onSubmit: submit, className: "my-1 space-y-2 rounded-md border border-border bg-popover p-2 text-xs", children: [_jsx(Input, { autoFocus: true, value: title, onChange: (e) => setTitle(e.target.value), placeholder: "Node title", className: "h-7 text-xs" }), _jsxs(Select, { value: type, onValueChange: (v) => setType(v), children: [_jsx(SelectTrigger, { className: "h-7 text-xs", children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: KNOWLEDGE_NODE_TYPES.map((t) => (_jsx(SelectItem, { value: t, children: KNOWLEDGE_NODE_TYPE_LABELS[t] }, t))) })] }), _jsxs("div", { className: "flex justify-end gap-1", children: [_jsx(Button, { type: "button", variant: "ghost", size: "sm", onClick: onCancel, children: "Cancel" }), _jsx(Button, { type: "submit", size: "sm", disabled: saving, children: saving ? "…" : "Create" })] })] }));
 }
-function NodeEditor({ node, onSaved, onDeleted }) {
+function NodeEditor({ node, allNodes, onSaved, onDeleted, onSelectNode, }) {
     const [title, setTitle] = useState(node.title);
     const [type, setType] = useState(node.node_type);
     const [content, setContent] = useState(node.content);
     const [sourceRefsText, setSourceRefsText] = useState(node.source_refs.join("\n"));
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    // Build an id → KnowledgeNode lookup so ``node:N`` source refs can render
+    // a live, clickable chip showing the current title of the referenced
+    // node. Re-derives on every render so SSE-driven title edits elsewhere
+    // propagate immediately.
+    const nodeById = useMemo(() => {
+        const map = new Map();
+        for (const n of allNodes)
+            map.set(n.id, n);
+        return map;
+    }, [allNodes]);
+    const resolvedRefs = useMemo(() => sourceRefsText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+        const match = line.match(/^node:(\d+)$/i);
+        if (!match)
+            return { kind: "text", value: line };
+        const id = Number(match[1]);
+        const target = nodeById.get(id);
+        return {
+            kind: "node",
+            value: line,
+            id,
+            target: target ?? null,
+        };
+    }), [sourceRefsText, nodeById]);
     const dirty = title !== node.title ||
         type !== node.node_type ||
         content !== node.content ||
@@ -159,7 +189,11 @@ function NodeEditor({ node, onSaved, onDeleted }) {
             setDeleting(false);
         }
     }
-    return (_jsxs("div", { className: "flex flex-1 flex-col overflow-hidden", children: [_jsxs("header", { className: "flex items-start justify-between gap-3 border-b border-border bg-card/30 px-6 py-3", children: [_jsxs("div", { className: "min-w-0 flex-1 space-y-2", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx(TypeBadge, { type: type }), _jsx(Input, { value: title, onChange: (e) => setTitle(e.target.value), className: "h-8 flex-1 text-sm font-semibold" }), _jsxs(Select, { value: type, onValueChange: (v) => setType(v), children: [_jsx(SelectTrigger, { className: "h-8 w-28 text-xs", children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: KNOWLEDGE_NODE_TYPES.map((t) => (_jsx(SelectItem, { value: t, children: KNOWLEDGE_NODE_TYPE_LABELS[t] }, t))) })] })] }), _jsxs("div", { className: "flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "uppercase tracking-wide", children: ["#", node.id] }), _jsx("span", { children: "\u00B7" }), _jsxs(Badge, { variant: node.created_by === "AGENT" ? "agent" : "human", className: "py-0 text-[10px]", children: [node.created_by === "AGENT" ? (_jsx(Sparkles, { className: "mr-1 h-2.5 w-2.5" })) : null, node.created_by] }), _jsx("span", { children: "\u00B7" }), _jsxs("span", { children: ["updated ", formatWhen(node.updated_at)] })] })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsxs(Button, { variant: "ghost", size: "sm", onClick: remove, disabled: deleting, className: "text-destructive-foreground/80", children: [_jsx(Trash2, { className: "mr-1 h-3.5 w-3.5" }), "Delete"] }), _jsxs(Button, { size: "sm", onClick: save, disabled: !dirty || saving, children: [_jsx(Save, { className: "mr-1 h-3.5 w-3.5" }), saving ? "Saving…" : "Save"] })] })] }), _jsxs("div", { className: "flex flex-1 flex-col gap-3 overflow-auto px-6 py-4", children: [_jsxs("section", { children: [_jsx("label", { className: "mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Source references" }), _jsx(Textarea, { value: sourceRefsText, onChange: (e) => setSourceRefsText(e.target.value), rows: 3, placeholder: "/absolute/path/file.py\nhttps://example.com/doc\nnode:42", className: "font-mono text-xs" }), _jsx("p", { className: "mt-1 text-[10px] text-muted-foreground", children: "One pointer per line. These are the breadcrumbs a reviewer follows back to the raw material." })] }), _jsxs("section", { className: "flex flex-1 flex-col", children: [_jsx("label", { className: "mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Content" }), _jsx(Textarea, { value: content, onChange: (e) => setContent(e.target.value), className: "min-h-[300px] flex-1 font-mono text-xs", placeholder: CONTENT_PLACEHOLDERS[type] })] })] }), dirty && (_jsxs("footer", { className: "flex items-center justify-end gap-2 border-t border-border bg-muted/20 px-6 py-2 text-xs", children: [_jsx("span", { className: "text-muted-foreground", children: "Unsaved changes" }), _jsxs(Button, { variant: "ghost", size: "sm", onClick: () => {
+    return (_jsxs("div", { className: "flex flex-1 flex-col overflow-hidden", children: [_jsxs("header", { className: "flex items-start justify-between gap-3 border-b border-border bg-card/30 px-6 py-3", children: [_jsxs("div", { className: "min-w-0 flex-1 space-y-2", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx(TypeBadge, { type: type }), _jsx(Input, { value: title, onChange: (e) => setTitle(e.target.value), className: "h-8 flex-1 text-sm font-semibold" }), _jsxs(Select, { value: type, onValueChange: (v) => setType(v), children: [_jsx(SelectTrigger, { className: "h-8 w-28 text-xs", children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: KNOWLEDGE_NODE_TYPES.map((t) => (_jsx(SelectItem, { value: t, children: KNOWLEDGE_NODE_TYPE_LABELS[t] }, t))) })] })] }), _jsxs("div", { className: "flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "uppercase tracking-wide", children: ["#", node.id] }), _jsx("span", { children: "\u00B7" }), _jsxs(Badge, { variant: node.created_by === "AGENT" ? "agent" : "human", className: "py-0 text-[10px]", children: [node.created_by === "AGENT" ? (_jsx(Sparkles, { className: "mr-1 h-2.5 w-2.5" })) : null, node.created_by] }), _jsx("span", { children: "\u00B7" }), _jsxs("span", { children: ["updated ", formatWhen(node.updated_at)] })] })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsxs(Button, { variant: "ghost", size: "sm", onClick: remove, disabled: deleting, className: "text-destructive-foreground/80", children: [_jsx(Trash2, { className: "mr-1 h-3.5 w-3.5" }), "Delete"] }), _jsxs(Button, { size: "sm", onClick: save, disabled: !dirty || saving, children: [_jsx(Save, { className: "mr-1 h-3.5 w-3.5" }), saving ? "Saving…" : "Save"] })] })] }), _jsxs("div", { className: "flex flex-1 flex-col gap-3 overflow-auto px-6 py-4", children: [_jsxs("section", { children: [_jsx("label", { className: "mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Source references" }), resolvedRefs.length > 0 && (_jsx("div", { className: "mb-2 flex flex-wrap gap-1", children: resolvedRefs.map((ref, idx) => ref.kind === "node" ? (_jsxs("button", { type: "button", onClick: () => ref.target && onSelectNode(ref.target.id), disabled: !ref.target, title: ref.target
+                                        ? `Open node #${ref.id}: ${ref.target.title}`
+                                        : `Node #${ref.id} no longer exists in this project`, className: cn("group inline-flex max-w-[260px] items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] transition-colors", ref.target
+                                        ? "cursor-pointer border-border bg-card hover:border-primary/50 hover:bg-accent/60"
+                                        : "cursor-not-allowed border-destructive/30 bg-destructive/10 text-destructive-foreground/80"), children: [ref.target ? (_jsx(TypeBadge, { type: ref.target.node_type })) : (_jsx("span", { className: "rounded bg-destructive/20 px-1 text-[9px] font-semibold uppercase", children: "GONE" })), _jsxs("span", { className: "truncate", children: ["#", ref.id, " ", ref.target?.title ?? "Missing node"] }), ref.target && (_jsx(ExternalLink, { className: "h-2.5 w-2.5 shrink-0 text-muted-foreground group-hover:text-foreground" }))] }, `${ref.value}-${idx}`)) : (_jsx("span", { className: "inline-flex max-w-[260px] items-center gap-1 rounded-md border border-border/40 bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground", title: ref.value, children: _jsx("span", { className: "truncate", children: ref.value }) }, `${ref.value}-${idx}`))) })), _jsx(Textarea, { value: sourceRefsText, onChange: (e) => setSourceRefsText(e.target.value), rows: 3, placeholder: "/absolute/path/file.py\nhttps://example.com/doc\nnode:42", className: "font-mono text-xs" }), _jsxs("p", { className: "mt-1 text-[10px] text-muted-foreground", children: ["One pointer per line. These are the breadcrumbs a reviewer follows back to the raw material. ", _jsx("span", { className: "font-mono", children: "node:N" }), " ", "entries resolve to clickable chips above."] })] }), _jsxs("section", { className: "flex flex-1 flex-col", children: [_jsx("label", { className: "mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Content" }), _jsx(Textarea, { value: content, onChange: (e) => setContent(e.target.value), className: "min-h-[300px] flex-1 font-mono text-xs", placeholder: CONTENT_PLACEHOLDERS[type] })] })] }), dirty && (_jsxs("footer", { className: "flex items-center justify-end gap-2 border-t border-border bg-muted/20 px-6 py-2 text-xs", children: [_jsx("span", { className: "text-muted-foreground", children: "Unsaved changes" }), _jsxs(Button, { variant: "ghost", size: "sm", onClick: () => {
                             setTitle(node.title);
                             setType(node.node_type);
                             setContent(node.content);

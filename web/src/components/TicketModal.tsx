@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { getTicket, updateTicket } from "@/lib/api";
+import { deleteTicket, getTicket, updateTicket } from "@/lib/api";
 import { useAsync } from "@/hooks/useAsync";
 import type { SSEPayload, TicketDetail } from "@/types";
 import { CommentThread } from "@/components/CommentThread";
@@ -61,7 +61,11 @@ export function TicketModal({ ticketId, onClose, lastEvent }: Props) {
           </div>
         )}
         {ticket.data && (
-          <Body ticket={ticket.data} onRefresh={() => ticket.refetch()} />
+          <Body
+            ticket={ticket.data}
+            onRefresh={() => ticket.refetch()}
+            onClose={onClose}
+          />
         )}
       </DialogContent>
     </Dialog>
@@ -71,9 +75,11 @@ export function TicketModal({ ticketId, onClose, lastEvent }: Props) {
 function Body({
   ticket,
   onRefresh,
+  onClose,
 }: {
   ticket: TicketDetail;
   onRefresh: () => void;
+  onClose: () => void;
 }) {
   const [title, setTitle] = useState(ticket.title);
   const [description, setDescription] = useState(ticket.description ?? "");
@@ -97,6 +103,16 @@ function Body({
       onRefresh();
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete ticket "${ticket.title}"?`)) return;
+    try {
+      await deleteTicket(ticket.id);
+      onClose();
+    } catch {
+      onRefresh();
     }
   }
 
@@ -127,7 +143,16 @@ function Body({
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
             />
-            <div className="mt-2 flex justify-end">
+            <div className="mt-2 flex justify-between">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive-foreground/80 hover:bg-destructive/20"
+                onClick={handleDelete}
+              >
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Delete ticket
+              </Button>
               <Button
                 size="sm"
                 disabled={!dirty || saving}

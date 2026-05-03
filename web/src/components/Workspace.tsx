@@ -7,6 +7,7 @@ import type { SSEPayload, SubprojectDetail } from "@/types";
 import { SubprojectHeader } from "@/components/SubprojectHeader";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { KnowledgePanel } from "@/components/KnowledgePanel";
+import { ResizableSplit } from "@/components/ui/resizable-split";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -24,7 +25,10 @@ export function Workspace({ lastEvent }: Props) {
     [activeSubprojectId],
   );
 
-  // SSE-driven targeted refetch.
+  // SSE-driven targeted refetch. TICKET_DELETED/SUBPROJECT_DELETED fall out
+  // of the same entity-scoped check so we don't need a special case — if
+  // the active subproject vanishes, ``getSubproject`` will 404 and the
+  // Sidebar SSE handler will clear the selection.
   useEffect(() => {
     if (!lastEvent || activeSubprojectId == null) return;
     if (
@@ -83,18 +87,28 @@ export function Workspace({ lastEvent }: Props) {
           {subproject.error.message}
         </div>
       ) : subproject.data ? (
-        <>
-          <SubprojectHeader
-            subproject={subproject.data}
-            onSaved={() => subproject.refetch()}
-          />
-          <KanbanBoard
-            subproject={subproject.data}
-            onTicketClick={(id) => openTicket(id)}
-            onSubprojectRefetch={() => subproject.refetch()}
-            lastEvent={lastEvent}
-          />
-        </>
+        <ResizableSplit
+          direction="vertical"
+          defaultSize={160}
+          minSize={72}
+          maxSize={480}
+          storageKey="taskable.kanban.headerHeight"
+          first={
+            <SubprojectHeader
+              subproject={subproject.data}
+              onSaved={() => subproject.refetch()}
+              onDeleted={() => subproject.refetch()}
+            />
+          }
+          second={
+            <KanbanBoard
+              subproject={subproject.data}
+              onTicketClick={(id) => openTicket(id)}
+              onSubprojectRefetch={() => subproject.refetch()}
+              lastEvent={lastEvent}
+            />
+          }
+        />
       ) : null}
     </main>
   );

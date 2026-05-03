@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createTicket, updateTicket } from "@/lib/api";
+import { createTicket, deleteTicket, updateTicket } from "@/lib/api";
 import type {
   SSEPayload,
   SubprojectDetail,
@@ -70,6 +70,19 @@ export function KanbanBoard({
     return grouped;
   }, [subproject.tickets, optimistic]);
 
+  const handleDelete = useCallback(
+    async (ticket: Ticket) => {
+      if (!window.confirm(`Delete ticket "${ticket.title}"?`)) return;
+      try {
+        await deleteTicket(ticket.id);
+        onSubprojectRefetch();
+      } catch {
+        onSubprojectRefetch();
+      }
+    },
+    [onSubprojectRefetch],
+  );
+
   const handleDrop = useCallback(
     async (targetStatus: TicketStatus) => {
       if (draggingId == null) return;
@@ -102,6 +115,7 @@ export function KanbanBoard({
             tickets={ticketsByStatus[status]}
             subprojectId={subproject.id}
             onTicketClick={onTicketClick}
+            onTicketDelete={handleDelete}
             onCreated={onSubprojectRefetch}
             onDropTicket={() => handleDrop(status)}
             onDragStart={(id) => setDraggingId(id)}
@@ -119,6 +133,7 @@ interface ColumnProps {
   tickets: Ticket[];
   subprojectId: number;
   onTicketClick: (ticketId: number) => void;
+  onTicketDelete: (ticket: Ticket) => void;
   onCreated: () => void;
   onDropTicket: () => void;
   onDragStart: (ticketId: number) => void;
@@ -131,6 +146,7 @@ function KanbanColumn({
   tickets,
   subprojectId,
   onTicketClick,
+  onTicketDelete,
   onCreated,
   onDropTicket,
   onDragStart,
@@ -195,6 +211,7 @@ function KanbanColumn({
             key={ticket.id}
             ticket={ticket}
             onClick={() => onTicketClick(ticket.id)}
+            onDelete={() => onTicketDelete(ticket)}
             onDragStart={(e) => {
               onDragStart(ticket.id);
               e.dataTransfer.effectAllowed = "move";

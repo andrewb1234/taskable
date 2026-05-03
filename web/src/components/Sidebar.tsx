@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
-import { FolderPlus, Plus, Folder, FileText, Loader2 } from "lucide-react";
+import {
+  FolderPlus,
+  Plus,
+  Folder,
+  FileText,
+  Loader2,
+  Trash2,
+} from "lucide-react";
 import {
   createProject,
   createSubproject,
+  deleteProject,
+  deleteSubproject,
   listProjects,
   listSubprojects,
 } from "@/lib/api";
@@ -31,9 +40,37 @@ export function Sidebar({ lastEvent }: SidebarProps) {
 
   useEffect(() => {
     if (!lastEvent) return;
-    if (lastEvent.action === "PROJECT_CREATED") projects.refetch();
+    if (
+      lastEvent.action === "PROJECT_CREATED" ||
+      lastEvent.action === "PROJECT_DELETED"
+    ) {
+      projects.refetch();
+    }
+    // If the active project was deleted elsewhere, clear selection.
+    if (
+      lastEvent.action === "PROJECT_DELETED" &&
+      lastEvent.entity_id === activeProjectId
+    ) {
+      setActiveProjectId(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
+
+  async function handleDeleteProject(project: Project) {
+    if (
+      !window.confirm(
+        `Delete "${project.name}" and every subproject, ticket, and knowledge node underneath?`,
+      )
+    ) {
+      return;
+    }
+    if (activeProjectId === project.id) setActiveProjectId(null);
+    try {
+      await deleteProject(project.id);
+    } catch {
+      projects.refetch();
+    }
+  }
 
   // Default-select the first project once data arrives.
   useEffect(() => {
@@ -47,7 +84,7 @@ export function Sidebar({ lastEvent }: SidebarProps) {
   }, [activeProjectId, projects.data, setActiveProjectId]);
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-card/30">
+    <aside className="flex h-full w-full flex-col border-r border-border bg-card/30">
       <header className="border-b border-border px-4 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-sm font-semibold tracking-tight">Taskable</h1>
@@ -88,18 +125,33 @@ export function Sidebar({ lastEvent }: SidebarProps) {
             <ul className="space-y-1">
               {projects.data?.map((project) => (
                 <li key={project.id}>
-                  <button
+                  <div
                     className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                      "group flex items-center gap-1 rounded-md pr-1 transition-colors",
                       activeProjectId === project.id
                         ? "bg-accent text-accent-foreground"
                         : "hover:bg-accent/50",
                     )}
-                    onClick={() => setActiveProjectId(project.id)}
                   >
-                    <Folder className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{project.name}</span>
-                  </button>
+                    <button
+                      className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
+                      onClick={() => setActiveProjectId(project.id)}
+                    >
+                      <Folder className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{project.name}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="h-6 w-6 shrink-0 rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground group-hover:opacity-100"
+                      aria-label={`Delete ${project.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteProject(project);
+                      }}
+                    >
+                      <Trash2 className="mx-auto h-3 w-3" />
+                    </button>
+                  </div>
                   {activeProjectId === project.id && (
                     <SubprojectList
                       projectId={project.id}
@@ -138,9 +190,16 @@ function SubprojectList({
     if (!lastEvent) return;
     if (
       lastEvent.action === "SUBPROJECT_CREATED" ||
-      lastEvent.action === "SUBPROJECT_UPDATED"
+      lastEvent.action === "SUBPROJECT_UPDATED" ||
+      lastEvent.action === "SUBPROJECT_DELETED"
     ) {
       subprojects.refetch();
+    }
+    if (
+      lastEvent.action === "SUBPROJECT_DELETED" &&
+      lastEvent.entity_id === activeSubprojectId
+    ) {
+      onSelect(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
@@ -154,6 +213,22 @@ function SubprojectList({
       onSelect(subprojects.data[0].id);
     }
   }, [activeSubprojectId, subprojects.data, onSelect]);
+
+  async function handleDelete(sub: Subproject) {
+    if (
+      !window.confirm(
+        `Delete subproject "${sub.name}" and all of its tickets?`,
+      )
+    ) {
+      return;
+    }
+    if (activeSubprojectId === sub.id) onSelect(null);
+    try {
+      await deleteSubproject(sub.id);
+    } catch {
+      subprojects.refetch();
+    }
+  }
 
   return (
     <div className="ml-6 mt-1 border-l border-border pl-3">
@@ -169,21 +244,36 @@ function SubprojectList({
       <ul className="space-y-0.5">
         {subprojects.data?.map((sub) => (
           <li key={sub.id}>
-            <button
+            <div
               className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors",
+                "group flex items-center gap-1 rounded-md pr-1 transition-colors",
                 activeSubprojectId === sub.id
                   ? "bg-primary/10 text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent/40",
               )}
-              onClick={() => onSelect(sub.id)}
             >
-              <FileText className="h-3 w-3 shrink-0" />
-              <span className="truncate">{sub.name}</span>
-              <span className="ml-auto rounded bg-muted px-1 text-[9px] uppercase text-muted-foreground">
-                {sub.status.slice(0, 4)}
-              </span>
-            </button>
+              <button
+                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-xs"
+                onClick={() => onSelect(sub.id)}
+              >
+                <FileText className="h-3 w-3 shrink-0" />
+                <span className="truncate">{sub.name}</span>
+                <span className="ml-auto rounded bg-muted px-1 text-[9px] uppercase text-muted-foreground">
+                  {sub.status.slice(0, 4)}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="h-5 w-5 shrink-0 rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground group-hover:opacity-100"
+                aria-label={`Delete ${sub.name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(sub);
+                }}
+              >
+                <Trash2 className="mx-auto h-3 w-3" />
+              </button>
+            </div>
           </li>
         ))}
         {subprojects.data?.length === 0 && (

@@ -17,9 +17,11 @@ A local-first, self-hosted task management system designed for synchronous colla
 * **Ticket:** Actionable unit containing `status`, `description`, `assignee` (Human|Agent), and `mr_link`.
 * **Comment:** Threaded discussion attached to tickets.
 * **AuditLog:** Immutable ledger of state changes.
+* **KnowledgeNode:** Project-scoped context tree for RAW research, SUMMARY compression, and drafted PRD/TDD artifacts upstream of tickets.
 
 ## Primary Capabilities
 1. **Dual Read/Write:** Both Human UI and Agent MCP can fully execute CRUD operations on all entities.
 2. **Contextual Awareness:** Agents can query subproject briefs to understand overarching goals before executing tasks.
 3. **Automated Linkage:** Agents can autonomously attach external Git Merge Request URLs to tickets.
 4. **Real-time Reflection:** Backend state mutations immediately broadcast to the Human UI via SSE.
+5. **Breadcrumbed Planning:** Humans and agents maintain source-referenced knowledge nodes so PRDs, TDDs, and tickets can be traced back to raw context.

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Save, X } from "lucide-react";
+import { Pencil, Save, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { updateSubproject } from "@/lib/api";
+import { useWorkspace } from "@/context/WorkspaceContext";
+import { deleteSubproject, updateSubproject } from "@/lib/api";
 import type { Subproject, SubprojectStatus } from "@/types";
 
 const STATUSES: SubprojectStatus[] = ["PLANNING", "ACTIVE", "COMPLETED"];
@@ -19,9 +20,11 @@ const STATUSES: SubprojectStatus[] = ["PLANNING", "ACTIVE", "COMPLETED"];
 interface Props {
   subproject: Subproject;
   onSaved: () => void;
+  onDeleted?: () => void;
 }
 
-export function SubprojectHeader({ subproject, onSaved }: Props) {
+export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
+  const { setActiveSubprojectId } = useWorkspace();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(subproject.name);
   const [brief, setBrief] = useState(subproject.context_brief);
@@ -49,8 +52,25 @@ export function SubprojectHeader({ subproject, onSaved }: Props) {
     }
   }
 
+  async function remove() {
+    if (
+      !window.confirm(
+        `Delete subproject "${subproject.name}" and all its tickets?`,
+      )
+    ) {
+      return;
+    }
+    setActiveSubprojectId(null);
+    try {
+      await deleteSubproject(subproject.id);
+      onDeleted?.();
+    } catch {
+      onSaved();
+    }
+  }
+
   return (
-    <div className="border-b border-border bg-card/40 px-6 py-4">
+    <div className="h-full overflow-auto border-b border-border bg-card/40 px-6 py-4">
       {!editing ? (
         <div className="flex items-start justify-between gap-6">
           <div className="min-w-0 flex-1">
@@ -67,17 +87,28 @@ export function SubprojectHeader({ subproject, onSaved }: Props) {
                 "No context brief. The agent will have nothing to work from until this is filled in."}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              reset();
-              setEditing(true);
-            }}
-            aria-label="Edit subproject"
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                reset();
+                setEditing(true);
+              }}
+              aria-label="Edit subproject"
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={remove}
+              aria-label="Delete subproject"
+              className="text-destructive-foreground/80 hover:bg-destructive/20"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">

@@ -1,4 +1,4 @@
-import { GitPullRequest, Bot, User, HelpCircle } from "lucide-react";
+import { GitPullRequest, Bot, User, HelpCircle, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Ticket, TicketAssignee } from "@/types";
@@ -20,8 +20,9 @@ interface Props {
   ticket: Ticket;
   onClick: () => void;
   isDragging?: boolean;
-  onDragStart?: (e: React.DragEvent<HTMLButtonElement>) => void;
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd?: () => void;
+  onDelete?: () => void;
 }
 
 export function TicketCard({
@@ -30,9 +31,12 @@ export function TicketCard({
   isDragging,
   onDragStart,
   onDragEnd,
+  onDelete,
 }: Props) {
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       draggable
       data-testid={`ticket-${ticket.id}`}
       data-ticket-id={ticket.id}
@@ -40,12 +44,31 @@ export function TicketCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
       className={cn(
-        "group w-full rounded-md border border-border bg-card p-3 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative w-full cursor-pointer rounded-md border border-border bg-card p-3 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isDragging && "opacity-60",
       )}
     >
-      <div className="mb-1 flex items-start justify-between gap-2">
+      {onDelete && (
+        <button
+          type="button"
+          aria-label={`Delete ticket ${ticket.title}`}
+          className="absolute right-1 top-1 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground group-hover:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
+      <div className="mb-1 flex items-start justify-between gap-2 pr-6">
         <p className="line-clamp-2 text-sm font-medium leading-snug">
           {ticket.title}
         </p>
@@ -79,6 +102,6 @@ export function TicketCard({
           </a>
         )}
       </div>
-    </button>
+    </div>
   );
 }

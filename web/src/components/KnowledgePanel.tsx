@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   Loader2,
   Plus,
   Save,
@@ -12,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ResizableSplit } from "@/components/ui/resizable-split";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -112,10 +114,9 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
     });
   }
 
-  return (
-    <div className="flex flex-1 overflow-hidden">
-      <aside className="flex w-80 shrink-0 flex-col border-r border-border bg-card/20">
-        <header className="flex items-center justify-between border-b border-border px-4 py-3">
+  const tree = (
+    <aside className="flex h-full w-full flex-col border-r border-border bg-card/20">
+      <header className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
             <h3 className="text-sm font-semibold tracking-tight">
               Knowledge Tree
@@ -192,24 +193,40 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
           </div>
         </ScrollArea>
       </aside>
-      <section className="flex flex-1 flex-col overflow-hidden">
-        {selectedNode ? (
-          <NodeEditor
-            key={selectedNode.id}
-            node={selectedNode}
-            onSaved={() => nodes.refetch()}
-            onDeleted={() => {
-              setSelectedId(null);
-              nodes.refetch();
-            }}
-          />
-        ) : (
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-            Select a node on the left to review or edit.
-          </div>
-        )}
-      </section>
-    </div>
+  );
+
+  const editor = (
+    <section className="flex h-full w-full flex-1 flex-col overflow-hidden">
+      {selectedNode ? (
+        <NodeEditor
+          key={selectedNode.id}
+          node={selectedNode}
+          allNodes={nodes.data ?? []}
+          onSaved={() => nodes.refetch()}
+          onSelectNode={setSelectedId}
+          onDeleted={() => {
+            setSelectedId(null);
+            nodes.refetch();
+          }}
+        />
+      ) : (
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          Select a node on the left to review or edit.
+        </div>
+      )}
+    </section>
+  );
+
+  return (
+    <ResizableSplit
+      direction="horizontal"
+      defaultSize={320}
+      minSize={240}
+      maxSize={640}
+      storageKey="taskable.knowledge.treeWidth"
+      first={tree}
+      second={editor}
+    />
   );
 }
 
@@ -382,11 +399,19 @@ function NewNodeForm({
 
 interface NodeEditorProps {
   node: KnowledgeNode;
+  allNodes: KnowledgeNode[];
   onSaved: () => void;
   onDeleted: () => void;
+  onSelectNode: (id: number) => void;
 }
 
-function NodeEditor({ node, onSaved, onDeleted }: NodeEditorProps) {
+function NodeEditor({
+  node,
+  allNodes,
+  onSaved,
+  onDeleted,
+  onSelectNode,
+}: NodeEditorProps) {
   const [title, setTitle] = useState(node.title);
   const [type, setType] = useState<KnowledgeNodeType>(node.node_type);
   const [content, setContent] = useState(node.content);
@@ -395,6 +420,37 @@ function NodeEditor({ node, onSaved, onDeleted }: NodeEditorProps) {
   );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Build an id → KnowledgeNode lookup so ``node:N`` source refs can render
+  // a live, clickable chip showing the current title of the referenced
+  // node. Re-derives on every render so SSE-driven title edits elsewhere
+  // propagate immediately.
+  const nodeById = useMemo(() => {
+    const map = new Map<number, KnowledgeNode>();
+    for (const n of allNodes) map.set(n.id, n);
+    return map;
+  }, [allNodes]);
+
+  const resolvedRefs = useMemo(
+    () =>
+      sourceRefsText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const match = line.match(/^node:(\d+)$/i);
+          if (!match) return { kind: "text" as const, value: line };
+          const id = Number(match[1]);
+          const target = nodeById.get(id);
+          return {
+            kind: "node" as const,
+            value: line,
+            id,
+            target: target ?? null,
+          };
+        }),
+    [sourceRefsText, nodeById],
+  );
 
   const dirty =
     title !== node.title ||
@@ -496,6 +552,54 @@ function NodeEditor({ node, onSaved, onDeleted }: NodeEditorProps) {
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Source references
           </label>
+          {resolvedRefs.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {resolvedRefs.map((ref, idx) =>
+                ref.kind === "node" ? (
+                  <button
+                    key={`${ref.value}-${idx}`}
+                    type="button"
+                    onClick={() => ref.target && onSelectNode(ref.target.id)}
+                    disabled={!ref.target}
+                    title={
+                      ref.target
+                        ? `Open node #${ref.id}: ${ref.target.title}`
+                        : `Node #${ref.id} no longer exists in this project`
+                    }
+                    className={cn(
+                      "group inline-flex max-w-[260px] items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] transition-colors",
+                      ref.target
+                        ? "cursor-pointer border-border bg-card hover:border-primary/50 hover:bg-accent/60"
+                        : "cursor-not-allowed border-destructive/30 bg-destructive/10 text-destructive-foreground/80",
+                    )}
+                  >
+                    {ref.target ? (
+                      <TypeBadge type={ref.target.node_type} />
+                    ) : (
+                      <span className="rounded bg-destructive/20 px-1 text-[9px] font-semibold uppercase">
+                        GONE
+                      </span>
+                    )}
+                    <span className="truncate">
+                      #{ref.id}{" "}
+                      {ref.target?.title ?? "Missing node"}
+                    </span>
+                    {ref.target && (
+                      <ExternalLink className="h-2.5 w-2.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                    )}
+                  </button>
+                ) : (
+                  <span
+                    key={`${ref.value}-${idx}`}
+                    className="inline-flex max-w-[260px] items-center gap-1 rounded-md border border-border/40 bg-muted/30 px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+                    title={ref.value}
+                  >
+                    <span className="truncate">{ref.value}</span>
+                  </span>
+                ),
+              )}
+            </div>
+          )}
           <Textarea
             value={sourceRefsText}
             onChange={(e) => setSourceRefsText(e.target.value)}
@@ -507,7 +611,8 @@ function NodeEditor({ node, onSaved, onDeleted }: NodeEditorProps) {
           />
           <p className="mt-1 text-[10px] text-muted-foreground">
             One pointer per line. These are the breadcrumbs a reviewer follows
-            back to the raw material.
+            back to the raw material. <span className="font-mono">node:N</span>{" "}
+            entries resolve to clickable chips above.
           </p>
         </section>
         <section className="flex flex-1 flex-col">
