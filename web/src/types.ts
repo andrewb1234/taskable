@@ -127,6 +127,40 @@ export interface KnowledgeNode {
   updated_at: string;
 }
 
+export interface ContextTrailSegment {
+  id: number;
+  title: string;
+  node_type: KnowledgeNodeType;
+}
+
+export interface ContextTrailChildHint extends ContextTrailSegment {
+  content_preview: string;
+  source_refs: string[];
+}
+
+export interface ContextTrailItem {
+  id: number;
+  title: string;
+  node_type: KnowledgeNodeType;
+  parent_id: number | null;
+  path: ContextTrailSegment[];
+  score: number;
+  matched_terms: string[];
+  reason: string;
+  content_preview: string;
+  source_refs: string[];
+  child_count: number;
+  children: ContextTrailChildHint[];
+}
+
+export interface ContextTrail {
+  project_id: number;
+  project_name: string;
+  query: string;
+  load_order: ContextTrailSegment[];
+  items: ContextTrailItem[];
+}
+
 export const KNOWLEDGE_NODE_TYPES: KnowledgeNodeType[] = [
   "RAW",
   "SUMMARY",

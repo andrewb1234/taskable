@@ -116,20 +116,26 @@ All tools return a plain-text `TextContent` frame. Error responses begin with
     * **Return:** Single node detail with title, type, source references, and
       content. Use after `list_knowledge_nodes` to drill into relevant context.
 
-15. **`create_knowledge_node(project_id, title, node_type, content, parent_id?, source_refs?) -> str`**
+15. **`find_context_trail(project_id: int, query: str, limit?: int) -> str`**
+    * **Action:** `GET /api/v1/agent/projects/{project_id}/context-trail?query=...`
+    * **Return:** Markdown load order and matched branches for a task-intent
+      query such as `battle component`. Use this when a fresh agent window
+      needs scoped memory without loading the whole tree.
+
+16. **`create_knowledge_node(project_id, title, node_type, content, parent_id?, source_refs?) -> str`**
     * **Action:** `POST /api/v1/projects/{project_id}/knowledge`
     * **Payload:** `title`, `node_type` (`RAW`, `SUMMARY`, `PRD`, `TDD`),
       optional `content`, optional `parent_id`, and optional `source_refs`.
     * **Side effects:** Tags `created_by` from the bearer header and broadcasts
       `KNOWLEDGE_NODE_CREATED`.
 
-16. **`update_knowledge_node(node_id, title?, node_type?, content?, parent_id?, source_refs?) -> str`**
+17. **`update_knowledge_node(node_id, title?, node_type?, content?, parent_id?, source_refs?) -> str`**
     * **Action:** `PATCH /api/v1/knowledge/{node_id}`
     * **Payload:** Sparse update. Parent changes are rejected if they cross
       projects or create a cycle.
     * **Side effects:** Broadcasts `KNOWLEDGE_NODE_UPDATED`.
 
-17. **`delete_knowledge_node(node_id: int) -> str`**
+18. **`delete_knowledge_node(node_id: int) -> str`**
     * **Action:** `DELETE /api/v1/knowledge/{node_id}`
     * **Side effects:** Cascades descendant knowledge nodes and broadcasts
       `KNOWLEDGE_NODE_DELETED`.
@@ -148,5 +154,5 @@ both the `taskable-mcp`-on-`$PATH` form and the venv-relative fallback.
   server as subprocesses and drives the full JSON-RPC handshake. Scenarios
   cover: (a) the read/mutate flow, (b) invalid-status rejection, (c) the
   create-project → create-subproject → create-ticket chain with DB
-  verification, and (d) the knowledge-tree create/list/read/update flow. Run
+  verification, and (d) the knowledge-tree create/list/trail/read/update flow. Run
   with `.venv/bin/pytest api/tests/test_mcp_simulator.py`.

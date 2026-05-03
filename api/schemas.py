@@ -176,3 +176,48 @@ class KnowledgeNodeRead(BaseModel):
     created_by: ActorRole
     created_at: datetime
     updated_at: datetime
+
+
+# ---- Context trails ------------------------------------------------------
+
+
+class ContextTrailSegment(BaseModel):
+    """Compact node identity used inside a breadcrumb path or load order."""
+
+    id: int
+    title: str
+    node_type: KnowledgeNodeType
+
+
+class ContextTrailChildHint(ContextTrailSegment):
+    """Nearby child node that may be worth drilling into next."""
+
+    content_preview: str = ""
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class ContextTrailItem(BaseModel):
+    """One matched branch in a contextual knowledge search."""
+
+    id: int
+    title: str
+    node_type: KnowledgeNodeType
+    parent_id: Optional[int] = None
+    path: list[ContextTrailSegment] = Field(default_factory=list)
+    score: int
+    matched_terms: list[str] = Field(default_factory=list)
+    reason: str
+    content_preview: str = ""
+    source_refs: list[str] = Field(default_factory=list)
+    child_count: int = 0
+    children: list[ContextTrailChildHint] = Field(default_factory=list)
+
+
+class ContextTrailRead(BaseModel):
+    """Response for a task-intent search over the knowledge tree."""
+
+    project_id: int
+    project_name: str
+    query: str
+    load_order: list[ContextTrailSegment] = Field(default_factory=list)
+    items: list[ContextTrailItem] = Field(default_factory=list)

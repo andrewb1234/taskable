@@ -8,6 +8,7 @@
 
 import type {
   Comment,
+  ContextTrail,
   KnowledgeNode,
   KnowledgeNodeType,
   Project,
@@ -150,6 +151,15 @@ export const deleteTicket = (id: number) =>
 
 export const listKnowledgeNodes = (projectId: number) =>
   request<KnowledgeNode[]>(`/projects/${projectId}/knowledge`);
+
+export const getContextTrail = (
+  projectId: number,
+  query: string,
+  limit = 6,
+) =>
+  request<ContextTrail>(
+    `/projects/${projectId}/knowledge/context-trail?query=${encodeURIComponent(query)}&limit=${limit}`,
+  );
 
 export const getKnowledgeNode = (id: number) =>
   request<KnowledgeNode>(`/knowledge/${id}`);

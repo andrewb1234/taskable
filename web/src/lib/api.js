@@ -75,6 +75,7 @@ export const linkTicketMR = (id, url) => request(`/tickets/${id}/mr`, {
 export const deleteTicket = (id) => request(`/tickets/${id}`, { method: "DELETE" });
 // ---- Knowledge nodes ----------------------------------------------------
 export const listKnowledgeNodes = (projectId) => request(`/projects/${projectId}/knowledge`);
+export const getContextTrail = (projectId, query, limit = 6) => request(`/projects/${projectId}/knowledge/context-trail?query=${encodeURIComponent(query)}&limit=${limit}`);
 export const getKnowledgeNode = (id) => request(`/knowledge/${id}`);
 export const createKnowledgeNode = (projectId, payload) => request(`/projects/${projectId}/knowledge`, {
     method: "POST",

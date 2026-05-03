@@ -45,6 +45,7 @@ key **must** match the one in the FastAPI process's `.env`.
 | `delete_ticket`             | `DELETE /tickets/{id}`                             |
 | `list_knowledge_nodes`      | `GET /agent/projects/{id}/knowledge`               |
 | `read_knowledge_node`       | `GET /agent/knowledge/{id}`                        |
+| `find_context_trail`        | `GET /agent/projects/{id}/context-trail?query=...` |
 | `create_knowledge_node`     | `POST /projects/{id}/knowledge`                    |
 | `update_knowledge_node`     | `PATCH /knowledge/{id}`                            |
 | `delete_knowledge_node`     | `DELETE /knowledge/{id}`                           |

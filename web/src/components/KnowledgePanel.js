@@ -1,6 +1,6 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, Loader2, Plus, Save, Sparkles, Trash2, X, } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Flag, Loader2, Map as MapIcon, MessageSquare, Plus, Save, Search, Sparkles, Trash2, X, } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAsync } from "@/hooks/useAsync";
-import { createKnowledgeNode, deleteKnowledgeNode, listKnowledgeNodes, updateKnowledgeNode, } from "@/lib/api";
+import { createKnowledgeNode, deleteKnowledgeNode, getContextTrail, listKnowledgeNodes, updateKnowledgeNode, } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { KNOWLEDGE_NODE_TYPE_LABELS, KNOWLEDGE_NODE_TYPES, } from "@/types";
 /**
@@ -24,6 +24,9 @@ export function KnowledgePanel({ projectId, lastEvent }) {
     const [selectedId, setSelectedId] = useState(null);
     const [expanded, setExpanded] = useState(new Set());
     const [creatingUnder, setCreatingUnder] = useState(null);
+    const [trailQuery, setTrailQuery] = useState("");
+    const [trail, setTrail] = useState(null);
+    const [trailLoading, setTrailLoading] = useState(false);
     // SSE-driven refetch: any knowledge mutation for this project refreshes
     // the whole panel. The endpoint is cheap (single SELECT) so we don't
     // bother with targeted updates.
@@ -67,6 +70,52 @@ export function KnowledgePanel({ projectId, lastEvent }) {
             return next;
         });
     }
+    async function runContextTrail(nextQuery = trailQuery) {
+        setTrailLoading(true);
+        try {
+            const result = await getContextTrail(projectId, nextQuery, 6);
+            setTrail(result);
+            setExpanded((prev) => {
+                const next = new Set(prev);
+                for (const segment of result.load_order)
+                    next.add(segment.id);
+                return next;
+            });
+            if (result.items[0])
+                setSelectedId(result.items[0].id);
+        }
+        finally {
+            setTrailLoading(false);
+        }
+    }
+    async function saveContextCheckpoint() {
+        if (!trail || trail.load_order.length === 0)
+            return;
+        const title = trail.query.trim().length > 0
+            ? `Context checkpoint: ${trail.query.trim()}`
+            : "Context checkpoint";
+        const sourceRefs = trail.load_order.map((segment) => `node:${segment.id}`);
+        const lines = [
+            "# Context checkpoint",
+            "",
+            `Query: ${trail.query.trim() || "(empty)"}`,
+            "",
+            "## Loaded nodes",
+            ...trail.load_order.map((segment, index) => `${index + 1}. [${segment.node_type}] #${segment.id} ${segment.title}`),
+            "",
+            "## Agent belief to verify",
+            "Fill this in after the agent uses the trail, then keep or correct the branch.",
+        ];
+        const node = await createKnowledgeNode(projectId, {
+            title,
+            node_type: "SUMMARY",
+            content: lines.join("\n"),
+            parent_id: trail.items[0]?.id ?? null,
+            source_refs: sourceRefs,
+        });
+        setSelectedId(node.id);
+        nodes.refetch();
+    }
     const tree = (_jsxs("aside", { className: "flex h-full w-full flex-col border-r border-border bg-card/20", children: [_jsxs("header", { className: "flex items-center justify-between border-b border-border px-4 py-3", children: [_jsxs("div", { children: [_jsx("h3", { className: "text-sm font-semibold tracking-tight", children: "Knowledge Tree" }), _jsx("p", { className: "text-[11px] text-muted-foreground", children: "Raw \u2192 Summary \u2192 PRD / TDD" })] }), _jsxs(Button, { size: "sm", variant: "outline", className: "h-7 px-2 text-xs", onClick: () => setCreatingUnder("root"), children: [_jsx(Plus, { className: "mr-1 h-3 w-3" }), "Root node"] })] }), _jsx(ScrollArea, { className: "flex-1", children: _jsxs("div", { className: "px-2 py-2", children: [nodes.loading && !nodes.data && (_jsxs("div", { className: "flex items-center gap-2 px-2 py-4 text-xs text-muted-foreground", children: [_jsx(Loader2, { className: "h-3 w-3 animate-spin" }), "Loading\u2026"] })), nodes.error && (_jsx("p", { className: "px-2 py-2 text-xs text-destructive-foreground/80", children: nodes.error.message })), nodes.data && nodes.data.length === 0 && (_jsxs("p", { className: "px-2 py-4 text-xs text-muted-foreground", children: ["No knowledge nodes yet. Use the agent's", " ", _jsx("span", { className: "font-mono", children: "create_knowledge_node" }), " tool or click ", _jsx("em", { children: "Root node" }), " to start."] })), creatingUnder === "root" && (_jsx("div", { className: "mb-2", children: _jsx(NewNodeForm, { projectId: projectId, parentId: null, onCancel: () => setCreatingUnder(null), onCreated: (node) => {
                                     setCreatingUnder(null);
                                     setSelectedId(node.id);
@@ -79,11 +128,18 @@ export function KnowledgePanel({ projectId, lastEvent }) {
                                 setSelectedId(node.id);
                                 nodes.refetch();
                             }, projectId: projectId })] }) })] }));
-    const editor = (_jsx("section", { className: "flex h-full w-full flex-1 flex-col overflow-hidden", children: selectedNode ? (_jsx(NodeEditor, { node: selectedNode, allNodes: nodes.data ?? [], onSaved: () => nodes.refetch(), onSelectNode: setSelectedId, onDeleted: () => {
-                setSelectedId(null);
-                nodes.refetch();
-            } }, selectedNode.id)) : (_jsx("div", { className: "flex flex-1 items-center justify-center text-sm text-muted-foreground", children: "Select a node on the left to review or edit." })) }));
+    const editor = (_jsxs("section", { className: "flex h-full w-full flex-1 flex-col overflow-hidden", children: [_jsx(ContextTrailPanel, { query: trailQuery, trail: trail, loading: trailLoading, onQueryChange: setTrailQuery, onRun: runContextTrail, onSelectNode: setSelectedId, onSaveCheckpoint: saveContextCheckpoint }), selectedNode ? (_jsx(NodeEditor, { node: selectedNode, allNodes: nodes.data ?? [], onSaved: () => nodes.refetch(), onSelectNode: setSelectedId, onDeleted: () => {
+                    setSelectedId(null);
+                    nodes.refetch();
+                } }, selectedNode.id)) : (_jsx("div", { className: "flex flex-1 items-center justify-center text-sm text-muted-foreground", children: "Select a node on the left to review or edit." }))] }));
     return (_jsx(ResizableSplit, { direction: "horizontal", defaultSize: 320, minSize: 240, maxSize: 640, storageKey: "taskable.knowledge.treeWidth", first: tree, second: editor }));
+}
+function ContextTrailPanel({ query, trail, loading, onQueryChange, onRun, onSelectNode, onSaveCheckpoint, }) {
+    const hasTrail = trail !== null;
+    return (_jsxs("section", { className: "border-b border-border bg-card/20 px-4 py-3", children: [_jsxs("form", { className: "flex items-center gap-2", onSubmit: (event) => {
+                    event.preventDefault();
+                    onRun();
+                }, children: [_jsxs("div", { className: "flex min-w-0 flex-1 items-center gap-2", children: [_jsx(MapIcon, { className: "h-4 w-4 shrink-0 text-muted-foreground" }), _jsx(Input, { value: query, onChange: (event) => onQueryChange(event.target.value), placeholder: "Find context trail, e.g. battle component", className: "h-8 text-xs" })] }), _jsxs(Button, { type: "submit", size: "sm", disabled: loading, children: [_jsx(Search, { className: "mr-1 h-3.5 w-3.5" }), loading ? "Finding…" : "Find trail"] }), _jsxs(Button, { type: "button", variant: "outline", size: "sm", disabled: !trail || trail.load_order.length === 0, onClick: onSaveCheckpoint, children: [_jsx(Flag, { className: "mr-1 h-3.5 w-3.5" }), "Checkpoint"] })] }), hasTrail && (_jsxs("div", { className: "mt-3 grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Load order" }), trail.load_order.length === 0 ? (_jsx("p", { className: "text-xs text-muted-foreground", children: "No matching nodes. Add clearer signpost text to the tree or try another query." })) : (_jsx("div", { className: "flex flex-wrap gap-1", children: trail.load_order.map((segment, index) => (_jsxs("button", { type: "button", onClick: () => onSelectNode(segment.id), className: "inline-flex max-w-[240px] items-center gap-1 rounded-md border border-border bg-background/60 px-2 py-1 text-[11px] hover:border-primary/50 hover:bg-accent/60", title: segment.title, children: [_jsx("span", { className: "text-muted-foreground", children: index + 1 }), _jsx(TypeBadge, { type: segment.node_type }), _jsx("span", { className: "truncate", children: segment.title })] }, segment.id))) }))] }), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Matched branches" }), _jsx("div", { className: "flex max-h-36 flex-col gap-1 overflow-auto pr-1", children: trail.items.map((item) => (_jsxs("button", { type: "button", onClick: () => onSelectNode(item.id), className: "rounded-md border border-border/60 bg-background/50 px-2 py-1.5 text-left text-xs hover:border-primary/50 hover:bg-accent/50", children: [_jsxs("div", { className: "flex min-w-0 items-center gap-1.5", children: [_jsx(TypeBadge, { type: item.node_type }), _jsx("span", { className: "truncate font-medium", children: item.title }), _jsxs("span", { className: "ml-auto shrink-0 text-[10px] text-muted-foreground", children: ["score ", item.score] })] }), _jsx("div", { className: "mt-1 truncate text-[11px] text-muted-foreground", children: item.path.map((part) => part.title).join(" > ") }), item.children.length > 0 && (_jsxs("div", { className: "mt-1 text-[10px] text-muted-foreground", children: [item.children.length, " child hint", item.children.length === 1 ? "" : "s", " available"] }))] }, item.id))) })] })] }))] }));
 }
 function TreeBranch(props) {
     const siblings = props.childrenByParent.get(props.parentId) ?? [];
@@ -128,6 +184,8 @@ function NodeEditor({ node, allNodes, onSaved, onDeleted, onSelectNode, }) {
     const [sourceRefsText, setSourceRefsText] = useState(node.source_refs.join("\n"));
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [correctionText, setCorrectionText] = useState("");
+    const [correctionSaving, setCorrectionSaving] = useState(false);
     // Build an id → KnowledgeNode lookup so ``node:N`` source refs can render
     // a live, clickable chip showing the current title of the referenced
     // node. Re-derives on every render so SSE-driven title edits elsewhere
@@ -189,7 +247,37 @@ function NodeEditor({ node, allNodes, onSaved, onDeleted, onSelectNode, }) {
             setDeleting(false);
         }
     }
-    return (_jsxs("div", { className: "flex flex-1 flex-col overflow-hidden", children: [_jsxs("header", { className: "flex items-start justify-between gap-3 border-b border-border bg-card/30 px-6 py-3", children: [_jsxs("div", { className: "min-w-0 flex-1 space-y-2", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx(TypeBadge, { type: type }), _jsx(Input, { value: title, onChange: (e) => setTitle(e.target.value), className: "h-8 flex-1 text-sm font-semibold" }), _jsxs(Select, { value: type, onValueChange: (v) => setType(v), children: [_jsx(SelectTrigger, { className: "h-8 w-28 text-xs", children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: KNOWLEDGE_NODE_TYPES.map((t) => (_jsx(SelectItem, { value: t, children: KNOWLEDGE_NODE_TYPE_LABELS[t] }, t))) })] })] }), _jsxs("div", { className: "flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "uppercase tracking-wide", children: ["#", node.id] }), _jsx("span", { children: "\u00B7" }), _jsxs(Badge, { variant: node.created_by === "AGENT" ? "agent" : "human", className: "py-0 text-[10px]", children: [node.created_by === "AGENT" ? (_jsx(Sparkles, { className: "mr-1 h-2.5 w-2.5" })) : null, node.created_by] }), _jsx("span", { children: "\u00B7" }), _jsxs("span", { children: ["updated ", formatWhen(node.updated_at)] })] })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsxs(Button, { variant: "ghost", size: "sm", onClick: remove, disabled: deleting, className: "text-destructive-foreground/80", children: [_jsx(Trash2, { className: "mr-1 h-3.5 w-3.5" }), "Delete"] }), _jsxs(Button, { size: "sm", onClick: save, disabled: !dirty || saving, children: [_jsx(Save, { className: "mr-1 h-3.5 w-3.5" }), saving ? "Saving…" : "Save"] })] })] }), _jsxs("div", { className: "flex flex-1 flex-col gap-3 overflow-auto px-6 py-4", children: [_jsxs("section", { children: [_jsx("label", { className: "mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Source references" }), resolvedRefs.length > 0 && (_jsx("div", { className: "mb-2 flex flex-wrap gap-1", children: resolvedRefs.map((ref, idx) => ref.kind === "node" ? (_jsxs("button", { type: "button", onClick: () => ref.target && onSelectNode(ref.target.id), disabled: !ref.target, title: ref.target
+    async function requestCorrection() {
+        const correction = correctionText.trim();
+        if (!correction)
+            return;
+        setCorrectionSaving(true);
+        try {
+            const created = await createKnowledgeNode(node.project_id, {
+                title: `Correction request: ${node.title}`,
+                node_type: "SUMMARY",
+                parent_id: node.id,
+                source_refs: [`node:${node.id}`],
+                content: [
+                    "# Human correction request",
+                    "",
+                    correction,
+                    "",
+                    "## Target node",
+                    `node:${node.id}`,
+                    "",
+                    "Agent: resolve this by updating the target node or adding a corrected child summary.",
+                ].join("\n"),
+            });
+            setCorrectionText("");
+            onSaved();
+            onSelectNode(created.id);
+        }
+        finally {
+            setCorrectionSaving(false);
+        }
+    }
+    return (_jsxs("div", { className: "flex flex-1 flex-col overflow-hidden", children: [_jsxs("header", { className: "flex items-start justify-between gap-3 border-b border-border bg-card/30 px-6 py-3", children: [_jsxs("div", { className: "min-w-0 flex-1 space-y-2", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx(TypeBadge, { type: type }), _jsx(Input, { value: title, onChange: (e) => setTitle(e.target.value), className: "h-8 flex-1 text-sm font-semibold" }), _jsxs(Select, { value: type, onValueChange: (v) => setType(v), children: [_jsx(SelectTrigger, { className: "h-8 w-28 text-xs", children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: KNOWLEDGE_NODE_TYPES.map((t) => (_jsx(SelectItem, { value: t, children: KNOWLEDGE_NODE_TYPE_LABELS[t] }, t))) })] })] }), _jsxs("div", { className: "flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "uppercase tracking-wide", children: ["#", node.id] }), _jsx("span", { children: "\u00B7" }), _jsxs(Badge, { variant: node.created_by === "AGENT" ? "agent" : "human", className: "py-0 text-[10px]", children: [node.created_by === "AGENT" ? (_jsx(Sparkles, { className: "mr-1 h-2.5 w-2.5" })) : null, node.created_by] }), _jsx("span", { children: "\u00B7" }), _jsxs("span", { children: ["updated ", formatWhen(node.updated_at)] })] })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsxs(Button, { variant: "ghost", size: "sm", onClick: remove, disabled: deleting, className: "text-destructive-foreground/80", children: [_jsx(Trash2, { className: "mr-1 h-3.5 w-3.5" }), "Delete"] }), _jsxs(Button, { size: "sm", onClick: save, disabled: !dirty || saving, children: [_jsx(Save, { className: "mr-1 h-3.5 w-3.5" }), saving ? "Saving…" : "Save"] })] })] }), _jsxs("div", { className: "flex flex-1 flex-col gap-3 overflow-auto px-6 py-4", children: [_jsxs("section", { className: "rounded-md border border-border bg-muted/20 p-3", children: [_jsxs("div", { className: "mb-2 flex items-center gap-2", children: [_jsx(MessageSquare, { className: "h-3.5 w-3.5 text-muted-foreground" }), _jsx("label", { className: "text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Correction request" })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Textarea, { value: correctionText, onChange: (e) => setCorrectionText(e.target.value), rows: 2, placeholder: "Tell the agent what looks stale, wrong, or missing for this context node.", className: "min-h-16 text-xs" }), _jsx(Button, { type: "button", size: "sm", variant: "outline", className: "self-start", onClick: requestCorrection, disabled: !correctionText.trim() || correctionSaving, children: correctionSaving ? "Saving…" : "Request update" })] })] }), _jsxs("section", { children: [_jsx("label", { className: "mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", children: "Source references" }), resolvedRefs.length > 0 && (_jsx("div", { className: "mb-2 flex flex-wrap gap-1", children: resolvedRefs.map((ref, idx) => ref.kind === "node" ? (_jsxs("button", { type: "button", onClick: () => ref.target && onSelectNode(ref.target.id), disabled: !ref.target, title: ref.target
                                         ? `Open node #${ref.id}: ${ref.target.title}`
                                         : `Node #${ref.id} no longer exists in this project`, className: cn("group inline-flex max-w-[260px] items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] transition-colors", ref.target
                                         ? "cursor-pointer border-border bg-card hover:border-primary/50 hover:bg-accent/60"

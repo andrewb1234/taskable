@@ -6,12 +6,16 @@ produce LLM-optimized payloads that we only want exposed to the MCP server.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlmodel import select
 
 from api.dependencies import SessionDep, require_agent_key
 from api.models.entities import KnowledgeNode, Project, Subproject, Ticket
+from api.utils.context_trails import (
+    build_context_trail,
+    format_context_trail_markdown,
+)
 
 router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_key)])
 
@@ -120,6 +124,32 @@ def get_agent_knowledge_map(project_id: int, session: SessionDep) -> str:
         ).all()
     )
     return _format_knowledge_tree(project, nodes)
+
+
+@router.get(
+    "/projects/{project_id}/context-trail",
+    response_class=PlainTextResponse,
+)
+def get_agent_context_trail(
+    project_id: int,
+    session: SessionDep,
+    query: str = Query(default="", max_length=200),
+    limit: int = Query(default=6, ge=1, le=12),
+) -> str:
+    """Return a ranked context-loading trail for an agent task query."""
+    project = session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    nodes = list(
+        session.exec(
+            select(KnowledgeNode)
+            .where(KnowledgeNode.project_id == project_id)
+            .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
+        ).all()
+    )
+    return format_context_trail_markdown(
+        build_context_trail(project, nodes, query, limit=limit)
+    )
 
 
 @router.get(

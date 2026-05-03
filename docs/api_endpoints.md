@@ -34,6 +34,7 @@
 
 ## Knowledge Nodes
 * `GET /projects/{project_id}/knowledge` : Flat project knowledge-node list; clients reconstruct the tree by `parent_id`.
+* `GET /projects/{project_id}/knowledge/context-trail?query=...` : Query-scored knowledge trail with suggested load order and child hints.
 * `POST /projects/{project_id}/knowledge` : Create a knowledge node `(title, node_type, content, parent_id, source_refs)`.
 * `GET /knowledge/{id}` : Retrieve one knowledge node.
 * `PATCH /knowledge/{id}` : Mutate a knowledge node; parent changes are validated against cross-project links and cycles.
@@ -42,4 +43,5 @@
 ## Agent Integrations
 * `GET /agent/context/{subproject_id}` : Specialized endpoint returning heavily flattened string of `context_brief` and current tasks, optimized for LLM token efficiency.
 * `GET /agent/projects/{project_id}/knowledge` : Bearer-gated hierarchical knowledge outline optimized for agent orientation.
+* `GET /agent/projects/{project_id}/context-trail?query=...` : Bearer-gated context trail rendered as markdown for fresh agent windows.
 * `GET /agent/knowledge/{id}` : Bearer-gated single knowledge-node detail.

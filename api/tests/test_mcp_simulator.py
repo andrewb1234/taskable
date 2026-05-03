@@ -235,6 +235,7 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
             # Knowledge tree
             "list_knowledge_nodes",
             "read_knowledge_node",
+            "find_context_trail",
             "create_knowledge_node",
             "update_knowledge_node",
         }
@@ -548,7 +549,19 @@ async def test_mcp_simulator_knowledge_flow(live_api: dict[str, str]) -> None:
         assert "/abs/api/main.py" in detail, detail
         assert "from fastapi import FastAPI" in detail, detail
 
-        # 5. update_knowledge_node promotes SUMMARY → PRD.
+        # 5. find_context_trail returns a scoped load order for fresh windows.
+        trail = await call(
+            "find_context_trail",
+            {
+                "project_id": project_id,
+                "query": "FastAPI app",
+            },
+        )
+        assert "Suggested load order" in trail, trail
+        assert f"[SUMMARY #{summary_id}]" in trail, trail
+        assert f"[RAW #{child_id}]" in trail, trail
+
+        # 6. update_knowledge_node promotes SUMMARY → PRD.
         promoted = await call(
             "update_knowledge_node",
             {"node_id": summary_id, "node_type": "PRD"},

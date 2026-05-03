@@ -15,7 +15,7 @@ Mirrors the existing routing conventions:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlmodel import select
 
 from api.dependencies import SessionDep
@@ -26,7 +26,9 @@ from api.schemas import (
     KnowledgeNodeCreate,
     KnowledgeNodeRead,
     KnowledgeNodeUpdate,
+    ContextTrailRead,
 )
+from api.utils.context_trails import build_context_trail
 from api.utils.time import utcnow
 
 router = APIRouter(tags=["knowledge"])
@@ -113,6 +115,28 @@ def list_knowledge_nodes(
             .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
         ).all()
     )
+
+
+@router.get(
+    "/projects/{project_id}/knowledge/context-trail",
+    response_model=ContextTrailRead,
+)
+def get_context_trail(
+    project_id: int,
+    session: SessionDep,
+    query: str = Query(default="", max_length=200),
+    limit: int = Query(default=6, ge=1, le=12),
+) -> ContextTrailRead:
+    """Find the most relevant knowledge branches for a task-intent query."""
+    project = _require_project(session, project_id)
+    nodes = list(
+        session.exec(
+            select(KnowledgeNode)
+            .where(KnowledgeNode.project_id == project_id)
+            .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
+        ).all()
+    )
+    return build_context_trail(project, nodes, query, limit=limit)
 
 
 @router.post(
