@@ -27,6 +27,8 @@ from api.routes import (
     events,
     knowledge,
     projects,
+    proposals,
+    sessions,
     subprojects,
     tickets,
 )
@@ -61,6 +63,8 @@ def create_app() -> FastAPI:
     api_v1.include_router(tickets.router)
     api_v1.include_router(comments.router)
     api_v1.include_router(knowledge.router)
+    api_v1.include_router(proposals.router)
+    api_v1.include_router(sessions.router)
     api_v1.include_router(events.router)
     api_v1.include_router(agent.router)
 

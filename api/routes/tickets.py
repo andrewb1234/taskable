@@ -7,10 +7,11 @@ from sqlmodel import select
 
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
-from api.models.entities import AuditLog, Comment, Ticket
+from api.models.entities import AuditLog, Comment, KnowledgeNode, Ticket
 from api.models.enums import (
     ActorRole,
     AuditAction,
+    BlockedByCategory,
     SSEAction,
     TicketStatus,
 )
@@ -20,6 +21,7 @@ from api.schemas import (
     MRLinkPayload,
     TicketDetail,
     TicketRead,
+    TicketRef,
     TicketUpdate,
 )
 
@@ -72,6 +74,9 @@ def get_ticket(ticket_id: int, session: SessionDep) -> TicketDetail:
         status=ticket.status,
         assignee=ticket.assignee,
         mr_link=ticket.mr_link,
+        blocked_by=ticket.blocked_by,
+        blocked_reason=ticket.blocked_reason,
+        source_refs=ticket.source_refs or [],
         comments=[CommentRead.model_validate(c) for c in comments],
         audit_logs=[AuditLogRead.model_validate(a) for a in audit_logs],
     )
@@ -97,7 +102,16 @@ async def update_ticket(
             updates["status"] = TicketStatus(updates["status"])
         except ValueError as exc:  # pragma: no cover - pydantic catches this
             raise HTTPException(status_code=400, detail="Invalid status.") from exc
-        if updates["status"] != ticket.status:
+        new_status = updates["status"]
+        if new_status == TicketStatus.BLOCKED and not updates.get("blocked_by") and not ticket.blocked_by:
+            raise HTTPException(
+                status_code=422,
+                detail="blocked_by is required when setting status to BLOCKED.",
+            )
+        if new_status != TicketStatus.BLOCKED:
+            updates.setdefault("blocked_by", None)
+            updates.setdefault("blocked_reason", None)
+        if new_status != ticket.status:
             audit_events.append(AuditAction.STATUS_UPDATE)
 
     if any(k in updates for k in ("title", "description")):
@@ -186,3 +200,16 @@ async def attach_mr_link(
         )
     )
     return ticket
+
+
+@router.get("/knowledge/{node_id}/tickets", response_model=list[TicketRef])
+def get_tickets_for_node(node_id: int, session: SessionDep) -> list[Ticket]:
+    """Return all tickets whose source_refs include this knowledge node."""
+    node = session.get(KnowledgeNode, node_id)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Knowledge node not found.")
+    ref_str = f"node:{node_id}"
+    tickets = list(
+        session.exec(select(Ticket)).all()
+    )
+    return [t for t in tickets if ref_str in (t.source_refs or [])]

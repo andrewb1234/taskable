@@ -53,6 +53,23 @@ class KnowledgeNodeType(str, Enum):
     TDD = "TDD"
 
 
+class BlockedByCategory(str, Enum):
+    """Structured reason a ticket is blocked."""
+
+    WAITING_HUMAN = "WAITING_HUMAN"
+    WAITING_DEPENDENCY = "WAITING_DEPENDENCY"
+    AMBIGUOUS_REQUIREMENT = "AMBIGUOUS_REQUIREMENT"
+    EXTERNAL = "EXTERNAL"
+
+
+class KnowledgeNodeStatus(str, Enum):
+    """Lifecycle status of a knowledge node."""
+
+    CURRENT = "CURRENT"
+    STALE = "STALE"
+    ARCHIVED = "ARCHIVED"
+
+
 class SSEAction(str, Enum):
     """Vocabulary of events broadcast over ``GET /api/v1/events``."""
 
@@ -69,3 +86,7 @@ class SSEAction(str, Enum):
     KNOWLEDGE_NODE_CREATED = "KNOWLEDGE_NODE_CREATED"
     KNOWLEDGE_NODE_UPDATED = "KNOWLEDGE_NODE_UPDATED"
     KNOWLEDGE_NODE_DELETED = "KNOWLEDGE_NODE_DELETED"
+    KNOWLEDGE_PROPOSAL_CREATED = "KNOWLEDGE_PROPOSAL_CREATED"
+    KNOWLEDGE_PROPOSAL_REVIEWED = "KNOWLEDGE_PROPOSAL_REVIEWED"
+    SESSION_STARTED = "SESSION_STARTED"
+    SESSION_ENDED = "SESSION_ENDED"

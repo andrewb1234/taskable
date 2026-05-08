@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.models.enums import (
     ActorRole,
     AuditAction,
+    BlockedByCategory,
+    KnowledgeNodeStatus,
     KnowledgeNodeType,
     SubprojectStatus,
     TicketAssignee,
@@ -71,6 +73,7 @@ class TicketCreate(BaseModel):
     description: Optional[str] = None
     assignee: TicketAssignee = TicketAssignee.UNASSIGNED
     status: TicketStatus = TicketStatus.TODO
+    source_refs: list[str] = Field(default_factory=list)
 
 
 class TicketUpdate(BaseModel):
@@ -79,6 +82,9 @@ class TicketUpdate(BaseModel):
     status: Optional[TicketStatus] = None
     assignee: Optional[TicketAssignee] = None
     mr_link: Optional[str] = None
+    blocked_by: Optional[BlockedByCategory] = None
+    blocked_reason: Optional[str] = None
+    source_refs: Optional[list[str]] = None
 
 
 class TicketRead(BaseModel):
@@ -91,6 +97,9 @@ class TicketRead(BaseModel):
     status: TicketStatus
     assignee: TicketAssignee
     mr_link: Optional[str] = None
+    blocked_by: Optional[BlockedByCategory] = None
+    blocked_reason: Optional[str] = None
+    source_refs: list[str] = Field(default_factory=list)
 
 
 class MRLinkPayload(BaseModel):
@@ -158,6 +167,8 @@ class KnowledgeNodeCreate(BaseModel):
 class KnowledgeNodeUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
     node_type: Optional[KnowledgeNodeType] = None
+    status: Optional[KnowledgeNodeStatus] = None
+    superseded_by: Optional[int] = None
     content: Optional[str] = None
     parent_id: Optional[int] = None
     source_refs: Optional[list[str]] = None
@@ -171,6 +182,8 @@ class KnowledgeNodeRead(BaseModel):
     parent_id: Optional[int] = None
     title: str
     node_type: KnowledgeNodeType
+    status: KnowledgeNodeStatus = KnowledgeNodeStatus.CURRENT
+    superseded_by: Optional[int] = None
     content: str
     source_refs: list[str] = Field(default_factory=list)
     created_by: ActorRole
@@ -221,3 +234,72 @@ class ContextTrailRead(BaseModel):
     query: str
     load_order: list[ContextTrailSegment] = Field(default_factory=list)
     items: list[ContextTrailItem] = Field(default_factory=list)
+
+
+# ---- KnowledgeProposal ---------------------------------------------------
+
+
+class KnowledgeProposalCreate(BaseModel):
+    proposed_changes: dict
+    rationale: str = ""
+
+
+class KnowledgeProposalReview(BaseModel):
+    action: str  # "accept" or "reject"
+    reviewed_by: str = "HUMAN"
+
+
+class KnowledgeProposalRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    node_id: int
+    proposed_by: str
+    proposed_changes: dict
+    rationale: str
+    status: str
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    created_at: datetime
+
+
+# ---- AgentSession --------------------------------------------------------
+
+
+class AgentSessionCreate(BaseModel):
+    intent: str = ""
+    loaded_node_ids: list[int] = Field(default_factory=list)
+
+
+class AgentSessionUpdate(BaseModel):
+    loaded_node_ids: Optional[list[int]] = None
+    handoff_note: Optional[str] = None
+    status: Optional[str] = None
+
+
+class AgentSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    intent: str
+    loaded_node_ids: list[int] = Field(default_factory=list)
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    handoff_note: Optional[str] = None
+    status: str
+
+
+# ---- Knowledge tickets backlink ------------------------------------------
+
+
+class TicketRef(BaseModel):
+    """Compact ticket reference returned from knowledge backlink queries."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    status: TicketStatus
+    assignee: TicketAssignee
+    subproject_id: int

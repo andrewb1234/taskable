@@ -85,6 +85,8 @@ TICKETS: list[dict[str, Any]] = [
         ),
         "status": "BLOCKED",
         "assignee": "AGENT",
+        "blocked_by": "WAITING_DEPENDENCY",
+        "blocked_reason": "Waiting for deterministic battle log format to stabilize.",
     },
 ]
 
@@ -169,10 +171,15 @@ def seed(api: str) -> dict[str, Any]:
         # Create tickets in TODO then move to the desired status so the audit
         # ledger reflects the transition (matches real-world usage).
         if spec["status"] != "TODO":
+            patch: dict[str, Any] = {"status": spec["status"]}
+            if spec.get("blocked_by"):
+                patch["blocked_by"] = spec["blocked_by"]
+            if spec.get("blocked_reason"):
+                patch["blocked_reason"] = spec["blocked_reason"]
             ticket = request(
                 "PATCH",
                 f"{api}/tickets/{ticket['id']}",
-                {"status": spec["status"]},
+                patch,
             )
         ticket_ids.append(ticket["id"])
         print(f"  + #{ticket['id']} [{ticket['status']}/{ticket['assignee']}] {ticket['title']}")
@@ -321,6 +328,112 @@ def seed(api: str) -> dict[str, Any]:
         parent_id=game["id"],
         source_refs=["game/ui/InventoryPanel.tsx"],
     )
+
+    # --- Demo: link tickets to knowledge nodes via source_refs ---
+    for t_idx, node_ref in [
+        (0, f"node:{combat_ui['id']}"),   # Refactor ticket references Combat UI contract
+        (1, f"node:{damage['id']}"),       # Damage formula ticket references Damage formula node
+        (2, f"node:{status['id']}"),       # Status effect ticket references Status effect ordering
+    ]:
+        request(
+            "PATCH",
+            f"{api}/tickets/{ticket_ids[t_idx]}",
+            {"source_refs": [node_ref]},
+        )
+        print(f"  linked ticket #{ticket_ids[t_idx]} → {node_ref}")
+
+    # --- Demo: stale node (old combat math, superseded by damage node) ---
+    old_damage = create_node(
+        "Damage formula (OLD — superseded)",
+        "RAW",
+        (
+            "DEPRECATED: attack - defense without elemental modifier. This was "
+            "used before the elemental system was added. See Damage formula node "
+            "for the current formula."
+        ),
+        parent_id=battle["id"],
+        source_refs=["game/battle/oldCombatMath.ts"],
+    )
+    request(
+        "PATCH",
+        f"{api}/knowledge/{old_damage['id']}",
+        {"status": "STALE", "superseded_by": damage["id"]},
+    )
+    print(f"  marked node #{old_damage['id']} as STALE (superseded by #{damage['id']})")
+
+    # --- Demo: agent session with handoff note ---
+    session_resp = request(
+        "POST",
+        f"{api}/projects/{project['id']}/sessions",
+        {
+            "intent": "Refactor battle preview component and confirm damage formula source refs.",
+            "loaded_node_ids": [battle["id"], combat_ui["id"], damage["id"]],
+        },
+    )
+    print(f"  created session #{session_resp['id']}: ACTIVE")
+    request(
+        "PATCH",
+        f"{api}/agent/sessions/{session_resp['id']}",
+        {
+            "handoff_note": (
+                "Completed battle preview refactor. Damage formula node source "
+                "refs confirmed as canonical (game/battle/damage.ts). "
+                "Status effect ordering tests still need coverage (ticket #3). "
+                "Replay ticket remains blocked on deterministic log format."
+            ),
+            "status": "COMPLETE",
+        },
+    )
+    print(f"  closed session #{session_resp['id']}: COMPLETE")
+
+    # A second interrupted session to show the INTERRUPTED indicator
+    interrupted = request(
+        "POST",
+        f"{api}/projects/{project['id']}/sessions",
+        {
+            "intent": "Investigate networked battle replay log format and unblock ticket.",
+            "loaded_node_ids": [battle["id"]],
+        },
+    )
+    request(
+        "PATCH",
+        f"{api}/agent/sessions/{interrupted['id']}",
+        {
+            "handoff_note": (
+                "Context loaded but ran out of tokens before reaching the replay "
+                "log spec. Next agent should start from Save and replay system node."
+            ),
+            "status": "INTERRUPTED",
+        },
+    )
+    print(f"  created+interrupted session #{interrupted['id']}: INTERRUPTED")
+
+    # --- Demo: pending knowledge proposal on the damage formula node ---
+    proposal = request(
+        "POST",
+        f"{api}/knowledge/{damage['id']}/proposals",
+        {
+            "proposed_changes": {
+                "content": (
+                    "Preview damage = max(1, attack - defense) * elementalModifier "
+                    "* critMultiplier. Critical hits apply BEFORE shield reduction "
+                    "(verified in game/battle/damage.ts line 47). The preview UI "
+                    "should mark estimates when hidden status effects may alter the result."
+                ),
+                "source_refs": [
+                    "game/battle/damage.ts",
+                    f"node:{turn_order['id']}",
+                    "game/battle/damage.ts#L47",
+                ],
+            },
+            "rationale": (
+                "Critical hit order was ambiguous in the previous version. "
+                "Line 47 of damage.ts confirms crits apply before shield reduction. "
+                "Proposing this update for human review before accepting."
+            ),
+        },
+    )
+    print(f"  created proposal #{proposal['id']} on node #{damage['id']} (PENDING)")
 
     return {"project": project, "subproject": subproject, "tickets": ticket_ids}
 

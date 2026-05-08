@@ -21,7 +21,7 @@ from sqlmodel import select
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
 from api.models.entities import KnowledgeNode, Project
-from api.models.enums import ActorRole, SSEAction
+from api.models.enums import ActorRole, KnowledgeNodeStatus, SSEAction
 from api.schemas import (
     KnowledgeNodeCreate,
     KnowledgeNodeRead,
@@ -99,22 +99,27 @@ def _validate_parent(
     response_model=list[KnowledgeNodeRead],
 )
 def list_knowledge_nodes(
-    project_id: int, session: SessionDep
+    project_id: int,
+    session: SessionDep,
+    include_stale: bool = Query(default=False),
 ) -> list[KnowledgeNode]:
-    """Return every knowledge node for a project ordered by ``created_at``.
+    """Return knowledge nodes for a project.
 
+    By default only ``CURRENT`` nodes are returned. Pass ``?include_stale=true``
+    to include ``STALE`` and ``ARCHIVED`` nodes (for full history).
     The shape is intentionally flat; the client reconstructs the tree
     locally using ``parent_id``. This keeps the endpoint cheap (one query)
     and SSE-friendly (a single action invalidates the whole panel).
     """
     _require_project(session, project_id)
-    return list(
-        session.exec(
-            select(KnowledgeNode)
-            .where(KnowledgeNode.project_id == project_id)
-            .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
-        ).all()
+    query = (
+        select(KnowledgeNode)
+        .where(KnowledgeNode.project_id == project_id)
+        .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
     )
+    if not include_stale:
+        query = query.where(KnowledgeNode.status == KnowledgeNodeStatus.CURRENT)  # type: ignore[union-attr]
+    return list(session.exec(query).all())
 
 
 @router.get(

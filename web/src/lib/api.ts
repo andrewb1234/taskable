@@ -7,16 +7,21 @@
  */
 
 import type {
+  AgentSession,
+  BlockedByCategory,
   Comment,
   ContextTrail,
   KnowledgeNode,
+  KnowledgeNodeStatus,
   KnowledgeNodeType,
+  KnowledgeProposal,
   Project,
   Subproject,
   SubprojectDetail,
   Ticket,
   TicketAssignee,
   TicketDetail,
+  TicketRef,
   TicketStatus,
   ActorRole,
 } from "@/types";
@@ -131,6 +136,9 @@ export const updateTicket = (
     status: TicketStatus;
     assignee: TicketAssignee;
     mr_link: string | null;
+    blocked_by: BlockedByCategory | null;
+    blocked_reason: string | null;
+    source_refs: string[];
   }>,
 ) =>
   request<Ticket>(`/tickets/${id}`, {
@@ -179,11 +187,16 @@ export const createKnowledgeNode = (
     body: JSON.stringify(payload),
   });
 
+export const listKnowledgeNodesAll = (projectId: number) =>
+  request<KnowledgeNode[]>(`/projects/${projectId}/knowledge?include_stale=true`);
+
 export const updateKnowledgeNode = (
   id: number,
   payload: Partial<{
     title: string;
     node_type: KnowledgeNodeType;
+    status: KnowledgeNodeStatus;
+    superseded_by: number | null;
     content: string;
     parent_id: number | null;
     source_refs: string[];
@@ -196,6 +209,59 @@ export const updateKnowledgeNode = (
 
 export const deleteKnowledgeNode = (id: number) =>
   request<void>(`/knowledge/${id}`, { method: "DELETE" });
+
+export const getTicketsForNode = (nodeId: number) =>
+  request<TicketRef[]>(`/tickets/knowledge/${nodeId}/tickets`);
+
+// ---- Knowledge proposals ------------------------------------------------
+
+export const createProposal = (
+  nodeId: number,
+  payload: { proposed_changes: Record<string, unknown>; rationale?: string },
+) =>
+  request<KnowledgeProposal>(`/knowledge/${nodeId}/proposals`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const listProposalsForNode = (nodeId: number) =>
+  request<KnowledgeProposal[]>(`/knowledge/${nodeId}/proposals`);
+
+export const listProjectProposals = (projectId: number) =>
+  request<KnowledgeProposal[]>(`/projects/${projectId}/knowledge/proposals`);
+
+export const reviewProposal = (
+  proposalId: number,
+  action: "accept" | "reject",
+  reviewedBy = "HUMAN",
+) =>
+  request<KnowledgeProposal>(`/knowledge/proposals/${proposalId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action, reviewed_by: reviewedBy }),
+  });
+
+// ---- Agent sessions -------------------------------------------------------
+
+export const startSession = (
+  projectId: number,
+  payload: { intent: string; loaded_node_ids?: number[] },
+) =>
+  request<AgentSession>(`/projects/${projectId}/sessions`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const listSessions = (projectId: number) =>
+  request<AgentSession[]>(`/projects/${projectId}/sessions`);
+
+export const updateSession = (
+  sessionId: number,
+  payload: Partial<{ handoff_note: string; status: string; loaded_node_ids: number[] }>,
+) =>
+  request<AgentSession>(`/agent/sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 
 // ---- Comments -----------------------------------------------------------
 

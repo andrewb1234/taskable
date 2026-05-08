@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
+  Check,
   ChevronDown,
   ChevronRight,
+  Clock,
   ExternalLink,
   Flag,
   Loader2,
@@ -33,13 +36,17 @@ import {
   deleteKnowledgeNode,
   getContextTrail,
   listKnowledgeNodes,
+  listProposalsForNode,
+  reviewProposal,
   updateKnowledgeNode,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
   ContextTrail,
   KnowledgeNode,
+  KnowledgeNodeStatus,
   KnowledgeNodeType,
+  KnowledgeProposal,
   SSEPayload,
 } from "@/types";
 import {
@@ -476,6 +483,12 @@ function TreeBranch(props: TreeBranchProps) {
                 onClick={() => props.onSelect(node.id)}
               >
                 <TypeBadge type={node.node_type} />
+                {node.status === "STALE" && (
+                  <span className="shrink-0 rounded bg-yellow-500/20 px-1 text-[9px] font-semibold uppercase text-yellow-300">STALE</span>
+                )}
+                {node.status === "ARCHIVED" && (
+                  <span className="shrink-0 rounded bg-gray-500/20 px-1 text-[9px] font-semibold uppercase text-gray-400">ARCH</span>
+                )}
                 <span className="truncate font-medium">{node.title}</span>
               </button>
               <button
@@ -746,6 +759,22 @@ function NodeEditor({
             </Badge>
             <span>·</span>
             <span>updated {formatWhen(node.updated_at)}</span>
+            <span>·</span>
+            <Select
+              value={node.status ?? "CURRENT"}
+              onValueChange={(v) =>
+                void updateKnowledgeNode(node.id, { status: v as KnowledgeNodeStatus }).then(onSaved)
+              }
+            >
+              <SelectTrigger className="h-5 w-24 border-0 bg-transparent px-1 text-[10px] shadow-none">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CURRENT">Current</SelectItem>
+                <SelectItem value="STALE">Stale</SelectItem>
+                <SelectItem value="ARCHIVED">Archived</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -766,6 +795,7 @@ function NodeEditor({
         </div>
       </header>
       <div className="flex flex-1 flex-col gap-3 overflow-auto px-6 py-4">
+        <ProposalsSection nodeId={node.id} onAccepted={onSaved} />
         <section className="rounded-md border border-border bg-muted/20 p-3">
           <div className="mb-2 flex items-center gap-2">
             <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
@@ -895,6 +925,99 @@ function NodeEditor({
         </footer>
       )}
     </div>
+  );
+}
+
+// ---- ProposalsSection ----------------------------------------------------
+
+function ProposalsSection({
+  nodeId,
+  onAccepted,
+}: {
+  nodeId: number;
+  onAccepted: () => void;
+}) {
+  const [proposals, setProposals] = useState<KnowledgeProposal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [reviewing, setReviewing] = useState<number | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const all = await listProposalsForNode(nodeId);
+      setProposals(all.filter((p) => p.status === "PENDING"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, [nodeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleReview(id: number, action: "accept" | "reject") {
+    setReviewing(id);
+    try {
+      await reviewProposal(id, action);
+      if (action === "accept") onAccepted();
+      await load();
+    } finally {
+      setReviewing(null);
+    }
+  }
+
+  if (!loading && proposals.length === 0) return null;
+
+  return (
+    <section className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+          Pending proposals
+        </label>
+        {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      </div>
+      {proposals.map((p) => (
+        <div key={p.id} className="mb-2 rounded border border-border/50 bg-card/60 p-2 text-xs">
+          <div className="mb-1 flex items-start justify-between gap-2">
+            <span className="text-[10px] text-muted-foreground">
+              <Clock className="mr-0.5 inline h-2.5 w-2.5" />
+              {new Date(p.created_at + "Z").toLocaleString()}
+            </span>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[10px] text-destructive-foreground/80 hover:bg-destructive/20"
+                disabled={reviewing === p.id}
+                onClick={() => void handleReview(p.id, "reject")}
+              >
+                <X className="mr-1 h-3 w-3" />
+                Reject
+              </Button>
+              <Button
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                disabled={reviewing === p.id}
+                onClick={() => void handleReview(p.id, "accept")}
+              >
+                <Check className="mr-1 h-3 w-3" />
+                Accept
+              </Button>
+            </div>
+          </div>
+          {p.rationale && (
+            <p className="mb-1 text-muted-foreground">{p.rationale}</p>
+          )}
+          <details className="text-[10px]">
+            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+              View proposed changes
+            </summary>
+            <pre className="mt-1 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
+              {JSON.stringify(p.proposed_changes, null, 2)}
+            </pre>
+          </details>
+        </div>
+      ))}
+    </section>
   );
 }
 

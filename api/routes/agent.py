@@ -12,6 +12,7 @@ from sqlmodel import select
 
 from api.dependencies import SessionDep, require_agent_key
 from api.models.entities import KnowledgeNode, Project, Subproject, Ticket
+from api.models.enums import KnowledgeNodeStatus
 from api.utils.context_trails import (
     build_context_trail,
     format_context_trail_markdown,
@@ -39,12 +40,19 @@ def _format_context(subproject: Subproject, tickets: list[Ticket]) -> str:
             desc = (ticket.description or "").strip().replace("\n", " ")
             if len(desc) > 160:
                 desc = desc[:157] + "..."
+            blocked_tag = ""
+            if ticket.status.value == "BLOCKED" and ticket.blocked_by:
+                blocked_tag = f" [BLOCKED:{ticket.blocked_by.value}]"
+                if ticket.blocked_reason:
+                    blocked_tag += f" ({ticket.blocked_reason})"
             lines.append(
-                f"- #{ticket.id} [{ticket.status.value}/{ticket.assignee.value}] "
+                f"- #{ticket.id} [{ticket.status.value}/{ticket.assignee.value}]{blocked_tag} "
                 f"{ticket.title}{mr}"
             )
             if desc:
                 lines.append(f"    {desc}")
+            if ticket.source_refs:
+                lines.append(f"    refs: {', '.join(ticket.source_refs)}")
     return "\n".join(lines)
 
 
@@ -93,8 +101,14 @@ def _format_knowledge_tree(project: Project, nodes: list[KnowledgeNode]) -> str:
                 if len(node.source_refs) > 3:
                     preview += f", …(+{len(node.source_refs) - 3})"
                 refs = f"  [refs: {preview}]"
+            node_status = getattr(node, "status", KnowledgeNodeStatus.CURRENT)
+            status_tag = ""
+            if node_status == KnowledgeNodeStatus.STALE:
+                status_tag = " [STALE]"
+            elif node_status == KnowledgeNodeStatus.ARCHIVED:
+                status_tag = " [ARCHIVED]"
             lines.append(
-                f"{indent}- [{node.node_type.value} #{node.id}] {node.title}{refs}"
+                f"{indent}- [{node.node_type.value} #{node.id}]{status_tag} {node.title}{refs}"
             )
             walk(node.id, depth + 1)
 
@@ -111,18 +125,23 @@ def _format_knowledge_tree(project: Project, nodes: list[KnowledgeNode]) -> str:
     "/projects/{project_id}/knowledge",
     response_class=PlainTextResponse,
 )
-def get_agent_knowledge_map(project_id: int, session: SessionDep) -> str:
+def get_agent_knowledge_map(
+    project_id: int,
+    session: SessionDep,
+    include_stale: bool = False,
+) -> str:
     """Compact plain-text outline of a project's knowledge tree for agents."""
     project = session.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
-    nodes = list(
-        session.exec(
-            select(KnowledgeNode)
-            .where(KnowledgeNode.project_id == project_id)
-            .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
-        ).all()
+    query = (
+        select(KnowledgeNode)
+        .where(KnowledgeNode.project_id == project_id)
+        .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
     )
+    if not include_stale:
+        query = query.where(KnowledgeNode.status == KnowledgeNodeStatus.CURRENT)  # type: ignore[union-attr]
+    nodes = list(session.exec(query).all())
     return _format_knowledge_tree(project, nodes)
 
 
