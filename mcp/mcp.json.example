@@ -11,7 +11,7 @@
       "// args": ["/absolute/path/to/taskable/mcp/mcp_server.py"],
 
       "env": {
-        "TASKABLE_API_URL": "https://mouvadah.com/api/v1",
+        "TASKABLE_API_URL": "https://taskable-6yik.onrender.com/api/v1",
         "TASKABLE_API_KEY": "<paste your per-user API key from Profile > API Keys>"
       }
     }
