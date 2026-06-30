@@ -6,6 +6,7 @@ import {
   FileText,
   Loader2,
   Trash2,
+  LogOut,
 } from "lucide-react";
 import {
   createProject,
@@ -16,6 +17,7 @@ import {
   listSubprojects,
 } from "@/lib/api";
 import { useWorkspace } from "@/context/WorkspaceContext";
+import { useAuth } from "@/context/AuthContext";
 import { useAsync } from "@/hooks/useAsync";
 import type { Project, SSEPayload, Subproject } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,7 @@ export function Sidebar({ lastEvent }: SidebarProps) {
     setActiveProjectId,
     setActiveSubprojectId,
   } = useWorkspace();
+  const { user, logout } = useAuth();
 
   const projects = useAsync<Project[]>(() => listProjects(), []);
 
@@ -166,6 +169,36 @@ export function Sidebar({ lastEvent }: SidebarProps) {
           </section>
         </div>
       </ScrollArea>
+
+      <footer className="border-t border-border px-3 py-2">
+        <div className="flex items-center gap-2">
+          {user?.avatar_url ? (
+            <img
+              src={user.avatar_url}
+              alt={user.name}
+              className="h-7 w-7 rounded-full"
+            />
+          ) : (
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+              {user?.name?.charAt(0).toUpperCase() ?? "?"}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium">{user?.name}</p>
+            <p className="truncate text-[10px] text-muted-foreground">
+              {user?.email}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label="Sign out"
+            onClick={logout}
+          >
+            <LogOut className="mx-auto h-3.5 w-3.5" />
+          </button>
+        </div>
+      </footer>
     </aside>
   );
 }

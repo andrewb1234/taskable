@@ -15,8 +15,10 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from api import database, events
+from api.auth import get_current_user
 from api.dependencies import get_session
 from api.main import app
+from api.models.entities import User
 
 TEST_AGENT_API_KEY = "test-agent-key"
 
@@ -26,6 +28,7 @@ def _set_test_env(monkeypatch) -> None:
     """Pin config to deterministic values for every test."""
     monkeypatch.setenv("AGENT_API_KEY", TEST_AGENT_API_KEY)
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("JWT_SECRET", "test-jwt-secret")
     # Reset cached settings so the new env wins.
     from api.config import get_settings
 
@@ -60,18 +63,46 @@ def session(engine) -> Iterator[Session]:
 
 
 @pytest.fixture
-def client(engine) -> Iterator[TestClient]:
-    """FastAPI TestClient with the in-memory engine wired in."""
+def test_user(engine) -> User:
+    """Create a deterministic test user for auth overrides."""
+    with Session(engine) as sess:
+        user = User(
+            google_id="test-google-id",
+            email="test@example.com",
+            name="Test User",
+            avatar_url=None,
+        )
+        sess.add(user)
+        sess.commit()
+        sess.refresh(user)
+        return user
+
+
+@pytest.fixture
+def client(engine, test_user) -> Iterator[TestClient]:
+    """FastAPI TestClient with the in-memory engine and auth bypass wired in."""
 
     def override_get_session() -> Iterator[Session]:
         with Session(engine) as sess:
             yield sess
 
+    def override_get_current_user():
+        return test_user
+
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    api_v1 = getattr(app, "api_v1", None)
+    if api_v1 is not None:
+        api_v1.dependency_overrides[get_session] = override_get_session
+        api_v1.dependency_overrides[get_current_user] = override_get_current_user
     events.reset_broadcaster()
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.pop(get_session, None)
+    app.dependency_overrides.pop(get_current_user, None)
+    if api_v1 is not None:
+        api_v1.dependency_overrides.pop(get_session, None)
+        api_v1.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.fixture

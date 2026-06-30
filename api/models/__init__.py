@@ -18,6 +18,7 @@ from api.models.entities import (
     Project,
     Subproject,
     Ticket,
+    User,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "Project",
     "Subproject",
     "Ticket",
+    "User",
 ]

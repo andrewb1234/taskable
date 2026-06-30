@@ -188,7 +188,8 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
     update → comment → link MR.
     """
     # Seed a project with one ticket through the HTTP API first.
-    async with httpx.AsyncClient(base_url=live_api["base_url"], timeout=5) as http:
+    headers = {"Authorization": f"Bearer {TEST_AGENT_KEY}"}
+    async with httpx.AsyncClient(base_url=live_api["base_url"], timeout=5, headers=headers) as http:
         project = (await http.post("/projects", json={"name": "Sim"})).json()
         subproject = (
             await http.post(

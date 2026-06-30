@@ -30,6 +30,12 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
+    # Auth
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    jwt_secret: str = "dev-jwt-secret-change-me"
+    frontend_url: str = "http://localhost:5173"
+
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
         env_file_encoding="utf-8",

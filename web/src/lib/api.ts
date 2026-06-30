@@ -45,6 +45,7 @@ async function request<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(init.headers ?? {}),
@@ -275,3 +276,19 @@ export const createComment = (
   });
 
 export const apiBase = API_BASE;
+
+// ---- Auth ----------------------------------------------------------------
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string;
+  avatar_url: string | null;
+}
+
+export const getMe = () => request<AuthUser>("/auth/me");
+
+export const logout = () =>
+  request<void>("/auth/logout", { method: "POST" });
+
+export const getLoginUrl = () => `${API_BASE}/auth/login`;
