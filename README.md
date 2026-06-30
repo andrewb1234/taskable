@@ -166,6 +166,7 @@ make e2e          # playwright realtime spec
 | GET    | `/api/v1/tickets/{id}/comments`                     |                               |
 | POST   | `/api/v1/tickets/{id}/comments`                     |                               |
 | GET    | `/api/v1/projects/{id}/knowledge`                   | Flat list; client builds tree.|
+| GET    | `/api/v1/projects/{id}/knowledge/context-trail`     | Query-scored knowledge trail. |
 | POST   | `/api/v1/projects/{id}/knowledge`                   | Creates a `KnowledgeNode`.    |
 | GET    | `/api/v1/knowledge/{id}`                            | Single node detail.           |
 | PATCH  | `/api/v1/knowledge/{id}`                            | Re-parent / retype / edit.    |
@@ -173,18 +174,32 @@ make e2e          # playwright realtime spec
 | GET    | `/api/v1/events`                                    | SSE stream (heartbeat 15s).   |
 | GET    | `/api/v1/agent/context/{id}`                        | **Bearer required.**          |
 | GET    | `/api/v1/agent/projects/{id}/knowledge`             | **Bearer required** (outline).|
+| GET    | `/api/v1/agent/projects/{id}/context-trail`         | **Bearer required** (trail).  |
 | GET    | `/api/v1/agent/knowledge/{id}`                      | **Bearer required** (detail). |
 
 ### Knowledge tree (upstream of tickets)
 
 Each project owns a tree of `KnowledgeNode` entries — `RAW` pastes, `SUMMARY`
 compressions, and drafted `PRD` / `TDD` specifications — that sits between "I
-have an idea" and "break it into tickets." The agent drives it through four
-MCP tools (`list_knowledge_nodes`, `read_knowledge_node`, `create_knowledge_node`,
-`update_knowledge_node`); the human reviews and edits the same nodes in the
+have an idea" and "break it into tickets." The agent drives it through MCP
+tools (`list_knowledge_nodes`, `find_context_trail`, `read_knowledge_node`,
+`create_knowledge_node`, `update_knowledge_node`); the human reviews and edits the same nodes in the
 `Workspace` **Knowledge** tab. Mutations broadcast
 `KNOWLEDGE_NODE_CREATED|UPDATED|DELETED` over SSE so the tree panel stays live
 without a reload. Design rationale and friction log: `learnings.md`.
+
+### Context trails
+
+The Knowledge tab includes a **Find context trail** box. A human or agent can
+query a task intent like `battle component`; Taskable scores the knowledge tree,
+returns a suggested load order, and shows matched branches with child hints. The
+MCP tool `find_context_trail` exposes the same trail to fresh agent windows so
+they can load scoped memory instead of rereading the whole project.
+
+The trail UI can also save a **Context checkpoint** node with `node:<id>`
+breadcrumbs for everything loaded. When the human sees stale or incorrect
+context, the node editor's **Correction request** box creates a child summary
+under the bad node so the agent can find and resolve it later.
 
 `GET /tickets/{id}` was added beyond the original spec so the client-side SSE-driven targeted refetch described in `docs/client_server.md` has a route to hit. Logged in `learnings.md`.
 

@@ -15,7 +15,9 @@ export function useSSE(onEvent: (payload: SSEPayload) => void): void {
   handlerRef.current = onEvent;
 
   useEffect(() => {
-    const source = new EventSource(`${apiBase}/events`);
+    const source = new EventSource(`${apiBase}/events`, {
+      withCredentials: true,
+    });
 
     source.onmessage = (event: MessageEvent<string>) => {
       try {

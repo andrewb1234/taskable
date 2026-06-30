@@ -15,18 +15,20 @@ Mirrors the existing routing conventions:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlmodel import select
 
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
 from api.models.entities import KnowledgeNode, Project
-from api.models.enums import ActorRole, SSEAction
+from api.models.enums import ActorRole, KnowledgeNodeStatus, SSEAction
 from api.schemas import (
     KnowledgeNodeCreate,
     KnowledgeNodeRead,
     KnowledgeNodeUpdate,
+    ContextTrailRead,
 )
+from api.utils.context_trails import build_context_trail
 from api.utils.time import utcnow
 
 router = APIRouter(tags=["knowledge"])
@@ -47,12 +49,14 @@ def _require_node(session, node_id: int) -> KnowledgeNode:
 
 
 def _infer_actor(request: Request) -> ActorRole:
-    """Soft-tag the author based on the presence of the agent bearer token."""
-    from api.config import get_settings  # local import avoids cycle
+    """Detect whether the caller is the agent (API key) or the UI (cookie).
 
-    header = request.headers.get("authorization") or ""
-    expected = f"Bearer {get_settings().agent_api_key}"
-    return ActorRole.AGENT if header == expected else ActorRole.HUMAN
+    Uses the auth_method set by get_current_user: 'api_key' = AGENT,
+    'cookie' = HUMAN. Falls back to HUMAN if unset.
+    """
+    if getattr(request.state, "auth_method", None) == "api_key":
+        return ActorRole.AGENT
+    return ActorRole.HUMAN
 
 
 def _validate_parent(
@@ -97,22 +101,51 @@ def _validate_parent(
     response_model=list[KnowledgeNodeRead],
 )
 def list_knowledge_nodes(
-    project_id: int, session: SessionDep
+    project_id: int,
+    session: SessionDep,
+    include_stale: bool = Query(default=False),
 ) -> list[KnowledgeNode]:
-    """Return every knowledge node for a project ordered by ``created_at``.
+    """Return knowledge nodes for a project.
 
+    By default only ``CURRENT`` nodes are returned. Pass ``?include_stale=true``
+    to include ``STALE`` and ``ARCHIVED`` nodes (for full history).
     The shape is intentionally flat; the client reconstructs the tree
     locally using ``parent_id``. This keeps the endpoint cheap (one query)
     and SSE-friendly (a single action invalidates the whole panel).
     """
     _require_project(session, project_id)
-    return list(
-        session.exec(
-            select(KnowledgeNode)
-            .where(KnowledgeNode.project_id == project_id)
-            .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
-        ).all()
+    query = (
+        select(KnowledgeNode)
+        .where(KnowledgeNode.project_id == project_id)
+        .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
     )
+    if not include_stale:
+        query = query.where(KnowledgeNode.status == KnowledgeNodeStatus.CURRENT)  # type: ignore[union-attr]
+    return list(session.exec(query).all())
+
+
+@router.get(
+    "/projects/{project_id}/knowledge/context-trail",
+    response_model=ContextTrailRead,
+)
+def get_context_trail(
+    project_id: int,
+    session: SessionDep,
+    query: str = Query(default="", max_length=200),
+    limit: int = Query(default=6, ge=1, le=12),
+    include_stale: bool = Query(default=False),
+) -> ContextTrailRead:
+    """Find the most relevant knowledge branches for a task-intent query."""
+    project = _require_project(session, project_id)
+    stmt = (
+        select(KnowledgeNode)
+        .where(KnowledgeNode.project_id == project_id)
+        .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
+    )
+    if not include_stale:
+        stmt = stmt.where(KnowledgeNode.status == KnowledgeNodeStatus.CURRENT)
+    nodes = list(session.exec(stmt).all())
+    return build_context_trail(project, nodes, query, limit=limit)
 
 
 @router.post(

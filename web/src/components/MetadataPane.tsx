@@ -11,11 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   ASSIGNEE_LABELS,
+  BLOCKED_BY_LABELS,
   TICKET_STATUSES,
   TICKET_STATUS_LABELS,
 } from "@/types";
-import type { TicketAssignee, TicketDetail, TicketStatus } from "@/types";
+import type { BlockedByCategory, TicketAssignee, TicketDetail, TicketStatus } from "@/types";
 import { linkTicketMR, updateTicket } from "@/lib/api";
+
+const BLOCKED_BY_OPTIONS: BlockedByCategory[] = [
+  "WAITING_HUMAN",
+  "WAITING_DEPENDENCY",
+  "AMBIGUOUS_REQUIREMENT",
+  "EXTERNAL",
+];
 
 interface Props {
   ticket: TicketDetail;
@@ -27,9 +35,25 @@ const ASSIGNEES: TicketAssignee[] = ["UNASSIGNED", "HUMAN", "AGENT"];
 export function MetadataPane({ ticket, onChanged }: Props) {
   const [mrUrl, setMrUrl] = useState(ticket.mr_link ?? "");
   const [savingMR, setSavingMR] = useState(false);
+  const [blockedReason, setBlockedReason] = useState(ticket.blocked_reason ?? "");
 
   async function setStatus(status: TicketStatus) {
-    await updateTicket(ticket.id, { status });
+    const patch: Parameters<typeof updateTicket>[1] = { status };
+    if (status === "BLOCKED" && !ticket.blocked_by) {
+      patch.blocked_by = "WAITING_DEPENDENCY";
+    }
+    await updateTicket(ticket.id, patch);
+    onChanged();
+  }
+
+  async function setBlockedBy(blocked_by: BlockedByCategory) {
+    await updateTicket(ticket.id, { blocked_by });
+    onChanged();
+  }
+
+  async function saveBlockedReason() {
+    if (blockedReason === (ticket.blocked_reason ?? "")) return;
+    await updateTicket(ticket.id, { blocked_reason: blockedReason || null });
     onChanged();
   }
 
@@ -72,6 +96,36 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           </SelectContent>
         </Select>
       </div>
+
+      {ticket.status === "BLOCKED" && (
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Blocked by
+          </label>
+          <Select
+            value={ticket.blocked_by ?? ""}
+            onValueChange={(v) => void setBlockedBy(v as BlockedByCategory)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select reason…" />
+            </SelectTrigger>
+            <SelectContent>
+              {BLOCKED_BY_OPTIONS.map((opt) => (
+                <SelectItem key={opt} value={opt}>
+                  {BLOCKED_BY_LABELS[opt]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={blockedReason}
+            onChange={(e) => setBlockedReason(e.target.value)}
+            onBlur={() => void saveBlockedReason()}
+            placeholder="Optional reason…"
+            className="mt-1.5 h-8 text-xs"
+          />
+        </div>
+      )}
 
       <div>
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -129,6 +183,25 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           </a>
         )}
       </div>
+
+      {ticket.source_refs && ticket.source_refs.length > 0 && (
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Source Refs
+          </label>
+          <ul className="space-y-1">
+            {ticket.source_refs.map((ref, i) => (
+              <li key={i} className="truncate text-[11px] text-muted-foreground">
+                {ref.startsWith("node:") ? (
+                  <span className="font-mono">{ref}</span>
+                ) : (
+                  <span className="font-mono">{ref}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {ticket.audit_logs.length > 0 && (
         <div>

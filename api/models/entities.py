@@ -13,18 +13,37 @@ rather than stringified PEP 563 forms.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, JSON, String
 from sqlmodel import Field, Relationship, SQLModel
 
 from api.models.enums import (
     ActorRole,
     AuditAction,
+    BlockedByCategory,
+    KnowledgeNodeStatus,
     KnowledgeNodeType,
     SubprojectStatus,
     TicketAssignee,
     TicketStatus,
 )
 from api.utils.time import utcnow
+
+
+class AgentSession(SQLModel, table=True):
+    """Records an agent work session for handoff and audit purposes."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True)
+    intent: str = Field(default="")
+    loaded_node_ids: List[int] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, default=list)
+    )
+    started_at: datetime = Field(default_factory=utcnow, nullable=False)
+    ended_at: Optional[datetime] = Field(default=None)
+    handoff_note: Optional[str] = Field(default=None)
+    status: str = Field(default="ACTIVE")
+
+    project: Optional["Project"] = Relationship(back_populates="sessions")
 
 
 class Project(SQLModel, table=True):
@@ -40,6 +59,10 @@ class Project(SQLModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
     knowledge_nodes: List["KnowledgeNode"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    sessions: List["AgentSession"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -71,6 +94,13 @@ class Ticket(SQLModel, table=True):
     status: TicketStatus = Field(default=TicketStatus.TODO)
     assignee: TicketAssignee = Field(default=TicketAssignee.UNASSIGNED)
     mr_link: Optional[str] = Field(default=None)
+    blocked_by: Optional[BlockedByCategory] = Field(
+        default=None, sa_column=Column(String, nullable=True)
+    )
+    blocked_reason: Optional[str] = Field(default=None)
+    source_refs: List[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False, default=list)
+    )
 
     subproject: Optional[Subproject] = Relationship(back_populates="tickets")
     comments: List["Comment"] = Relationship(
@@ -132,6 +162,12 @@ class KnowledgeNode(SQLModel, table=True):
 
     title: str
     node_type: KnowledgeNodeType = Field(default=KnowledgeNodeType.RAW)
+    status: KnowledgeNodeStatus = Field(
+        default=KnowledgeNodeStatus.CURRENT, sa_column=Column(String, nullable=False, default="CURRENT")
+    )
+    superseded_by: Optional[int] = Field(
+        default=None, foreign_key="knowledgenode.id", index=True
+    )
     content: str = Field(default="")
     source_refs: List[str] = Field(
         default_factory=list, sa_column=Column(JSON, nullable=False, default=list)
@@ -143,9 +179,63 @@ class KnowledgeNode(SQLModel, table=True):
     project: Optional[Project] = Relationship(back_populates="knowledge_nodes")
     parent: Optional["KnowledgeNode"] = Relationship(
         back_populates="children",
-        sa_relationship_kwargs={"remote_side": "KnowledgeNode.id"},
+        sa_relationship_kwargs={"remote_side": "KnowledgeNode.id", "foreign_keys": "[KnowledgeNode.parent_id]"},
     )
     children: List["KnowledgeNode"] = Relationship(
         back_populates="parent",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "foreign_keys": "[KnowledgeNode.parent_id]"},
+    )
+    proposals: List["KnowledgeProposal"] = Relationship(
+        back_populates="node",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
+
+class User(SQLModel, table=True):
+    """Registered user authenticated via Google OAuth."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    google_id: str = Field(unique=True, index=True)
+    email: str = Field(unique=True, index=True)
+    name: str
+    avatar_url: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+
+class ApiKey(SQLModel, table=True):
+    """Per-user API key for agent/MCP authentication.
+
+    The full key is shown once on creation and never stored. We persist only:
+    - ``key_prefix`` (first 12 chars) for display/identification
+    - ``key_hash`` (SHA-256 of the full key) for lookup/verification
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    name: str = Field(default="Default")
+    key_prefix: str = Field(index=True)
+    key_hash: str = Field(unique=True, index=True)
+    expires_at: Optional[datetime] = Field(default=None)
+    last_used_at: Optional[datetime] = Field(default=None)
+    revoked: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    user: Optional[User] = Relationship()
+
+
+class KnowledgeProposal(SQLModel, table=True):
+    """Agent-submitted proposed change to a knowledge node, pending human review."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    node_id: int = Field(foreign_key="knowledgenode.id", index=True)
+    proposed_by: str = Field(default="AGENT")
+    proposed_changes: dict = Field(
+        default_factory=dict, sa_column=Column(JSON, nullable=False, default=dict)
+    )
+    rationale: str = Field(default="")
+    status: str = Field(default="PENDING")
+    reviewed_by: Optional[str] = Field(default=None)
+    reviewed_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    node: Optional[KnowledgeNode] = Relationship(back_populates="proposals")

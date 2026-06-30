@@ -73,17 +73,20 @@ def test_agent_context_flattens_subproject_for_llm(client, agent_headers):
     assert response.headers["content-type"].startswith("text/plain")
 
 
-def test_agent_endpoint_requires_bearer(client):
-    project = client.post("/api/v1/projects", json={"name": "P"}).json()
-    sp = client.post(
+def test_agent_endpoint_requires_bearer(enforce_auth_client, agent_headers):
+    project = enforce_auth_client.post(
+        "/api/v1/projects", json={"name": "P"}, headers=agent_headers
+    ).json()
+    sp = enforce_auth_client.post(
         f"/api/v1/projects/{project['id']}/subprojects",
         json={"name": "S"},
+        headers=agent_headers,
     ).json()
 
-    unauthed = client.get(f"/api/v1/agent/context/{sp['id']}")
+    unauthed = enforce_auth_client.get(f"/api/v1/agent/context/{sp['id']}")
     assert unauthed.status_code == 401
 
-    bad = client.get(
+    bad = enforce_auth_client.get(
         f"/api/v1/agent/context/{sp['id']}",
         headers={"Authorization": "Bearer wrong"},
     )

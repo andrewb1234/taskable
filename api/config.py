@@ -30,12 +30,26 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
     ]
 
+    # Auth
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    jwt_secret: str = "dev-jwt-secret-change-me"
+    frontend_url: str = "http://localhost:5173"
+
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
+
+    def validate_production(self) -> None:
+        """Raise if security-sensitive defaults are still set in production."""
+        if self.frontend_url.startswith("https://") and self.jwt_secret == "dev-jwt-secret-change-me":
+            raise RuntimeError(
+                "JWT_SECRET must be set to a strong value in production "
+                "(current value is the insecure default)."
+            )
 
 
 @lru_cache(maxsize=1)

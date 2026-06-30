@@ -7,7 +7,7 @@ import { useWorkspace } from "@/context/WorkspaceContext";
 import { useSSE } from "@/hooks/useSSE";
 import type { SSEPayload } from "@/types";
 
-export function AppLayout() {
+export function AppLayout({ onNavigateProfile }: { onNavigateProfile: () => void }) {
   const { activeTicketId, openTicket } = useWorkspace();
   const [lastEvent, setLastEvent] = useState<SSEPayload | null>(null);
 
@@ -23,7 +23,7 @@ export function AppLayout() {
         minSize={200}
         maxSize={520}
         storageKey="taskable.sidebar.width"
-        first={<Sidebar lastEvent={lastEvent} />}
+        first={<Sidebar lastEvent={lastEvent} onNavigateProfile={onNavigateProfile} />}
         second={<Workspace lastEvent={lastEvent} />}
       />
       <TicketModal

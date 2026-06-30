@@ -1,6 +1,8 @@
 from api.models.enums import (
     ActorRole,
     AuditAction,
+    BlockedByCategory,
+    KnowledgeNodeStatus,
     KnowledgeNodeType,
     SSEAction,
     SubprojectStatus,
@@ -8,26 +10,34 @@ from api.models.enums import (
     TicketStatus,
 )
 from api.models.entities import (
+    AgentSession,
     AuditLog,
     Comment,
     KnowledgeNode,
+    KnowledgeProposal,
     Project,
     Subproject,
     Ticket,
+    User,
 )
 
 __all__ = [
     "ActorRole",
     "AuditAction",
+    "BlockedByCategory",
+    "KnowledgeNodeStatus",
     "KnowledgeNodeType",
     "SSEAction",
     "SubprojectStatus",
     "TicketAssignee",
     "TicketStatus",
+    "AgentSession",
     "AuditLog",
     "Comment",
     "KnowledgeNode",
+    "KnowledgeProposal",
     "Project",
     "Subproject",
     "Ticket",
+    "User",
 ]

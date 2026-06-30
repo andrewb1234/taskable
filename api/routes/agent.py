@@ -1,19 +1,25 @@
 """Agent-specific endpoints.
 
-These routes require the static ``AGENT_API_KEY`` bearer token because they
-produce LLM-optimized payloads that we only want exposed to the MCP server.
+These routes require an authenticated user (via session cookie or per-user
+API key) because they produce LLM-optimized payloads for the MCP server.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlmodel import select
 
-from api.dependencies import SessionDep, require_agent_key
+from api.auth import CurrentUser
+from api.dependencies import SessionDep
 from api.models.entities import KnowledgeNode, Project, Subproject, Ticket
+from api.models.enums import KnowledgeNodeStatus
+from api.utils.context_trails import (
+    build_context_trail,
+    format_context_trail_markdown,
+)
 
-router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_key)])
+router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 def _format_context(subproject: Subproject, tickets: list[Ticket]) -> str:
@@ -35,12 +41,19 @@ def _format_context(subproject: Subproject, tickets: list[Ticket]) -> str:
             desc = (ticket.description or "").strip().replace("\n", " ")
             if len(desc) > 160:
                 desc = desc[:157] + "..."
+            blocked_tag = ""
+            if ticket.status.value == "BLOCKED" and ticket.blocked_by:
+                blocked_tag = f" [BLOCKED:{ticket.blocked_by}]"
+                if ticket.blocked_reason:
+                    blocked_tag += f" ({ticket.blocked_reason})"
             lines.append(
-                f"- #{ticket.id} [{ticket.status.value}/{ticket.assignee.value}] "
+                f"- #{ticket.id} [{ticket.status.value}/{ticket.assignee.value}]{blocked_tag} "
                 f"{ticket.title}{mr}"
             )
             if desc:
                 lines.append(f"    {desc}")
+            if ticket.source_refs:
+                lines.append(f"    refs: {', '.join(ticket.source_refs)}")
     return "\n".join(lines)
 
 
@@ -89,8 +102,14 @@ def _format_knowledge_tree(project: Project, nodes: list[KnowledgeNode]) -> str:
                 if len(node.source_refs) > 3:
                     preview += f", …(+{len(node.source_refs) - 3})"
                 refs = f"  [refs: {preview}]"
+            node_status = getattr(node, "status", KnowledgeNodeStatus.CURRENT)
+            status_tag = ""
+            if node_status == KnowledgeNodeStatus.STALE:
+                status_tag = " [STALE]"
+            elif node_status == KnowledgeNodeStatus.ARCHIVED:
+                status_tag = " [ARCHIVED]"
             lines.append(
-                f"{indent}- [{node.node_type.value} #{node.id}] {node.title}{refs}"
+                f"{indent}- [{node.node_type.value} #{node.id}]{status_tag} {node.title}{refs}"
             )
             walk(node.id, depth + 1)
 
@@ -107,8 +126,37 @@ def _format_knowledge_tree(project: Project, nodes: list[KnowledgeNode]) -> str:
     "/projects/{project_id}/knowledge",
     response_class=PlainTextResponse,
 )
-def get_agent_knowledge_map(project_id: int, session: SessionDep) -> str:
+def get_agent_knowledge_map(
+    project_id: int,
+    session: SessionDep,
+    include_stale: bool = False,
+) -> str:
     """Compact plain-text outline of a project's knowledge tree for agents."""
+    project = session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    query = (
+        select(KnowledgeNode)
+        .where(KnowledgeNode.project_id == project_id)
+        .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
+    )
+    if not include_stale:
+        query = query.where(KnowledgeNode.status == KnowledgeNodeStatus.CURRENT)  # type: ignore[union-attr]
+    nodes = list(session.exec(query).all())
+    return _format_knowledge_tree(project, nodes)
+
+
+@router.get(
+    "/projects/{project_id}/context-trail",
+    response_class=PlainTextResponse,
+)
+def get_agent_context_trail(
+    project_id: int,
+    session: SessionDep,
+    query: str = Query(default="", max_length=200),
+    limit: int = Query(default=6, ge=1, le=12),
+) -> str:
+    """Return a ranked context-loading trail for an agent task query."""
     project = session.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
@@ -116,10 +164,13 @@ def get_agent_knowledge_map(project_id: int, session: SessionDep) -> str:
         session.exec(
             select(KnowledgeNode)
             .where(KnowledgeNode.project_id == project_id)
+            .where(KnowledgeNode.status == KnowledgeNodeStatus.CURRENT)
             .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
         ).all()
     )
-    return _format_knowledge_tree(project, nodes)
+    return format_context_trail_markdown(
+        build_context_trail(project, nodes, query, limit=limit)
+    )
 
 
 @router.get(

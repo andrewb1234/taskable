@@ -117,6 +117,7 @@ async def create_ticket(
         description=payload.description,
         status=payload.status,
         assignee=payload.assignee,
+        source_refs=list(payload.source_refs),
     )
     session.add(ticket)
     session.commit()

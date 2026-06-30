@@ -24,11 +24,12 @@ Tools — kept in lock-step with ``docs/mcp.md``:
     Knowledge tree (PRD / TDD synthesis upstream of tickets):
         13. ``list_knowledge_nodes(project_id)``
         14. ``read_knowledge_node(node_id)``
-        15. ``create_knowledge_node(project_id, title, node_type, content,
+        15. ``find_context_trail(project_id, query, limit?)``
+        16. ``create_knowledge_node(project_id, title, node_type, content,
                                     parent_id?, source_refs?)``
-        16. ``update_knowledge_node(node_id, title?, node_type?, content?,
+        17. ``update_knowledge_node(node_id, title?, node_type?, content?,
                                     parent_id?, source_refs?)``
-        17. ``delete_knowledge_node(node_id)``
+        18. ``delete_knowledge_node(node_id)``
 
 Docstrings are intentionally verbose so LLM clients have precise schemas and
 behavioral expectations without having to re-read the spec.
@@ -39,6 +40,7 @@ from __future__ import annotations
 import asyncio
 import os
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from dotenv import load_dotenv
@@ -50,7 +52,7 @@ load_dotenv()
 load_dotenv("../.env")
 
 API_URL = os.getenv("TASKABLE_API_URL", "http://localhost:8000/api/v1").rstrip("/")
-AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
+AGENT_API_KEY = os.getenv("TASKABLE_API_KEY", os.getenv("AGENT_API_KEY", ""))
 
 VALID_TICKET_STATUSES = {"TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"}
 VALID_TICKET_ASSIGNEES = {"HUMAN", "AGENT", "UNASSIGNED"}
@@ -421,6 +423,28 @@ async def read_knowledge_node(node_id: int) -> str:
     if response.status_code != 200:
         return (
             f"ERROR: knowledge node read failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    return response.text
+
+
+async def find_context_trail(project_id: int, query: str, limit: int = 6) -> str:
+    """Find the relevant branch of the knowledge tree for a task query.
+
+    Calls ``GET /agent/projects/{project_id}/context-trail``. The response is
+    a load-order plan: read the listed nodes first, then drill into the child
+    hints if the branch is still too broad. Use this when a fresh agent window
+    needs scoped context, e.g. "battle component" in a game project.
+    """
+    params = urlencode({"query": query, "limit": max(1, min(int(limit), 12))})
+    response = await _request(
+        "GET", f"/agent/projects/{int(project_id)}/context-trail?{params}"
+    )
+    if response.status_code == 404:
+        return f"ERROR: project {project_id} does not exist."
+    if response.status_code != 200:
+        return (
+            f"ERROR: context trail request failed "
             f"(status={response.status_code}): {response.text}"
         )
     return response.text
@@ -818,6 +842,31 @@ TOOLS: list[Tool] = [
         },
     ),
     Tool(
+        name="find_context_trail",
+        description=(
+            "Search the knowledge tree for a task-intent query and return "
+            "a suggested load order plus matched branches. Use when a fresh "
+            "agent window needs scoped context, e.g. 'battle component'."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "integer"},
+                "query": {
+                    "type": "string",
+                    "description": "Task or subsystem to orient around.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum matched branches to return (1-12).",
+                    "minimum": 1,
+                    "maximum": 12,
+                },
+            },
+            "required": ["project_id", "query"],
+        },
+    ),
+    Tool(
         name="create_knowledge_node",
         description=(
             "Persist a new knowledge node under a project. Use RAW for "
@@ -909,6 +958,7 @@ TOOL_DISPATCH = {
     "delete_knowledge_node": delete_knowledge_node,
     "list_knowledge_nodes": list_knowledge_nodes,
     "read_knowledge_node": read_knowledge_node,
+    "find_context_trail": find_context_trail,
     "create_knowledge_node": create_knowledge_node,
     "update_knowledge_node": update_knowledge_node,
 }

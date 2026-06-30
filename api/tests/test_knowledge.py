@@ -6,8 +6,8 @@ from api.events import Event, get_broadcaster
 from api.models.enums import SSEAction
 
 
-def _new_project(client) -> int:
-    return client.post("/api/v1/projects", json={"name": "P"}).json()["id"]
+def _new_project(client, headers=None) -> int:
+    return client.post("/api/v1/projects", json={"name": "P"}, headers=headers).json()["id"]
 
 
 def test_knowledge_node_crud_roundtrip(client):
@@ -181,16 +181,17 @@ def test_agent_knowledge_map_is_hierarchical(client, agent_headers):
     assert "/abs/README.md" in body
 
 
-def test_agent_knowledge_node_read_requires_bearer(client, agent_headers):
-    project_id = _new_project(client)
-    node = client.post(
+def test_agent_knowledge_node_read_requires_bearer(enforce_auth_client, agent_headers):
+    project_id = _new_project(enforce_auth_client, agent_headers)
+    node = enforce_auth_client.post(
         f"/api/v1/projects/{project_id}/knowledge",
         json={"title": "N", "content": "body text"},
+        headers=agent_headers,
     ).json()
 
-    assert client.get(f"/api/v1/agent/knowledge/{node['id']}").status_code == 401
+    assert enforce_auth_client.get(f"/api/v1/agent/knowledge/{node['id']}").status_code == 401
 
-    response = client.get(
+    response = enforce_auth_client.get(
         f"/api/v1/agent/knowledge/{node['id']}",
         headers=agent_headers,
     )
@@ -206,3 +207,85 @@ def test_agent_endpoint_tags_created_by_agent(client, agent_headers):
         headers=agent_headers,
     ).json()
     assert node["created_by"] == "AGENT"
+
+
+def test_context_trail_finds_relevant_branch_and_load_order(client):
+    project_id = _new_project(client)
+    root = client.post(
+        f"/api/v1/projects/{project_id}/knowledge",
+        json={
+            "title": "Game systems",
+            "node_type": "SUMMARY",
+            "content": "Top-level gameplay architecture and subsystem map.",
+        },
+    ).json()
+    battle = client.post(
+        f"/api/v1/projects/{project_id}/knowledge",
+        json={
+            "title": "Battle system",
+            "node_type": "SUMMARY",
+            "parent_id": root["id"],
+            "content": "Use this when working on combat UI, turn order, damage preview, or status effects.",
+        },
+    ).json()
+    damage = client.post(
+        f"/api/v1/projects/{project_id}/knowledge",
+        json={
+            "title": "Damage formula",
+            "node_type": "RAW",
+            "parent_id": battle["id"],
+            "content": "Battle damage preview uses attack minus defense with elemental modifiers.",
+            "source_refs": ["game/battle/damage.ts"],
+        },
+    ).json()
+    client.post(
+        f"/api/v1/projects/{project_id}/knowledge",
+        json={
+            "title": "Save system",
+            "node_type": "SUMMARY",
+            "parent_id": root["id"],
+            "content": "Save files, checkpoints, and profile slots.",
+        },
+    )
+
+    response = client.get(
+        f"/api/v1/projects/{project_id}/knowledge/context-trail",
+        params={"query": "battle damage component"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    load_ids = [node["id"] for node in body["load_order"]]
+    assert root["id"] in load_ids
+    assert battle["id"] in load_ids
+    assert any(item["id"] == damage["id"] for item in body["items"])
+
+    battle_item = next(item for item in body["items"] if item["id"] == battle["id"])
+    assert [part["title"] for part in battle_item["path"]] == [
+        "Game systems",
+        "Battle system",
+    ]
+    assert any(child["id"] == damage["id"] for child in battle_item["children"])
+
+
+def test_agent_context_trail_requires_bearer_and_returns_markdown(
+    enforce_auth_client, agent_headers
+):
+    project_id = _new_project(enforce_auth_client, agent_headers)
+    node = enforce_auth_client.post(
+        f"/api/v1/projects/{project_id}/knowledge",
+        json={
+            "title": "Battle component",
+            "node_type": "SUMMARY",
+            "content": "The battle component renders turn order and damage preview.",
+        },
+        headers=agent_headers,
+    ).json()
+
+    url = f"/api/v1/agent/projects/{project_id}/context-trail"
+    assert enforce_auth_client.get(url, params={"query": "battle"}).status_code == 401
+
+    response = enforce_auth_client.get(url, params={"query": "battle"}, headers=agent_headers)
+    assert response.status_code == 200
+    assert "Suggested load order" in response.text
+    assert f"[SUMMARY #{node['id']}]" in response.text

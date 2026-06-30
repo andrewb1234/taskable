@@ -1,7 +1,8 @@
-import { GitPullRequest, Bot, User, HelpCircle, Trash2 } from "lucide-react";
+import { GitPullRequest, Bot, User, HelpCircle, Trash2, BookOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Ticket, TicketAssignee } from "@/types";
+import { BLOCKED_BY_LABELS, BLOCKED_BY_COLORS } from "@/types";
 
 const assigneeIcon: Record<TicketAssignee, JSX.Element> = {
   HUMAN: <User className="h-3 w-3" />,
@@ -81,7 +82,18 @@ export function TicketCard({
           {ticket.description}
         </p>
       )}
-      <div className="mt-2 flex items-center gap-1.5">
+      {ticket.status === "BLOCKED" && ticket.blocked_by && (
+        <div
+          className={cn(
+            "mt-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium",
+            BLOCKED_BY_COLORS[ticket.blocked_by],
+          )}
+          title={ticket.blocked_reason ?? undefined}
+        >
+          {BLOCKED_BY_LABELS[ticket.blocked_by]}
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <Badge
           variant={assigneeVariant[ticket.assignee]}
           className="flex items-center gap-1"
@@ -100,6 +112,15 @@ export function TicketCard({
             <GitPullRequest className="h-3 w-3" />
             MR
           </a>
+        )}
+        {ticket.source_refs && ticket.source_refs.length > 0 && (
+          <span
+            className="flex items-center gap-0.5 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            title={ticket.source_refs.join(", ")}
+          >
+            <BookOpen className="h-3 w-3" />
+            {ticket.source_refs.length}
+          </span>
         )}
       </div>
     </div>
