@@ -32,7 +32,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 MCP_SERVER_SCRIPT = REPO_ROOT / "mcp" / "mcp_server.py"
-TEST_AGENT_KEY = "integration-test-key"
+TEST_AGENT_KEY = "taskable_integration_test_key_12345"
 
 
 # --------------------------------------------------------------------------
@@ -74,8 +74,8 @@ def live_api(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str
     db_path = tmp_path_factory.mktemp("taskable-int") / "live.db"
     env = {
         **os.environ,
-        "AGENT_API_KEY": TEST_AGENT_KEY,
         "DATABASE_URL": f"sqlite:///{db_path}",
+        "JWT_SECRET": "test-jwt-secret",
         "PYTHONUNBUFFERED": "1",
     }
 
@@ -145,7 +145,7 @@ class MCPClient:
 async def _spawn_mcp(api_url: str) -> asyncio.subprocess.Process:
     env = {
         **os.environ,
-        "AGENT_API_KEY": TEST_AGENT_KEY,
+        "TASKABLE_API_KEY": TEST_AGENT_KEY,
         "TASKABLE_API_URL": api_url,
         "PYTHONUNBUFFERED": "1",
     }
@@ -187,7 +187,25 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
     mirroring how an agent would actually use them: list → context →
     update → comment → link MR.
     """
-    # Seed a project with one ticket through the HTTP API first.
+    # Seed a user + API key, then a project with one ticket through the HTTP API.
+    import hashlib
+
+    db_path = live_api["db_path"]
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO user (google_id, email, name, avatar_url, created_at) "
+        "VALUES ('test-google', 'test@example.com', 'Test', NULL, datetime('now'))"
+    )
+    key_hash = hashlib.sha256(TEST_AGENT_KEY.encode()).hexdigest()
+    conn.execute(
+        "INSERT INTO apikey (user_id, name, key_prefix, key_hash, expires_at, "
+        "last_used_at, revoked, created_at) "
+        "VALUES (1, 'test-key', ?, ?, NULL, NULL, 0, datetime('now'))",
+        (TEST_AGENT_KEY[:12], key_hash),
+    )
+    conn.commit()
+    conn.close()
+
     headers = {"Authorization": f"Bearer {TEST_AGENT_KEY}"}
     async with httpx.AsyncClient(base_url=live_api["base_url"], timeout=5, headers=headers) as http:
         project = (await http.post("/projects", json={"name": "Sim"})).json()

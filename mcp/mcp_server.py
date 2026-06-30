@@ -52,7 +52,7 @@ load_dotenv()
 load_dotenv("../.env")
 
 API_URL = os.getenv("TASKABLE_API_URL", "http://localhost:8000/api/v1").rstrip("/")
-AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
+AGENT_API_KEY = os.getenv("TASKABLE_API_KEY", os.getenv("AGENT_API_KEY", ""))
 
 VALID_TICKET_STATUSES = {"TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"}
 VALID_TICKET_ASSIGNEES = {"HUMAN", "AGENT", "UNASSIGNED"}

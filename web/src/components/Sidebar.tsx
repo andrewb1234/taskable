@@ -7,6 +7,7 @@ import {
   Loader2,
   Trash2,
   LogOut,
+  Settings,
 } from "lucide-react";
 import {
   createProject,
@@ -28,9 +29,10 @@ import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   lastEvent: SSEPayload | null;
+  onNavigateProfile: () => void;
 }
 
-export function Sidebar({ lastEvent }: SidebarProps) {
+export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
   const {
     activeProjectId,
     activeSubprojectId,
@@ -189,6 +191,14 @@ export function Sidebar({ lastEvent }: SidebarProps) {
               {user?.email}
             </p>
           </div>
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label="Profile & settings"
+            onClick={onNavigateProfile}
+          >
+            <Settings className="mx-auto h-3.5 w-3.5" />
+          </button>
           <button
             type="button"
             className="h-7 w-7 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

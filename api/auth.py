@@ -4,13 +4,14 @@ Issues HS256-signed JWTs stored in an ``session`` httpOnly cookie. The
 ``get_current_user`` dependency is applied to all UI-facing routers so
 unauthenticated requests are rejected before reaching business logic.
 
-As a fallback, agent bearer tokens (``Authorization: Bearer <AGENT_API_KEY>``)
-are also accepted so the MCP server can access CRUD routes without a session
-cookie. When bearer auth is used, a synthetic system user is returned.
+As a fallback, per-user API keys (``Authorization: Bearer <key>``) are also
+accepted so the MCP server can access CRUD routes on behalf of a user.
+The full key is hashed (SHA-256) and compared against stored hashes.
 """
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
@@ -20,13 +21,13 @@ from sqlmodel import Session, select
 
 from api.config import Settings, get_settings
 from api.dependencies import SessionDep, SettingsDep
-from api.models.entities import User
+from api.models.entities import ApiKey, User
 
 COOKIE_NAME = "session"
 TOKEN_EXPIRY_DAYS = 30
 
-# Synthetic user IDs for agent-authenticated requests (negative to avoid collision).
-_AGENT_USER_ID = -1
+KEY_PREFIX = "taskable_"
+KEY_RANDOM_LENGTH = 32  # bytes of entropy -> ~43 base64 chars
 
 
 def create_jwt(user_id: int, email: str, secret: str) -> str:
@@ -48,15 +49,33 @@ def decode_jwt(token: str, secret: str) -> dict | None:
         return None
 
 
-def _agent_user() -> User:
-    """Return a synthetic system user for agent-bearer-authenticated requests."""
-    return User(
-        id=_AGENT_USER_ID,
-        google_id="agent",
-        email="agent@taskable.local",
-        name="Agent",
-        avatar_url=None,
-    )
+def hash_api_key(raw_key: str) -> str:
+    """SHA-256 hash of the raw key for storage/lookup."""
+    return hashlib.sha256(raw_key.encode()).hexdigest()
+
+
+def verify_api_key(raw_key: str, session: Session) -> User | None:
+    """Look up an API key by its hash and return the associated user.
+
+    Returns ``None`` if the key is not found, revoked, or expired.
+    Updates ``last_used_at`` on successful verification.
+    """
+    key_hash = hash_api_key(raw_key)
+    api_key = session.exec(
+        select(ApiKey).where(ApiKey.key_hash == key_hash)
+    ).first()
+    if api_key is None or api_key.revoked:
+        return None
+    if api_key.expires_at is not None:
+        if api_key.expires_at < datetime.now(timezone.utc):
+            return None
+    user = session.get(User, api_key.user_id)
+    if user is None:
+        return None
+    api_key.last_used_at = datetime.now(timezone.utc)
+    session.add(api_key)
+    session.commit()
+    return user
 
 
 def get_current_user(
@@ -66,7 +85,7 @@ def get_current_user(
 ) -> User:
     """Dependency that extracts and validates the user from either:
     1. A session cookie (JWT), or
-    2. An agent bearer token (Authorization: Bearer <AGENT_API_KEY>).
+    2. A per-user API key (Authorization: Bearer <key>).
     """
     # Try session cookie first.
     token = request.cookies.get(COOKIE_NAME)
@@ -78,12 +97,13 @@ def get_current_user(
             if user is not None:
                 return user
 
-    # Fallback: agent bearer token.
+    # Fallback: per-user API key bearer token.
     authorization = request.headers.get("Authorization", "")
     if authorization.startswith("Bearer "):
         bearer_token = authorization[len("Bearer "):]
-        if bearer_token == settings.agent_api_key:
-            return _agent_user()
+        user = verify_api_key(bearer_token, session)
+        if user is not None:
+            return user
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

@@ -1,7 +1,7 @@
 """Agent-specific endpoints.
 
-These routes require the static ``AGENT_API_KEY`` bearer token because they
-produce LLM-optimized payloads that we only want exposed to the MCP server.
+These routes require an authenticated user (via session cookie or per-user
+API key) because they produce LLM-optimized payloads for the MCP server.
 """
 
 from __future__ import annotations
@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlmodel import select
 
-from api.dependencies import SessionDep, require_agent_key
+from api.auth import CurrentUser
+from api.dependencies import SessionDep
 from api.models.entities import KnowledgeNode, Project, Subproject, Ticket
 from api.models.enums import KnowledgeNodeStatus
 from api.utils.context_trails import (
@@ -18,7 +19,7 @@ from api.utils.context_trails import (
     format_context_trail_markdown,
 )
 
-router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_key)])
+router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 def _format_context(subproject: Subproject, tickets: list[Ticket]) -> str:

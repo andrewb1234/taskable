@@ -8,6 +8,8 @@
 
 import type {
   AgentSession,
+  ApiKey,
+  ApiKeyCreated,
   BlockedByCategory,
   Comment,
   ContextTrail,
@@ -292,3 +294,19 @@ export const logout = () =>
   request<void>("/auth/logout", { method: "POST" });
 
 export const getLoginUrl = () => `${API_BASE}/auth/login`;
+
+// ---- API Keys ------------------------------------------------------------
+
+export const listApiKeys = () => request<ApiKey[]>("/apikeys");
+
+export const createApiKey = (payload: {
+  name: string;
+  expires_in_days?: number;
+}) =>
+  request<ApiKeyCreated>("/apikeys", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const revokeApiKey = (id: number) =>
+  request<void>(`/apikeys/${id}`, { method: "DELETE" });

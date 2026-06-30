@@ -38,15 +38,11 @@ def _get_or_404(session, ticket_id: int) -> Ticket:
 def _infer_actor(request: Request) -> ActorRole:
     """Detect whether the caller is the agent (bearer token) or the UI.
 
-    We avoid a hard dependency on ``require_agent_key`` on mutation routes so
-    the UI can write without auth on localhost; instead we *softly* tag the
-    actor for the audit log based on the header.
+    Requests authenticated via an API key (Authorization: Bearer ...) are
+    tagged as AGENT; session-cookie requests are tagged as HUMAN.
     """
-    from api.config import get_settings  # local import avoids cycle
-
     header = request.headers.get("authorization") or ""
-    expected = f"Bearer {get_settings().agent_api_key}"
-    return ActorRole.AGENT if header == expected else ActorRole.HUMAN
+    return ActorRole.AGENT if header.startswith("Bearer ") else ActorRole.HUMAN
 
 
 @router.get("/{ticket_id}", response_model=TicketDetail)

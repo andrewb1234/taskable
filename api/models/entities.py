@@ -202,6 +202,27 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
 
+class ApiKey(SQLModel, table=True):
+    """Per-user API key for agent/MCP authentication.
+
+    The full key is shown once on creation and never stored. We persist only:
+    - ``key_prefix`` (first 12 chars) for display/identification
+    - ``key_hash`` (SHA-256 of the full key) for lookup/verification
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    name: str = Field(default="Default")
+    key_prefix: str = Field(index=True)
+    key_hash: str = Field(unique=True, index=True)
+    expires_at: Optional[datetime] = Field(default=None)
+    last_used_at: Optional[datetime] = Field(default=None)
+    revoked: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    user: Optional[User] = Relationship()
+
+
 class KnowledgeProposal(SQLModel, table=True):
     """Agent-submitted proposed change to a knowledge node, pending human review."""
 

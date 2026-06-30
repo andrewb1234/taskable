@@ -49,12 +49,9 @@ def _require_node(session, node_id: int) -> KnowledgeNode:
 
 
 def _infer_actor(request: Request) -> ActorRole:
-    """Soft-tag the author based on the presence of the agent bearer token."""
-    from api.config import get_settings  # local import avoids cycle
-
+    """Soft-tag the author based on whether a bearer token is present."""
     header = request.headers.get("authorization") or ""
-    expected = f"Bearer {get_settings().agent_api_key}"
-    return ActorRole.AGENT if header == expected else ActorRole.HUMAN
+    return ActorRole.AGENT if header.startswith("Bearer ") else ActorRole.HUMAN
 
 
 def _validate_parent(

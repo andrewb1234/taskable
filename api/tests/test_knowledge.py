@@ -6,8 +6,8 @@ from api.events import Event, get_broadcaster
 from api.models.enums import SSEAction
 
 
-def _new_project(client) -> int:
-    return client.post("/api/v1/projects", json={"name": "P"}).json()["id"]
+def _new_project(client, headers=None) -> int:
+    return client.post("/api/v1/projects", json={"name": "P"}, headers=headers).json()["id"]
 
 
 def test_knowledge_node_crud_roundtrip(client):
@@ -181,16 +181,17 @@ def test_agent_knowledge_map_is_hierarchical(client, agent_headers):
     assert "/abs/README.md" in body
 
 
-def test_agent_knowledge_node_read_requires_bearer(client, agent_headers):
-    project_id = _new_project(client)
-    node = client.post(
+def test_agent_knowledge_node_read_requires_bearer(enforce_auth_client, agent_headers):
+    project_id = _new_project(enforce_auth_client, agent_headers)
+    node = enforce_auth_client.post(
         f"/api/v1/projects/{project_id}/knowledge",
         json={"title": "N", "content": "body text"},
+        headers=agent_headers,
     ).json()
 
-    assert client.get(f"/api/v1/agent/knowledge/{node['id']}").status_code == 401
+    assert enforce_auth_client.get(f"/api/v1/agent/knowledge/{node['id']}").status_code == 401
 
-    response = client.get(
+    response = enforce_auth_client.get(
         f"/api/v1/agent/knowledge/{node['id']}",
         headers=agent_headers,
     )
@@ -268,22 +269,23 @@ def test_context_trail_finds_relevant_branch_and_load_order(client):
 
 
 def test_agent_context_trail_requires_bearer_and_returns_markdown(
-    client, agent_headers
+    enforce_auth_client, agent_headers
 ):
-    project_id = _new_project(client)
-    node = client.post(
+    project_id = _new_project(enforce_auth_client, agent_headers)
+    node = enforce_auth_client.post(
         f"/api/v1/projects/{project_id}/knowledge",
         json={
             "title": "Battle component",
             "node_type": "SUMMARY",
             "content": "The battle component renders turn order and damage preview.",
         },
+        headers=agent_headers,
     ).json()
 
     url = f"/api/v1/agent/projects/{project_id}/context-trail"
-    assert client.get(url, params={"query": "battle"}).status_code == 401
+    assert enforce_auth_client.get(url, params={"query": "battle"}).status_code == 401
 
-    response = client.get(url, params={"query": "battle"}, headers=agent_headers)
+    response = enforce_auth_client.get(url, params={"query": "battle"}, headers=agent_headers)
     assert response.status_code == 200
     assert "Suggested load order" in response.text
     assert f"[SUMMARY #{node['id']}]" in response.text

@@ -236,3 +236,17 @@ export const BLOCKED_BY_COLORS: Record<BlockedByCategory, string> = {
   AMBIGUOUS_REQUIREMENT: "bg-orange-100 text-orange-700 border-orange-200",
   EXTERNAL: "bg-purple-100 text-purple-700 border-purple-200",
 };
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  key_prefix: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  revoked: boolean;
+}
+
+export interface ApiKeyCreated extends ApiKey {
+  key: string;
+}

@@ -27,6 +27,7 @@ from api.config import get_settings
 from api.database import init_db
 from api.routes import (
     agent,
+    apikeys,
     auth,
     comments,
     events,
@@ -83,9 +84,10 @@ def create_app() -> FastAPI:
     api_v1.include_router(proposals.router, dependencies=ui_auth)
     api_v1.include_router(sessions.router, dependencies=ui_auth)
     api_v1.include_router(events.router, dependencies=ui_auth)
+    api_v1.include_router(apikeys.router, dependencies=ui_auth)
 
-    # Agent routes (bearer token auth, not user session).
-    api_v1.include_router(agent.router)
+    # Agent routes (also require authenticated user via session or API key).
+    api_v1.include_router(agent.router, dependencies=ui_auth)
 
     app.mount("/api/v1", api_v1)
     app.api_v1 = api_v1  # exposed for test dependency overrides
