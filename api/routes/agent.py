@@ -43,7 +43,7 @@ def _format_context(subproject: Subproject, tickets: list[Ticket]) -> str:
                 desc = desc[:157] + "..."
             blocked_tag = ""
             if ticket.status.value == "BLOCKED" and ticket.blocked_by:
-                blocked_tag = f" [BLOCKED:{ticket.blocked_by.value}]"
+                blocked_tag = f" [BLOCKED:{ticket.blocked_by}]"
                 if ticket.blocked_reason:
                     blocked_tag += f" ({ticket.blocked_reason})"
             lines.append(
@@ -164,6 +164,7 @@ def get_agent_context_trail(
         session.exec(
             select(KnowledgeNode)
             .where(KnowledgeNode.project_id == project_id)
+            .where(KnowledgeNode.status == KnowledgeNodeStatus.CURRENT)
             .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
         ).all()
     )

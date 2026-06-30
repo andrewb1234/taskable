@@ -95,6 +95,7 @@ def get_current_user(
             user_id = int(payload["sub"])
             user = session.get(User, user_id)
             if user is not None:
+                request.state.auth_method = "cookie"
                 return user
 
     # Fallback: per-user API key bearer token.
@@ -103,6 +104,7 @@ def get_current_user(
         bearer_token = authorization[len("Bearer "):]
         user = verify_api_key(bearer_token, session)
         if user is not None:
+            request.state.auth_method = "api_key"
             return user
 
     raise HTTPException(

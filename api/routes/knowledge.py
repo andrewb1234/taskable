@@ -49,9 +49,14 @@ def _require_node(session, node_id: int) -> KnowledgeNode:
 
 
 def _infer_actor(request: Request) -> ActorRole:
-    """Soft-tag the author based on whether a bearer token is present."""
-    header = request.headers.get("authorization") or ""
-    return ActorRole.AGENT if header.startswith("Bearer ") else ActorRole.HUMAN
+    """Detect whether the caller is the agent (API key) or the UI (cookie).
+
+    Uses the auth_method set by get_current_user: 'api_key' = AGENT,
+    'cookie' = HUMAN. Falls back to HUMAN if unset.
+    """
+    if getattr(request.state, "auth_method", None) == "api_key":
+        return ActorRole.AGENT
+    return ActorRole.HUMAN
 
 
 def _validate_parent(
@@ -128,16 +133,18 @@ def get_context_trail(
     session: SessionDep,
     query: str = Query(default="", max_length=200),
     limit: int = Query(default=6, ge=1, le=12),
+    include_stale: bool = Query(default=False),
 ) -> ContextTrailRead:
     """Find the most relevant knowledge branches for a task-intent query."""
     project = _require_project(session, project_id)
-    nodes = list(
-        session.exec(
-            select(KnowledgeNode)
-            .where(KnowledgeNode.project_id == project_id)
-            .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
-        ).all()
+    stmt = (
+        select(KnowledgeNode)
+        .where(KnowledgeNode.project_id == project_id)
+        .order_by(KnowledgeNode.created_at, KnowledgeNode.id)
     )
+    if not include_stale:
+        stmt = stmt.where(KnowledgeNode.status == KnowledgeNodeStatus.CURRENT)
+    nodes = list(session.exec(stmt).all())
     return build_context_trail(project, nodes, query, limit=limit)
 
 

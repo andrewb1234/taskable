@@ -52,6 +52,7 @@ def _cookie_kwargs(settings: Settings, max_age: int | None = None) -> dict:
         "httponly": True,
         "samesite": "lax",
         "secure": secure,
+        "path": "/",
     }
     if max_age is not None:
         kwargs["max_age"] = max_age
@@ -77,11 +78,8 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
         "state": state,
         "prompt": "select_account",
     }
-    auth_url = (
-        GOOGLE_AUTH_URL
-        + "?"
-        + "&".join(f"{k}={v}" for k, v in params.items())
-    )
+    from urllib.parse import urlencode
+    auth_url = GOOGLE_AUTH_URL + "?" + urlencode(params)
 
     response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
     response.set_cookie(

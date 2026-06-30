@@ -17,7 +17,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    settings.validate_production()
     app = FastAPI(
         title="Taskable Co-Pilot Workspace API",
         version=__version__,
@@ -59,6 +60,8 @@ def create_app() -> FastAPI:
     cors_origins = list(settings.cors_origins)
     if settings.frontend_url not in cors_origins:
         cors_origins.append(settings.frontend_url)
+    # Filter out wildcard origins — incompatible with allow_credentials=True.
+    cors_origins = [o for o in cors_origins if o != "*"]
 
     app.add_middleware(
         CORSMiddleware,
@@ -110,6 +113,8 @@ def create_app() -> FastAPI:
         @app.get("/{full_path:path}")
         async def spa_catch_all(full_path: str):
             """SPA fallback: serve index.html for any non-API path."""
+            if full_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="Not found")
             return FileResponse(str(dist_dir / "index.html"))
 
     return app

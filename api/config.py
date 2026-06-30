@@ -43,6 +43,14 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    def validate_production(self) -> None:
+        """Raise if security-sensitive defaults are still set in production."""
+        if self.frontend_url.startswith("https://") and self.jwt_secret == "dev-jwt-secret-change-me":
+            raise RuntimeError(
+                "JWT_SECRET must be set to a strong value in production "
+                "(current value is the insecure default)."
+            )
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
@@ -86,7 +87,9 @@ def client(engine, test_user) -> Iterator[TestClient]:
         with Session(engine) as sess:
             yield sess
 
-    def override_get_current_user():
+    def override_get_current_user(request: Request):
+        header = request.headers.get("authorization") or ""
+        request.state.auth_method = "api_key" if header.startswith("Bearer ") else "cookie"
         return test_user
 
     app.dependency_overrides[get_session] = override_get_session

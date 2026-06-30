@@ -138,6 +138,9 @@ async def review_proposal(
         allowed_fields = {"title", "node_type", "status", "content", "source_refs", "parent_id", "superseded_by"}
         for key, value in proposal.proposed_changes.items():
             if key in allowed_fields:
+                if key == "parent_id" and value is not None:
+                    from api.routes.knowledge import _validate_parent
+                    _validate_parent(session, node.project_id, value, self_id=node.id)
                 setattr(node, key, value)
         from api.utils.time import utcnow as _utcnow
         node.updated_at = _utcnow()

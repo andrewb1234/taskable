@@ -36,13 +36,14 @@ def _get_or_404(session, ticket_id: int) -> Ticket:
 
 
 def _infer_actor(request: Request) -> ActorRole:
-    """Detect whether the caller is the agent (bearer token) or the UI.
+    """Detect whether the caller is the agent (API key) or the UI (cookie).
 
-    Requests authenticated via an API key (Authorization: Bearer ...) are
-    tagged as AGENT; session-cookie requests are tagged as HUMAN.
+    Uses the auth_method set by get_current_user: 'api_key' = AGENT,
+    'cookie' = HUMAN. Falls back to HUMAN if unset.
     """
-    header = request.headers.get("authorization") or ""
-    return ActorRole.AGENT if header.startswith("Bearer ") else ActorRole.HUMAN
+    if getattr(request.state, "auth_method", None) == "api_key":
+        return ActorRole.AGENT
+    return ActorRole.HUMAN
 
 
 @router.get("/{ticket_id}", response_model=TicketDetail)
