@@ -103,6 +103,9 @@ def request(method: str, url: str, payload: dict | None = None) -> Any:
     """Tiny wrapper around urllib so this script has zero runtime deps."""
     body = None
     headers = {"Accept": "application/json"}
+    api_key = os.environ.get("TASKABLE_API_KEY", os.environ.get("AGENT_API_KEY", ""))
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     if payload is not None:
         body = json.dumps(payload).encode()
         headers["Content-Type"] = "application/json"

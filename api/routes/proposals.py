@@ -158,4 +158,13 @@ async def review_proposal(
             parent_id=proposal.node_id,
         )
     )
+    if payload.action == "accept":
+        await get_broadcaster().publish(
+            Event(
+                action=SSEAction.KNOWLEDGE_NODE_UPDATED,
+                entity="knowledge_node",
+                entity_id=proposal.node_id,
+                parent_id=node.project_id,
+            )
+        )
     return proposal

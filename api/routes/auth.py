@@ -16,6 +16,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -78,7 +79,6 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
         "state": state,
         "prompt": "select_account",
     }
-    from urllib.parse import urlencode
     auth_url = GOOGLE_AUTH_URL + "?" + urlencode(params)
 
     response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
@@ -102,7 +102,7 @@ async def auth_callback(
     """Handle the OAuth callback: exchange code, upsert user, set JWT cookie."""
     if error:
         return RedirectResponse(
-            url=f"{settings.frontend_url}/?auth_error={error}",
+            url=f"{settings.frontend_url}/?auth_error={quote(error)}",
             status_code=status.HTTP_302_FOUND,
         )
     if not code or not state:
@@ -136,7 +136,7 @@ async def auth_callback(
         if token_resp.status_code != 200:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Token exchange failed: {token_resp.text}",
+                detail="Token exchange failed",
             )
         tokens = token_resp.json()
 
@@ -148,7 +148,7 @@ async def auth_callback(
         if userinfo_resp.status_code != 200:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Userinfo fetch failed: {userinfo_resp.text}",
+                detail="Userinfo fetch failed",
             )
         profile = userinfo_resp.json()
 
@@ -206,12 +206,12 @@ async def auth_me(current_user: User = Depends(get_current_user)) -> dict:
     }
 
 
-@router.post("/logout")
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def auth_logout(
     request: Request,
     settings: SettingsDep,
-) -> dict:
+) -> Response:
     """Clear the session cookie."""
-    response = Response(status_code=status.HTTP_200_OK)
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings))
     return response

@@ -67,12 +67,14 @@ def verify_api_key(raw_key: str, session: Session) -> User | None:
     if api_key is None or api_key.revoked:
         return None
     if api_key.expires_at is not None:
-        if api_key.expires_at < datetime.now(timezone.utc):
+        from api.utils.time import utcnow
+        if api_key.expires_at < utcnow():
             return None
     user = session.get(User, api_key.user_id)
     if user is None:
         return None
-    api_key.last_used_at = datetime.now(timezone.utc)
+    from api.utils.time import utcnow as _utcnow
+    api_key.last_used_at = _utcnow()
     session.add(api_key)
     session.commit()
     return user

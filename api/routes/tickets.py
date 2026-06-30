@@ -106,8 +106,8 @@ async def update_ticket(
                 detail="blocked_by is required when setting status to BLOCKED.",
             )
         if new_status != TicketStatus.BLOCKED:
-            updates.setdefault("blocked_by", None)
-            updates.setdefault("blocked_reason", None)
+            updates["blocked_by"] = None
+            updates["blocked_reason"] = None
         if new_status != ticket.status:
             audit_events.append(AuditAction.STATUS_UPDATE)
 
