@@ -88,16 +88,7 @@ def _state_secret(settings: Settings) -> bytes:
     previews, etc.) because the state is generated on one domain and verified
     on another. Defaults to the JWT secret for backward compatibility.
     """
-    import logging
-    secret = settings.oauth_state_secret or settings.jwt_secret
-    logger = logging.getLogger(__name__)
-    logger.warning(
-        "OAuth state secret debug: len=%s, set=%s, hash=%s",
-        len(secret),
-        bool(settings.oauth_state_secret),
-        hash(secret),
-    )
-    return secret.encode()
+    return (settings.oauth_state_secret or settings.jwt_secret).encode()
 
 
 def _encode_state(csrf_token: str, origin: str, settings: Settings) -> str:
