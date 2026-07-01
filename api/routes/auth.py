@@ -17,6 +17,8 @@ Multi-domain OAuth flow (supports PR previews on different hostnames):
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -53,10 +55,18 @@ def _redirect_uri(request: Request, settings: Settings) -> str:
     return f"{base}/api/v1/auth/callback"
 
 
+def _is_https(request: Request, settings: Settings) -> bool:
+    """Determine if the request is HTTPS, respecting reverse proxy headers."""
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    if forwarded_proto:
+        return forwarded_proto.split(",")[0].strip() == "https"
+    return request.url.scheme == "https"
+
+
 def _cookie_kwargs(settings: Settings, request: Request | None = None, max_age: int | None = None) -> dict:
     """Build cookie kwargs. Use Secure when the serving context is HTTPS."""
     if request is not None:
-        secure = request.url.scheme == "https"
+        secure = _is_https(request, settings)
     else:
         secure = settings.frontend_url.startswith("https://")
     kwargs: dict = {
@@ -70,15 +80,35 @@ def _cookie_kwargs(settings: Settings, request: Request | None = None, max_age: 
     return kwargs
 
 
-def _encode_state(csrf_token: str, origin: str) -> str:
-    """Pack CSRF token + origin into a base64 string for the OAuth state param."""
+def _encode_state(csrf_token: str, origin: str, settings: Settings) -> str:
+    """Pack CSRF token + origin + HMAC signature into a base64 state param."""
     payload = json.dumps({"csrf": csrf_token, "origin": origin})
-    return base64.urlsafe_b64encode(payload.encode()).decode()
+    sig = hmac.new(
+        settings.jwt_secret.encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
+    signed = json.dumps({"p": payload, "s": sig})
+    return base64.urlsafe_b64encode(signed.encode()).decode()
 
 
-def _decode_state(state: str) -> dict:
-    """Decode the OAuth state parameter back to a dict."""
-    return json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+def _decode_state(state: str, settings: Settings) -> dict:
+    """Decode and verify the OAuth state parameter.
+
+    Raises ValueError if the HMAC signature is invalid.
+    """
+    signed = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+    payload = signed["p"]
+    sig = signed["s"]
+    expected_sig = hmac.new(
+        settings.jwt_secret.encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(sig, expected_sig):
+        raise ValueError("Invalid state signature")
+    return json.loads(payload)
+
+
+def _is_dev_mode(settings: Settings) -> bool:
+    """Check if the app is running in development mode."""
+    return settings.frontend_url.startswith("http://localhost") or settings.frontend_url.startswith("http://127.0.0.1")
 
 
 def _validate_origin(origin: str, settings: Settings) -> bool:
@@ -93,8 +123,8 @@ def _validate_origin(origin: str, settings: Settings) -> bool:
     parsed = urlparse(origin)
     hostname = parsed.hostname or ""
 
-    # Allow localhost / 127.0.0.1 with any port (dev only).
-    if hostname in ("localhost", "127.0.0.1"):
+    # Allow localhost / 127.0.0.1 only in development mode.
+    if _is_dev_mode(settings) and hostname in ("localhost", "127.0.0.1"):
         return True
 
     # Check against allowed suffixes using proper hostname segmentation.
@@ -124,7 +154,7 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
 
     csrf_token = secrets.token_urlsafe(32)
     origin = str(request.base_url).rstrip("/")
-    state = _encode_state(csrf_token, origin)
+    state = _encode_state(csrf_token, origin, settings)
     redirect_uri = _redirect_uri(request, settings)
     params = {
         "client_id": settings.google_client_id,
@@ -161,8 +191,18 @@ async def auth_callback(
     proxy-callback endpoint.
     """
     if error:
+        # Try to extract origin from state so we redirect back to the right domain.
+        redirect_target = settings.frontend_url
+        if state:
+            try:
+                state_payload = _decode_state(state, settings)
+                origin = state_payload.get("origin", "")
+                if origin and _validate_origin(origin, settings):
+                    redirect_target = origin
+            except Exception:
+                pass
         return RedirectResponse(
-            url=f"{settings.frontend_url}/?auth_error={quote(error)}",
+            url=f"{redirect_target}/?auth_error={quote(error)}",
             status_code=status.HTTP_302_FOUND,
         )
     if not code or not state:
@@ -173,7 +213,7 @@ async def auth_callback(
 
     # Decode state to get CSRF token + origin.
     try:
-        state_payload = _decode_state(state)
+        state_payload = _decode_state(state, settings)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -244,7 +284,7 @@ async def auth_proxy_callback(
 
     # Decode state to get origin.
     try:
-        state_payload = _decode_state(state)
+        state_payload = _decode_state(state, settings)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
