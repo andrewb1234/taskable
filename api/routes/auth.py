@@ -81,6 +81,16 @@ def _cookie_kwargs(settings: Settings, request: Request | None = None, max_age: 
     return kwargs
 
 
+def _state_secret(settings: Settings) -> bytes:
+    """Return the secret used to HMAC-sign the OAuth state parameter.
+
+    This secret must be identical across all deployments (production, PR
+    previews, etc.) because the state is generated on one domain and verified
+    on another. Defaults to the JWT secret for backward compatibility.
+    """
+    return (settings.oauth_state_secret or settings.jwt_secret).encode()
+
+
 def _encode_state(csrf_token: str, origin: str, settings: Settings) -> str:
     """Pack CSRF token + origin + timestamp + HMAC signature into a base64 state param."""
     payload = json.dumps(
@@ -91,7 +101,7 @@ def _encode_state(csrf_token: str, origin: str, settings: Settings) -> str:
         }
     )
     sig = hmac.new(
-        settings.jwt_secret.encode(), payload.encode(), hashlib.sha256
+        _state_secret(settings), payload.encode(), hashlib.sha256
     ).hexdigest()
     signed = json.dumps({"p": payload, "s": sig})
     return base64.urlsafe_b64encode(signed.encode()).decode()
@@ -106,7 +116,7 @@ def _decode_state(state: str, settings: Settings) -> dict:
     payload = signed["p"]
     sig = signed["s"]
     expected_sig = hmac.new(
-        settings.jwt_secret.encode(), payload.encode(), hashlib.sha256
+        _state_secret(settings), payload.encode(), hashlib.sha256
     ).hexdigest()
     if not hmac.compare_digest(sig, expected_sig):
         raise ValueError("Invalid state signature")

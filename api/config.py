@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
     jwt_secret: str = "dev-jwt-secret-change-me"
+    # Secret used to HMAC-sign the OAuth state parameter. Because the state is
+    # generated on one domain (e.g. a PR preview) and verified on the production
+    # callback domain, this secret must be identical across all deployments.
+    oauth_state_secret: str | None = None
     frontend_url: str = "http://localhost:5173"
     oauth_redirect_uri: str | None = None
     allowed_origin_suffixes: list[str] = [".onrender.com"]
