@@ -48,7 +48,7 @@ def _redirect_uri(request: Request) -> str:
     """
     forwarded_proto = request.headers.get("x-forwarded-proto", "")
     scheme = forwarded_proto.split(",")[0].strip() if forwarded_proto else request.url.scheme
-    host = request.url.hostname or request.headers.get("host", "")
+    host = request.headers.get("host") or request.url.netloc
     return f"{scheme}://{host}/api/v1/auth/callback"
 
 
