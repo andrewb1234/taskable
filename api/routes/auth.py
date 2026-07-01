@@ -21,7 +21,7 @@ import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -53,9 +53,12 @@ def _redirect_uri(request: Request, settings: Settings) -> str:
     return f"{base}/api/v1/auth/callback"
 
 
-def _cookie_kwargs(settings: Settings, max_age: int | None = None) -> dict:
-    """Build cookie kwargs. Use Secure in production (HTTPS)."""
-    secure = settings.frontend_url.startswith("https://")
+def _cookie_kwargs(settings: Settings, request: Request | None = None, max_age: int | None = None) -> dict:
+    """Build cookie kwargs. Use Secure when the serving context is HTTPS."""
+    if request is not None:
+        secure = request.url.scheme == "https"
+    else:
+        secure = settings.frontend_url.startswith("https://")
     kwargs: dict = {
         "httponly": True,
         "samesite": "lax",
@@ -79,14 +82,30 @@ def _decode_state(state: str) -> dict:
 
 
 def _validate_origin(origin: str, settings: Settings) -> bool:
-    """Check that the origin is an allowed domain (prevent open redirect)."""
+    """Check that the origin is an allowed domain (prevent open redirect).
+
+    Uses proper hostname parsing to prevent suffix-matching attacks like
+    ``evil-onrender.com`` or ``localhost.evil.com``.
+    """
     if origin == settings.frontend_url:
         return True
-    if origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1"):
+
+    parsed = urlparse(origin)
+    hostname = parsed.hostname or ""
+
+    # Allow localhost / 127.0.0.1 with any port (dev only).
+    if hostname in ("localhost", "127.0.0.1"):
         return True
+
+    # Check against allowed suffixes using proper hostname segmentation.
     for suffix in settings.allowed_origin_suffixes:
-        if origin.endswith(suffix):
+        # suffix must be a dot-prefixed TLD segment (e.g. ".onrender.com").
+        if hostname.endswith(suffix) and hostname != suffix.lstrip("."):
             return True
+        # Also allow exact hostname match if suffix has no leading dot.
+        if not suffix.startswith(".") and hostname == suffix:
+            return True
+
     return False
 
 
@@ -121,7 +140,7 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
     response.set_cookie(
         STATE_COOKIE,
         csrf_token,
-        **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE),
+        **_cookie_kwargs(settings, request, max_age=STATE_COOKIE_MAX_AGE),
     )
     return response
 
@@ -164,14 +183,6 @@ async def auth_callback(
     csrf_token = state_payload.get("csrf", "")
     origin = state_payload.get("origin", "")
 
-    # Verify CSRF token matches the cookie.
-    cookie_state = request.cookies.get(STATE_COOKIE)
-    if not cookie_state or not secrets.compare_digest(cookie_state, csrf_token):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OAuth state",
-        )
-
     # Validate origin to prevent open redirect.
     if not _validate_origin(origin, settings):
         raise HTTPException(
@@ -179,10 +190,25 @@ async def auth_callback(
             detail="Unrecognized origin in OAuth state",
         )
 
+    current_origin = str(request.base_url).rstrip("/")
+
+    # For same-domain flows (origin == production), verify CSRF cookie.
+    # For cross-domain flows (origin != production), the CSRF cookie was set
+    # on the preview domain and is not available here. The state parameter
+    # itself contains an unguessable 32-byte random token, and the proxy-callback
+    # on the preview domain will verify the CSRF cookie there.
+    if origin == current_origin:
+        cookie_state = request.cookies.get(STATE_COOKIE)
+        if not cookie_state or not secrets.compare_digest(cookie_state, csrf_token):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid OAuth state",
+            )
+
     redirect_uri = _redirect_uri(request, settings)
 
     # If origin is the production domain, handle locally.
-    if origin == str(request.base_url).rstrip("/"):
+    if origin == current_origin:
         return await _complete_auth(
             code, redirect_uri, session, settings, request, origin
         )
@@ -225,6 +251,7 @@ async def auth_proxy_callback(
             detail="Invalid OAuth state",
         )
 
+    csrf_token = state_payload.get("csrf", "")
     origin = state_payload.get("origin", "")
 
     # Validate origin matches the current host (this endpoint is only valid
@@ -234,6 +261,15 @@ async def auth_proxy_callback(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Origin mismatch in proxy callback",
+        )
+
+    # Verify CSRF token against the cookie set on this domain during /auth/login.
+    # This is the domain that originally set the cookie, so it's available here.
+    cookie_state = request.cookies.get(STATE_COOKIE)
+    if not cookie_state or not secrets.compare_digest(cookie_state, csrf_token):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth state",
         )
 
     # Use the stable production redirect_uri for the token exchange.
@@ -314,7 +350,7 @@ async def _complete_auth(
     response.set_cookie(
         COOKIE_NAME,
         jwt_token,
-        **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),
+        **_cookie_kwargs(settings, request, max_age=60 * 60 * 24 * 30),
     )
     response.delete_cookie(STATE_COOKIE)
     return response
@@ -338,5 +374,5 @@ async def auth_logout(
 ) -> Response:
     """Clear the session cookie."""
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings))
+    response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings, request))
     return response
