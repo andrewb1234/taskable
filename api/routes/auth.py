@@ -53,10 +53,17 @@ def _redirect_uri(request: Request) -> str:
 
 
 def _is_https(request: Request, settings: Settings) -> bool:
-    """Determine if the request is HTTPS, respecting reverse proxy headers."""
-    forwarded_proto = request.headers.get("x-forwarded-proto", "")
-    if forwarded_proto:
-        return forwarded_proto.split(",")[0].strip() == "https"
+    """Determine if the request is HTTPS.
+
+    In production (frontend_url is HTTPS), we trust the X-Forwarded-Proto
+    header set by the reverse proxy. In development, we fall back to the
+    request scheme to avoid trusting client-supplied headers when not
+    behind a proxy.
+    """
+    if settings.frontend_url.startswith("https://"):
+        forwarded_proto = request.headers.get("x-forwarded-proto", "")
+        if forwarded_proto:
+            return forwarded_proto.split(",")[0].strip() == "https"
     return request.url.scheme == "https"
 
 
@@ -208,7 +215,7 @@ async def auth_callback(
         jwt_token,
         **_cookie_kwargs(settings, request, max_age=60 * 60 * 24 * 30),  # 30 days
     )
-    response.delete_cookie(STATE_COOKIE)
+    response.delete_cookie(STATE_COOKIE, **_cookie_kwargs(settings, request))
     return response
 
 
