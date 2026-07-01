@@ -92,7 +92,7 @@ export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
     <aside className="flex h-full w-full flex-col border-r border-border bg-card/30">
       <header className="border-b border-border px-4 py-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-sm font-semibold tracking-tight">Taskable</h1>
+          <h1 className="text-sm font-semibold tracking-tight">mouvadah</h1>
           <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
             Co-Pilot
           </span>

@@ -151,7 +151,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                 </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Connect your AI coding assistant (Claude, Windsurf, Cursor, etc.)
-                  to Taskable. You'll need an API key first.
+                  to mouvadah. You'll need an API key first.
                 </p>
               </div>
               <Button
@@ -342,7 +342,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                   <div className="rounded-lg border border-dashed border-border p-8 text-center">
                     <KeyRound className="mx-auto h-8 w-8 text-muted-foreground/50" />
                     <p className="mt-2 text-sm text-muted-foreground">
-                      No API keys yet. Create one to let your AI agent access Taskable.
+                      No API keys yet. Create one to let your AI agent access mouvadah.
                     </p>
                   </div>
                 )}
