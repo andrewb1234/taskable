@@ -41,14 +41,31 @@ STATE_COOKIE_MAX_AGE = 600  # 10 minutes
 
 
 def _redirect_uri(request: Request) -> str:
-    """Derive the OAuth callback URL from the incoming request."""
-    base = str(request.base_url).rstrip("/")
-    return f"{base}/api/v1/auth/callback"
+    """Derive the OAuth callback URL from the incoming request.
+
+    Respects the ``X-Forwarded-Proto`` header so the redirect URI is
+    ``https://`` when behind a reverse proxy like Render.
+    """
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    scheme = forwarded_proto.split(",")[0].strip() if forwarded_proto else request.url.scheme
+    host = request.url.hostname or request.headers.get("host", "")
+    return f"{scheme}://{host}/api/v1/auth/callback"
 
 
-def _cookie_kwargs(settings: Settings, max_age: int | None = None) -> dict:
-    """Build cookie kwargs. Use Secure in production (HTTPS)."""
-    secure = settings.frontend_url.startswith("https://")
+def _is_https(request: Request, settings: Settings) -> bool:
+    """Determine if the request is HTTPS, respecting reverse proxy headers."""
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    if forwarded_proto:
+        return forwarded_proto.split(",")[0].strip() == "https"
+    return request.url.scheme == "https"
+
+
+def _cookie_kwargs(settings: Settings, request: Request | None = None, max_age: int | None = None) -> dict:
+    """Build cookie kwargs. Use Secure when the serving context is HTTPS."""
+    if request is not None:
+        secure = _is_https(request, settings)
+    else:
+        secure = settings.frontend_url.startswith("https://")
     kwargs: dict = {
         "httponly": True,
         "samesite": "lax",
@@ -85,7 +102,7 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
     response.set_cookie(
         STATE_COOKIE,
         state,
-        **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE),
+        **_cookie_kwargs(settings, request, max_age=STATE_COOKIE_MAX_AGE),
     )
     return response
 
@@ -189,7 +206,7 @@ async def auth_callback(
     response.set_cookie(
         COOKIE_NAME,
         jwt_token,
-        **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),  # 30 days
+        **_cookie_kwargs(settings, request, max_age=60 * 60 * 24 * 30),  # 30 days
     )
     response.delete_cookie(STATE_COOKIE)
     return response
@@ -213,5 +230,5 @@ async def auth_logout(
 ) -> Response:
     """Clear the session cookie."""
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings))
+    response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings, request))
     return response

@@ -43,11 +43,24 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    def _is_production(self) -> bool:
+        """Heuristic: production is when frontend_url is HTTPS."""
+        return self.frontend_url.startswith("https://")
+
     def validate_production(self) -> None:
         """Raise if security-sensitive defaults are still set in production."""
-        if self.frontend_url.startswith("https://") and self.jwt_secret == "dev-jwt-secret-change-me":
+        if not self._is_production():
+            return
+
+        if self.jwt_secret == "dev-jwt-secret-change-me":
             raise RuntimeError(
                 "JWT_SECRET must be set to a strong value in production "
+                "(current value is the insecure default)."
+            )
+
+        if self.agent_api_key == "dev-agent-key-change-me":
+            raise RuntimeError(
+                "AGENT_API_KEY must be set to a strong value in production "
                 "(current value is the insecure default)."
             )
 
