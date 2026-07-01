@@ -45,6 +45,7 @@ SCOPES = ["openid", "email", "profile"]
 
 STATE_COOKIE = "oauth_state"
 STATE_COOKIE_MAX_AGE = 600  # 10 minutes
+STATE_MAX_AGE = 600  # 10 minutes
 
 
 def _redirect_uri(request: Request, settings: Settings) -> str:
@@ -81,8 +82,14 @@ def _cookie_kwargs(settings: Settings, request: Request | None = None, max_age: 
 
 
 def _encode_state(csrf_token: str, origin: str, settings: Settings) -> str:
-    """Pack CSRF token + origin + HMAC signature into a base64 state param."""
-    payload = json.dumps({"csrf": csrf_token, "origin": origin})
+    """Pack CSRF token + origin + timestamp + HMAC signature into a base64 state param."""
+    payload = json.dumps(
+        {
+            "csrf": csrf_token,
+            "origin": origin,
+            "iat": datetime.now(timezone.utc).isoformat(),
+        }
+    )
     sig = hmac.new(
         settings.jwt_secret.encode(), payload.encode(), hashlib.sha256
     ).hexdigest()
@@ -93,7 +100,7 @@ def _encode_state(csrf_token: str, origin: str, settings: Settings) -> str:
 def _decode_state(state: str, settings: Settings) -> dict:
     """Decode and verify the OAuth state parameter.
 
-    Raises ValueError if the HMAC signature is invalid.
+    Raises ValueError if the HMAC signature is invalid or the state is expired.
     """
     signed = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
     payload = signed["p"]
@@ -103,7 +110,11 @@ def _decode_state(state: str, settings: Settings) -> dict:
     ).hexdigest()
     if not hmac.compare_digest(sig, expected_sig):
         raise ValueError("Invalid state signature")
-    return json.loads(payload)
+    decoded = json.loads(payload)
+    issued_at = datetime.fromisoformat(decoded["iat"])
+    if datetime.now(timezone.utc) - issued_at > timedelta(seconds=STATE_MAX_AGE):
+        raise ValueError("OAuth state expired")
+    return decoded
 
 
 def _is_dev_mode(settings: Settings) -> bool:
@@ -112,39 +123,51 @@ def _is_dev_mode(settings: Settings) -> bool:
 
 
 def _validate_origin(origin: str, settings: Settings) -> bool:
-    """Check that the origin is an allowed domain (prevent open redirect).
+    """Check that the origin is an allowed HTTPS domain (prevent open redirect).
 
     Uses proper hostname parsing to prevent suffix-matching attacks like
     ``evil-onrender.com`` or ``localhost.evil.com``.
     """
+    parsed = urlparse(origin)
+    hostname = parsed.hostname or ""
+    scheme = parsed.scheme
+
+    # Allow exact frontend URL match.
     if origin == settings.frontend_url:
         return True
 
-    parsed = urlparse(origin)
-    hostname = parsed.hostname or ""
-
     # Allow localhost / 127.0.0.1 only in development mode.
-    if _is_dev_mode(settings) and hostname in ("localhost", "127.0.0.1"):
+    if _is_dev_mode(settings) and hostname in ("localhost", "127.0.0.1") and scheme == "http":
         return True
+
+    # All other origins must use HTTPS.
+    if scheme != "https":
+        return False
 
     # Check against allowed suffixes using proper hostname segmentation.
     for suffix in settings.allowed_origin_suffixes:
-        # suffix must be a dot-prefixed TLD segment (e.g. ".onrender.com").
+        # Suffix must be dot-prefixed (e.g. ".onrender.com") to avoid matching
+        # partial domains like ``evil-onrender.com``.
+        if not suffix.startswith("."):
+            continue
         if hostname.endswith(suffix) and hostname != suffix.lstrip("."):
-            return True
-        # Also allow exact hostname match if suffix has no leading dot.
-        if not suffix.startswith(".") and hostname == suffix:
             return True
 
     return False
 
 
 @router.get("/login")
-async def auth_login(request: Request, settings: SettingsDep) -> RedirectResponse:
+async def auth_login(
+    request: Request,
+    settings: SettingsDep,
+    redirect_url: str | None = None,
+) -> RedirectResponse:
     """Redirect the user to Google's OAuth consent screen.
 
     Encodes the caller's origin into the OAuth state so the callback knows
-    where to send the user after auth completes.
+    where to send the user after auth completes. An optional ``redirect_url``
+    query parameter lets the frontend specify the frontend origin (e.g. in
+    development where the API and frontend run on separate ports).
     """
     if not settings.google_client_id:
         raise HTTPException(
@@ -154,6 +177,10 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
 
     csrf_token = secrets.token_urlsafe(32)
     origin = str(request.base_url).rstrip("/")
+    if redirect_url:
+        candidate = redirect_url.rstrip("/")
+        if _validate_origin(candidate, settings):
+            origin = candidate
     state = _encode_state(csrf_token, origin, settings)
     redirect_uri = _redirect_uri(request, settings)
     params = {
@@ -232,12 +259,13 @@ async def auth_callback(
 
     current_origin = str(request.base_url).rstrip("/")
 
-    # For same-domain flows (origin == production), verify CSRF cookie.
-    # For cross-domain flows (origin != production), the CSRF cookie was set
-    # on the preview domain and is not available here. The state parameter
-    # itself contains an unguessable 32-byte random token, and the proxy-callback
-    # on the preview domain will verify the CSRF cookie there.
-    if origin == current_origin:
+    # For same-domain flows (origin == production) or local development, verify
+    # the CSRF cookie here. For cross-domain flows (origin != production), the
+    # CSRF cookie was set on the preview domain and is not available here. The
+    # state parameter itself contains an unguessable 32-byte random token and an
+    # expiry timestamp, and the proxy-callback on the preview domain will verify
+    # the CSRF cookie there.
+    if origin == current_origin or _is_dev_mode(settings):
         cookie_state = request.cookies.get(STATE_COOKIE)
         if not cookie_state or not secrets.compare_digest(cookie_state, csrf_token):
             raise HTTPException(
@@ -247,8 +275,8 @@ async def auth_callback(
 
     redirect_uri = _redirect_uri(request, settings)
 
-    # If origin is the production domain, handle locally.
-    if origin == current_origin:
+    # If origin is the production domain or local development, handle locally.
+    if origin == current_origin or _is_dev_mode(settings):
         return await _complete_auth(
             code, redirect_uri, session, settings, request, origin
         )

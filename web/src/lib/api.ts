@@ -293,7 +293,8 @@ export const getMe = () => request<AuthUser>("/auth/me");
 export const logout = () =>
   request<void>("/auth/logout", { method: "POST" });
 
-export const getLoginUrl = () => `${API_BASE}/auth/login`;
+export const getLoginUrl = () =>
+  `${API_BASE}/auth/login?redirect_url=${encodeURIComponent(window.location.origin)}`;
 
 // ---- API Keys ------------------------------------------------------------
 
