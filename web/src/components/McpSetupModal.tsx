@@ -70,7 +70,7 @@ export function McpSetupModal({ open, onOpenChange, apiKey }: McpSetupModalProps
             Configure MCP Server
           </DialogTitle>
           <DialogDescription>
-            Add Taskable to your AI coding assistant so it can manage projects,
+            Add mouvadah to your AI coding assistant so it can manage projects,
             tickets, and knowledge nodes.
           </DialogDescription>
         </DialogHeader>
@@ -139,11 +139,11 @@ export function McpSetupModal({ open, onOpenChange, apiKey }: McpSetupModalProps
               Setup steps:
             </p>
             <ol className="ml-4 list-decimal space-y-1 text-xs text-muted-foreground">
-              <li>Install the Taskable MCP server: <code className="text-foreground">pipx install taskable</code> or <code className="text-foreground">uv tool install taskable</code></li>
+              <li>Install the MCP server: <code className="text-foreground">pipx install taskable</code> or <code className="text-foreground">uv tool install taskable</code> <span className="text-muted-foreground/70">(package name is `taskable`)</span></li>
               <li>Copy the JSON config above</li>
               <li>Paste it into the config file for {activeProvider.label}</li>
               <li>Restart {activeProvider.label}</li>
-              <li>Your AI assistant can now use Taskable tools</li>
+              <li>Your AI assistant can now use mouvadah tools</li>
             </ol>
           </div>
         </div>

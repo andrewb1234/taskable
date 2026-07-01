@@ -1,5 +1,5 @@
 /**
- * Thin typed fetch wrapper for the Taskable API.
+ * Thin typed fetch wrapper for the mouvadah API.
  *
  * The UI runs unauthenticated on localhost per the architecture decision
  * logged in `learnings.md`. All mutations go through these helpers so we have

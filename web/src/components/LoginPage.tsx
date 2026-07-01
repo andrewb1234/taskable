@@ -23,7 +23,7 @@ export function LoginPage() {
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Taskable</h1>
+          <h1 className="text-2xl font-bold tracking-tight">mouvadah</h1>
           <p className="text-center text-sm text-muted-foreground">
             Co-pilot workspace for human-agent collaboration
           </p>
