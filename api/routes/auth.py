@@ -1,18 +1,23 @@
-"""Google OAuth routes: login, callback, me, logout.
+"""Google OAuth routes: login, callback, proxy-callback, me, logout.
 
-Flow:
-    1. ``GET /auth/login`` → redirect to Google consent screen with a random
-       state stored in a short-lived cookie.
-    2. Google redirects back to ``GET /auth/callback`` with an authorization
-       code. We exchange the code for tokens, fetch the user's Google profile,
-       upsert the ``User`` row, set a JWT session cookie, and redirect to the
-       frontend.
-    3. ``GET /auth/me`` → returns the current user's profile (or 401).
-    4. ``POST /auth/logout`` → clears the session cookie.
+Multi-domain OAuth flow (supports PR previews on different hostnames):
+    1. ``GET /auth/login`` → encode origin + CSRF token in OAuth state,
+       redirect to Google with a stable ``redirect_uri`` (production URL).
+    2. Google redirects to ``GET /auth/callback`` on the **production** domain.
+       If the origin is production, handle normally (set JWT, redirect home).
+       If the origin is a PR preview, forward ``code`` + ``state`` to the
+       preview's ``GET /auth/proxy-callback`` endpoint.
+    3. ``GET /auth/proxy-callback`` (on the preview domain) → exchange the code
+       with Google, upsert user, set JWT cookie on the preview domain, redirect
+       to the preview frontend.
+    4. ``GET /auth/me`` → returns the current user's profile (or 401).
+    5. ``POST /auth/logout`` → clears the session cookie.
 """
 
 from __future__ import annotations
 
+import base64
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
@@ -40,8 +45,10 @@ STATE_COOKIE = "oauth_state"
 STATE_COOKIE_MAX_AGE = 600  # 10 minutes
 
 
-def _redirect_uri(request: Request) -> str:
-    """Derive the OAuth callback URL from the incoming request."""
+def _redirect_uri(request: Request, settings: Settings) -> str:
+    """Use the configured stable OAuth redirect URI, or fall back to request host."""
+    if settings.oauth_redirect_uri:
+        return settings.oauth_redirect_uri
     base = str(request.base_url).rstrip("/")
     return f"{base}/api/v1/auth/callback"
 
@@ -60,17 +67,46 @@ def _cookie_kwargs(settings: Settings, max_age: int | None = None) -> dict:
     return kwargs
 
 
+def _encode_state(csrf_token: str, origin: str) -> str:
+    """Pack CSRF token + origin into a base64 string for the OAuth state param."""
+    payload = json.dumps({"csrf": csrf_token, "origin": origin})
+    return base64.urlsafe_b64encode(payload.encode()).decode()
+
+
+def _decode_state(state: str) -> dict:
+    """Decode the OAuth state parameter back to a dict."""
+    return json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+
+
+def _validate_origin(origin: str, settings: Settings) -> bool:
+    """Check that the origin is an allowed domain (prevent open redirect)."""
+    if origin == settings.frontend_url:
+        return True
+    if origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1"):
+        return True
+    for suffix in settings.allowed_origin_suffixes:
+        if origin.endswith(suffix):
+            return True
+    return False
+
+
 @router.get("/login")
 async def auth_login(request: Request, settings: SettingsDep) -> RedirectResponse:
-    """Redirect the user to Google's OAuth consent screen."""
+    """Redirect the user to Google's OAuth consent screen.
+
+    Encodes the caller's origin into the OAuth state so the callback knows
+    where to send the user after auth completes.
+    """
     if not settings.google_client_id:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="GOOGLE_CLIENT_ID is not configured",
         )
 
-    state = secrets.token_urlsafe(32)
-    redirect_uri = _redirect_uri(request)
+    csrf_token = secrets.token_urlsafe(32)
+    origin = str(request.base_url).rstrip("/")
+    state = _encode_state(csrf_token, origin)
+    redirect_uri = _redirect_uri(request, settings)
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri,
@@ -84,7 +120,7 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
     response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
     response.set_cookie(
         STATE_COOKIE,
-        state,
+        csrf_token,
         **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE),
     )
     return response
@@ -99,7 +135,12 @@ async def auth_callback(
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
-    """Handle the OAuth callback: exchange code, upsert user, set JWT cookie."""
+    """Handle the OAuth callback on the production domain.
+
+    If the origin in the state is the production domain, handle normally.
+    If the origin is a PR preview, forward code+state to the preview's
+    proxy-callback endpoint.
+    """
     if error:
         return RedirectResponse(
             url=f"{settings.frontend_url}/?auth_error={quote(error)}",
@@ -111,17 +152,107 @@ async def auth_callback(
             detail="Missing code or state parameter",
         )
 
-    # Verify state matches the cookie to prevent CSRF.
-    cookie_state = request.cookies.get(STATE_COOKIE)
-    if not cookie_state or not secrets.compare_digest(cookie_state, state):
+    # Decode state to get CSRF token + origin.
+    try:
+        state_payload = _decode_state(state)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid OAuth state",
         )
 
-    redirect_uri = _redirect_uri(request)
+    csrf_token = state_payload.get("csrf", "")
+    origin = state_payload.get("origin", "")
 
-    # Exchange the authorization code for tokens.
+    # Verify CSRF token matches the cookie.
+    cookie_state = request.cookies.get(STATE_COOKIE)
+    if not cookie_state or not secrets.compare_digest(cookie_state, csrf_token):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth state",
+        )
+
+    # Validate origin to prevent open redirect.
+    if not _validate_origin(origin, settings):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unrecognized origin in OAuth state",
+        )
+
+    redirect_uri = _redirect_uri(request, settings)
+
+    # If origin is the production domain, handle locally.
+    if origin == str(request.base_url).rstrip("/"):
+        return await _complete_auth(
+            code, redirect_uri, session, settings, request, origin
+        )
+
+    # Origin is a different domain (e.g. PR preview) — forward code + state.
+    forward_url = (
+        f"{origin}/api/v1/auth/proxy-callback"
+        f"?code={quote(code)}&state={quote(state)}"
+    )
+    response = RedirectResponse(url=forward_url, status_code=status.HTTP_302_FOUND)
+    response.delete_cookie(STATE_COOKIE)
+    return response
+
+
+@router.get("/proxy-callback")
+async def auth_proxy_callback(
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    code: str | None = None,
+    state: str | None = None,
+) -> RedirectResponse:
+    """Handle forwarded auth code on a PR preview domain.
+
+    Exchanges the code with Google (using the production redirect_uri),
+    sets the JWT cookie on this domain, and redirects to the frontend.
+    """
+    if not code or not state:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing code or state parameter",
+        )
+
+    # Decode state to get origin.
+    try:
+        state_payload = _decode_state(state)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth state",
+        )
+
+    origin = state_payload.get("origin", "")
+
+    # Validate origin matches the current host (this endpoint is only valid
+    # when the forwarded origin matches the domain serving it).
+    current_origin = str(request.base_url).rstrip("/")
+    if origin != current_origin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Origin mismatch in proxy callback",
+        )
+
+    # Use the stable production redirect_uri for the token exchange.
+    redirect_uri = _redirect_uri(request, settings)
+
+    return await _complete_auth(
+        code, redirect_uri, session, settings, request, origin
+    )
+
+
+async def _complete_auth(
+    code: str,
+    redirect_uri: str,
+    session: Session,
+    settings: Settings,
+    request: Request,
+    origin: str,
+) -> RedirectResponse:
+    """Exchange code with Google, upsert user, set JWT cookie, redirect to origin."""
     async with httpx.AsyncClient(timeout=10) as client:
         token_resp = await client.post(
             GOOGLE_TOKEN_URL,
@@ -140,7 +271,6 @@ async def auth_callback(
             )
         tokens = token_resp.json()
 
-        # Fetch user profile from Google.
         userinfo_resp = await client.get(
             GOOGLE_USERINFO_URL,
             headers={"Authorization": f"Bearer {tokens['access_token']}"},
@@ -157,7 +287,6 @@ async def auth_callback(
     name = profile.get("name", email)
     avatar_url = profile.get("picture")
 
-    # Upsert the user.
     existing = session.exec(
         select(User).where(User.google_id == google_id)
     ).first()
@@ -180,16 +309,12 @@ async def auth_callback(
         session.commit()
         session.refresh(user)
 
-    # Issue JWT and set session cookie.
     jwt_token = create_jwt(user.id, user.email, settings.jwt_secret)
-    response = RedirectResponse(
-        url=settings.frontend_url,
-        status_code=status.HTTP_302_FOUND,
-    )
+    response = RedirectResponse(url=origin, status_code=status.HTTP_302_FOUND)
     response.set_cookie(
         COOKIE_NAME,
         jwt_token,
-        **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),  # 30 days
+        **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),
     )
     response.delete_cookie(STATE_COOKIE)
     return response

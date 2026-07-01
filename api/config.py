@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     google_client_secret: str | None = None
     jwt_secret: str = "dev-jwt-secret-change-me"
     frontend_url: str = "http://localhost:5173"
+    oauth_redirect_uri: str | None = None
+    allowed_origin_suffixes: list[str] = [".onrender.com"]
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
