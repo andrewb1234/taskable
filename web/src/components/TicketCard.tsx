@@ -1,4 +1,4 @@
-import { GitPullRequest, Bot, User, HelpCircle, Trash2, BookOpen } from "lucide-react";
+import { GitPullRequest, Bot, User, HelpCircle, Trash2, BookOpen, Link2, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Ticket, TicketAssignee } from "@/types";
@@ -91,6 +91,18 @@ export function TicketCard({
           title={ticket.blocked_reason ?? undefined}
         >
           {BLOCKED_BY_LABELS[ticket.blocked_by]}
+        </div>
+      )}
+      {ticket.depends_on && ticket.depends_on.length > 0 && (
+        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Link2 className="h-3 w-3" />
+          <span>depends on #{ticket.depends_on.join(", #")}</span>
+        </div>
+      )}
+      {ticket.claimed_by && (
+        <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          <span>claimed by {ticket.claimed_by}</span>
         </div>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
