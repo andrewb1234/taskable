@@ -135,6 +135,32 @@ class TestTicketDependencies:
         t2_data = [t for t in tickets if t["id"] == t2["id"]][0]
         assert t2_data["depends_on"] == [t1["id"]]
 
+    def test_update_ticket_response_includes_depends_on(self, client: TestClient):
+        _, sp_id = _make_project_and_subproject(client)
+        t1 = _create_ticket(client, sp_id, "A")
+        t2 = _create_ticket(client, sp_id, "B")
+
+        r = client.patch(
+            f"/api/v1/tickets/{t2['id']}",
+            json={"depends_on": [t1["id"]]},
+        )
+        assert r.status_code == 200
+        assert r.json()["depends_on"] == [t1["id"]]
+
+    def test_delete_ticket_cleans_dependency_edges(self, client: TestClient):
+        _, sp_id = _make_project_and_subproject(client)
+        t1 = _create_ticket(client, sp_id, "Dep")
+        t2 = _create_ticket(client, sp_id, "Child", depends_on=[t1["id"]])
+
+        # Delete t1 — t2's dependency on t1 should be removed
+        r = client.delete(f"/api/v1/tickets/{t1['id']}")
+        assert r.status_code == 204
+
+        # t2 should no longer show t1 in depends_on
+        r = client.get(f"/api/v1/tickets/{t2['id']}")
+        assert r.status_code == 200
+        assert r.json()["depends_on"] == []
+
 
 # ---- Ready-ticket query (#64) ---------------------------------------------
 

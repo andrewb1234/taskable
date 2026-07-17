@@ -152,7 +152,22 @@ async def update_ticket(
             parent_id=ticket.subproject_id,
         )
     )
-    return ticket
+    return TicketRead(
+        id=ticket.id,  # type: ignore[arg-type]
+        subproject_id=ticket.subproject_id,
+        title=ticket.title,
+        description=ticket.description,
+        status=ticket.status,
+        assignee=ticket.assignee,
+        mr_link=ticket.mr_link,
+        blocked_by=ticket.blocked_by,
+        blocked_reason=ticket.blocked_reason,
+        source_refs=ticket.source_refs or [],
+        depends_on=get_depends_on(session, ticket.id),
+        claimed_by=ticket.claimed_by,
+        claimed_at=ticket.claimed_at,
+        lease_expires_at=ticket.lease_expires_at,
+    )
 
 
 @router.delete(
@@ -160,9 +175,17 @@ async def update_ticket(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_ticket(ticket_id: int, session: SessionDep) -> None:
-    """Delete a ticket and cascade its comments and audit logs."""
+    """Delete a ticket and cascade its comments, audit logs, and dependency edges."""
     ticket = _get_or_404(session, ticket_id)
     subproject_id = ticket.subproject_id
+    # Remove both outgoing and incoming dependency edges.
+    for dep in session.exec(
+        select(TicketDependency).where(
+            (TicketDependency.ticket_id == ticket_id)
+            | (TicketDependency.depends_on_ticket_id == ticket_id)
+        )
+    ).all():
+        session.delete(dep)
     session.delete(ticket)
     session.commit()
 
@@ -212,7 +235,22 @@ async def attach_mr_link(
             parent_id=ticket.subproject_id,
         )
     )
-    return ticket
+    return TicketRead(
+        id=ticket.id,  # type: ignore[arg-type]
+        subproject_id=ticket.subproject_id,
+        title=ticket.title,
+        description=ticket.description,
+        status=ticket.status,
+        assignee=ticket.assignee,
+        mr_link=ticket.mr_link,
+        blocked_by=ticket.blocked_by,
+        blocked_reason=ticket.blocked_reason,
+        source_refs=ticket.source_refs or [],
+        depends_on=get_depends_on(session, ticket.id),
+        claimed_by=ticket.claimed_by,
+        claimed_at=ticket.claimed_at,
+        lease_expires_at=ticket.lease_expires_at,
+    )
 
 
 @router.get("/knowledge/{node_id}/tickets", response_model=list[TicketRef])
