@@ -58,7 +58,19 @@ VALID_TICKET_STATUSES = {"TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"}
 VALID_TICKET_ASSIGNEES = {"HUMAN", "AGENT", "UNASSIGNED"}
 VALID_KNOWLEDGE_NODE_TYPES = {"RAW", "SUMMARY", "PRD", "TDD"}
 
-server: Server = Server("copilot-workspace")
+MOUVADAH_INSTRUCTIONS = """Mouvadah is the authoritative project-management
+and durable-memory system. Before substantive work, call get_all_projects and
+identify exactly one project; then load only its relevant active tasks and
+knowledge context. Keep ticket status, dependencies, blockers, and verified
+durable knowledge aligned as work changes. Search and read before creating or
+updating knowledge. Attach new nodes to the closest semantic parent. Before
+deleting a knowledge node, inspect its descendants and references because
+deletion cascades."""
+
+server: Server = Server(
+    "copilot-workspace",
+    instructions=MOUVADAH_INSTRUCTIONS,
+)
 
 
 def _headers() -> dict[str, str]:

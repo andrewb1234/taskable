@@ -228,6 +228,9 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
         client = MCPClient(proc)
         init_response = await _initialize(client)
         assert init_response["result"]["serverInfo"]["name"] == "copilot-workspace"
+        instructions = init_response["result"]["instructions"]
+        assert "authoritative project-management" in instructions
+        assert "deletion cascades" in instructions
 
         # tools/list - sanity check
         await client.send("tools/list", {})
