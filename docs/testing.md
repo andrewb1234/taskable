@@ -10,7 +10,10 @@ Establish an automated test suite for the FastAPI backend to verify core logic, 
 
 ## Test Environment Setup
 * Override the database engine in tests to use an **in-memory SQLite database** (`sqlite:///:memory:`).
-* Apply `SQLModel.metadata.create_all()` before tests and `drop_all()` afterward to ensure completely isolated test states.
+* Ordinary route tests may use `SQLModel.metadata.create_all()` and
+  `drop_all()` for isolated fixture speed. Migration tests must build the
+  schema only through Alembic and prove revision, upgrade, backup, data
+  preservation, fail-closed behavior, and ORM parity.
 
 ## Required Test Coverage
 1. **CRUD Validation:** Verify project creation, subproject assignment, and ticket generation.

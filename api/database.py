@@ -1,21 +1,20 @@
-"""SQLite engine + session dependency.
+"""Database engine, migration gate, and session dependency.
 
 Uses SQLModel's ``create_engine`` with the ``check_same_thread=False`` flag so
 FastAPI's thread pool can share a single connection pool. The database file
-lives alongside the API code under ``./data/`` by default and is created on
-startup via ``init_db``.
+lives under ``~/.taskable`` by default. Alembic, not ORM ``create_all``, owns
+the release schema.
 """
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from pathlib import Path
 
-from sqlalchemy import inspect, text
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, create_engine
 
 from api.config import get_settings
+from api.migrations.runtime import assert_database_current, upgrade_database
 
 
 def _engine_kwargs(url: str) -> dict:
@@ -42,28 +41,13 @@ _ensure_sqlite_dir(_settings.database_url)
 engine = create_engine(_settings.database_url, **_engine_kwargs(_settings.database_url))
 
 
-def _upgrade_ticket_coordination_schema(target_engine) -> None:
-    columns = {column["name"] for column in inspect(target_engine).get_columns("ticket")}
-    missing = {
-        "claimed_by": "VARCHAR",
-        "claimed_at": "TIMESTAMP",
-        "lease_expires_at": "TIMESTAMP",
-    }
-    with target_engine.begin() as connection:
-        for name, column_type in missing.items():
-            if name not in columns:
-                connection.execute(text(f"ALTER TABLE ticket ADD COLUMN {name} {column_type}"))
-        connection.execute(
-            text("CREATE INDEX IF NOT EXISTS ix_ticket_claimed_by ON ticket (claimed_by)")
-        )
-
-
 def init_db() -> None:
-    """Create all tables and apply narrow compatibility upgrades."""
-    import api.models.entities  # noqa: F401
-
-    SQLModel.metadata.create_all(engine)
-    _upgrade_ticket_coordination_schema(engine)
+    """Upgrade local databases or fail closed when production is not current."""
+    settings = get_settings()
+    if settings.migration_mode == "upgrade":
+        upgrade_database(engine)
+    else:
+        assert_database_current(engine)
 
 
 def get_session() -> Iterator[Session]:

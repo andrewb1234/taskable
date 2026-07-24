@@ -109,6 +109,56 @@ def client(engine, test_user) -> Iterator[TestClient]:
 
 
 @pytest.fixture
+def multi_user_client(engine) -> Iterator[tuple[TestClient, dict[str, User]]]:
+    """Test client whose caller is selected by the X-Test-User header."""
+    with Session(engine) as sess:
+        users = {
+            "alice": User(
+                google_id="alice-google-id",
+                email="alice@example.com",
+                name="Alice",
+            ),
+            "bob": User(
+                google_id="bob-google-id",
+                email="bob@example.com",
+                name="Bob",
+            ),
+        }
+        sess.add_all(list(users.values()))
+        sess.commit()
+        for user in users.values():
+            sess.refresh(user)
+
+    def override_get_session() -> Iterator[Session]:
+        with Session(engine) as sess:
+            yield sess
+
+    def override_get_current_user(request: Request):
+        identity = request.headers.get("x-test-user", "alice")
+        user = users[identity]
+        header = request.headers.get("authorization") or ""
+        request.state.auth_method = (
+            "api_key" if header.startswith("Bearer ") else "cookie"
+        )
+        return user
+
+    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    api_v1 = getattr(app, "api_v1", None)
+    if api_v1 is not None:
+        api_v1.dependency_overrides[get_session] = override_get_session
+        api_v1.dependency_overrides[get_current_user] = override_get_current_user
+    events.reset_broadcaster()
+    with TestClient(app) as test_client:
+        yield test_client, users
+    app.dependency_overrides.pop(get_session, None)
+    app.dependency_overrides.pop(get_current_user, None)
+    if api_v1 is not None:
+        api_v1.dependency_overrides.pop(get_session, None)
+        api_v1.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
 def agent_headers(engine, test_user) -> dict[str, str]:
     """Create a real API key in the DB and return bearer headers for it."""
     with Session(engine) as sess:

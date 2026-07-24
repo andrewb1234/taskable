@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlmodel import select
 
+from api.auth import CurrentUser
+from api.authorization import require_subproject, workspace_id_for_project
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
 from api.models.entities import Subproject, Ticket
@@ -29,20 +31,14 @@ from api.utils.ticket_deps import (
 router = APIRouter(prefix="/subprojects", tags=["subprojects"])
 
 
-def _get_or_404(session, subproject_id: int) -> Subproject:
-    subproject = session.get(Subproject, subproject_id)
-    if subproject is None:
-        raise HTTPException(status_code=404, detail="Subproject not found.")
-    return subproject
-
-
 @router.get("/{subproject_id}", response_model=SubprojectDetail)
 def get_subproject(
     subproject_id: int,
     session: SessionDep,
+    user: CurrentUser,
     ready: bool = Query(default=False),
 ) -> SubprojectDetail:
-    subproject = _get_or_404(session, subproject_id)
+    subproject = require_subproject(session, user, subproject_id)
     tickets = list(
         session.exec(
             select(Ticket)
@@ -80,8 +76,9 @@ async def update_subproject(
     subproject_id: int,
     payload: SubprojectUpdate,
     session: SessionDep,
+    user: CurrentUser,
 ) -> Subproject:
-    subproject = _get_or_404(session, subproject_id)
+    subproject = require_subproject(session, user, subproject_id, write=True)
 
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
@@ -100,6 +97,10 @@ async def update_subproject(
             entity="subproject",
             entity_id=subproject.id,  # type: ignore[arg-type]
             parent_id=subproject.project_id,
+            workspace_id=workspace_id_for_project(
+                session,
+                subproject.project_id,
+            ),
         )
     )
     return subproject
@@ -109,10 +110,15 @@ async def update_subproject(
     "/{subproject_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_subproject(subproject_id: int, session: SessionDep) -> None:
+async def delete_subproject(
+    subproject_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> None:
     """Delete a subproject and cascade its tickets, comments, and audit logs."""
-    subproject = _get_or_404(session, subproject_id)
+    subproject = require_subproject(session, user, subproject_id, admin=True)
     project_id = subproject.project_id
+    workspace_id = workspace_id_for_project(session, project_id)
     ticket_ids = list(
         session.exec(select(Ticket.id).where(Ticket.subproject_id == subproject_id)).all()
     )
@@ -126,6 +132,7 @@ async def delete_subproject(subproject_id: int, session: SessionDep) -> None:
             entity="subproject",
             entity_id=subproject_id,
             parent_id=project_id,
+            workspace_id=workspace_id,
         )
     )
     return None
@@ -140,8 +147,14 @@ async def create_ticket(
     subproject_id: int,
     payload: TicketCreate,
     session: SessionDep,
+    user: CurrentUser,
 ) -> TicketRead:
-    _get_or_404(session, subproject_id)
+    subproject = require_subproject(
+        session,
+        user,
+        subproject_id,
+        write=True,
+    )
 
     ticket = Ticket(
         subproject_id=subproject_id,
@@ -166,6 +179,10 @@ async def create_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=subproject_id,
+            workspace_id=workspace_id_for_project(
+                session,
+                subproject.project_id,
+            ),
         )
     )
     return build_ticket_read(session, ticket)

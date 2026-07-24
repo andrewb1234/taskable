@@ -6,11 +6,16 @@ API key) because they produce LLM-optimized payloads for the MCP server.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import PlainTextResponse
 from sqlmodel import select
 
 from api.auth import CurrentUser
+from api.authorization import (
+    require_knowledge_node,
+    require_project,
+    require_subproject,
+)
 from api.dependencies import SessionDep
 from api.models.entities import KnowledgeNode, Project, Subproject, Ticket
 from api.models.enums import KnowledgeNodeStatus
@@ -58,10 +63,12 @@ def _format_context(subproject: Subproject, tickets: list[Ticket]) -> str:
 
 
 @router.get("/context/{subproject_id}", response_class=PlainTextResponse)
-def get_agent_context(subproject_id: int, session: SessionDep) -> str:
-    subproject = session.get(Subproject, subproject_id)
-    if subproject is None:
-        raise HTTPException(status_code=404, detail="Subproject not found.")
+def get_agent_context(
+    subproject_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> str:
+    subproject = require_subproject(session, user, subproject_id)
     tickets = list(
         session.exec(
             select(Ticket)
@@ -129,12 +136,11 @@ def _format_knowledge_tree(project: Project, nodes: list[KnowledgeNode]) -> str:
 def get_agent_knowledge_map(
     project_id: int,
     session: SessionDep,
+    user: CurrentUser,
     include_stale: bool = False,
 ) -> str:
     """Compact plain-text outline of a project's knowledge tree for agents."""
-    project = session.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = require_project(session, user, project_id)
     query = (
         select(KnowledgeNode)
         .where(KnowledgeNode.project_id == project_id)
@@ -153,13 +159,12 @@ def get_agent_knowledge_map(
 def get_agent_context_trail(
     project_id: int,
     session: SessionDep,
+    user: CurrentUser,
     query: str = Query(default="", max_length=200),
     limit: int = Query(default=6, ge=1, le=12),
 ) -> str:
     """Return a ranked context-loading trail for an agent task query."""
-    project = session.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = require_project(session, user, project_id)
     nodes = list(
         session.exec(
             select(KnowledgeNode)
@@ -177,11 +182,13 @@ def get_agent_context_trail(
     "/knowledge/{node_id}",
     response_class=PlainTextResponse,
 )
-def get_agent_knowledge_node(node_id: int, session: SessionDep) -> str:
+def get_agent_knowledge_node(
+    node_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> str:
     """Return a single knowledge node flattened for the agent's context."""
-    node = session.get(KnowledgeNode, node_id)
-    if node is None:
-        raise HTTPException(status_code=404, detail="Knowledge node not found.")
+    node = require_knowledge_node(session, user, node_id)
 
     lines: list[str] = [
         f"# [{node.node_type.value} #{node.id}] {node.title}",

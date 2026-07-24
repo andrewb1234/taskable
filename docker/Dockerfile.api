@@ -19,7 +19,8 @@ COPY pytest.ini ./pytest.ini
 RUN mkdir -p /app/data
 VOLUME ["/app/data"]
 
-ENV DATABASE_URL=sqlite:////app/data/taskable.db
+ENV DATABASE_URL=sqlite:////app/data/taskable.db \
+    MIGRATION_MODE=upgrade
 
 EXPOSE 8000
 

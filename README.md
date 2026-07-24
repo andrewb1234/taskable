@@ -1,8 +1,16 @@
-# Taskable — Co-Pilot Workspace
+# Mouvadah — Human-Agent Control Plane
 
-A local-first task management system designed for **synchronous collaboration between a human developer and an AI agent**. It acts as a shared state machine for project execution: humans work in the React UI, agents work through the MCP server, and both talk to the same FastAPI core over REST. Real-time updates flow back to the UI via Server-Sent Events.
+A local-first control and memory plane for **human-agent software delivery**.
+Humans work in the React UI, agents work through MCP, and both use the same
+FastAPI state machine for durable project context, dependency-safe execution,
+reviewable knowledge, and handoffs across short-lived agent sessions.
+Real-time updates flow back to the UI through Server-Sent Events.
 
 > Full specifications live in [`docs/`](./docs). Architectural decisions and frictions are logged in [`learnings.md`](./learnings.md).
+> The current company direction, offerings, competitive position, and release
+> gates live in [`docs/company_blueprint.md`](./docs/company_blueprint.md).
+> Verified security controls and explicit non-guarantees live in
+> [`docs/security_and_trust.md`](./docs/security_and_trust.md).
 
 ## Architecture
 
@@ -23,24 +31,23 @@ A local-first task management system designed for **synchronous collaboration be
 - `mcp/` — Python MCP stdio server exposing the agent tool catalogue.
 - `docker/` — two-service docker-compose stack.
 
-## What is `AGENT_API_KEY`?
+## Agent authentication
 
-A **single shared secret** that you generate locally — it is **not** issued by any third party (no Anthropic / OpenAI / GitHub account needed).
+The current authenticated flow uses a per-user Mouvadah API key:
 
-- It guards the `/api/v1/agent/*` routes so a curious browser tab cannot pretend to be the agent.
-- The same string must appear in **two places**:
-  1. `.env` (read by the FastAPI process)
-  2. The `env.AGENT_API_KEY` field in your Windsurf MCP config (so the stdio server can attach the bearer header on every request)
-- Generate one with:
-
-  ```bash
-  openssl rand -hex 32
-  ```
-
-- Rotate it whenever you want; just update both places and restart the API + your IDE.
-- The UI does **not** use this key. The UI runs on localhost and writes are tagged `HUMAN` regardless.
+1. Sign in through the web application.
+2. Open the profile page and create an API key.
+3. Put the returned one-time value in the MCP process as
+   `TASKABLE_API_KEY` (the legacy `AGENT_API_KEY` variable is also read).
+4. Revoke or replace the key from the profile page when needed.
 
 ## Zero-Config Setup
+
+> **Alpha limitation:** `bootstrap.py` still provisions the legacy shared
+> `AGENT_API_KEY`; it does not provision Google OAuth or a database-backed
+> per-user API key. It is not a complete fresh-install path for the current
+> authenticated application. This is tracked as a release blocker in the
+> company and security blueprints.
 
 From a clean clone:
 
@@ -51,7 +58,7 @@ python3 bootstrap.py
 This script will:
 
 1. Create `.venv/` and install all backend + MCP dependencies
-2. Generate a fresh `AGENT_API_KEY` (or accept one you paste in)
+2. Generate a legacy `AGENT_API_KEY` (or accept one you paste in)
 3. Write `.env` at the repo root
 4. Detect `~/.codeium/windsurf/mcp_config.json` and merge in a `taskable` server block with absolute paths — preserving your existing entries
 5. Print the next-step commands
@@ -72,7 +79,12 @@ cp .env.example .env       # then edit AGENT_API_KEY (see explanation above)
 uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The SQLite database lives at `~/.taskable/taskable.db` by default — survives `git clean`, easy to back up, inspectable with any SQLite GUI.
+The SQLite database lives at `~/.taskable/taskable.db` by default — survives
+`git clean`, is easy to back up, and is inspectable with any SQLite GUI. Local
+startup applies ordered Alembic revisions and creates a timestamped
+pre-migration backup before changing an existing file-backed database. See
+[`docs/migrations.md`](./docs/migrations.md) for hosted PostgreSQL and rollback
+procedures.
 
 Visit `http://127.0.0.1:8000/docs` for the OpenAPI explorer.
 
@@ -93,7 +105,7 @@ Pick **one** of three install styles:
 ```bash
 # Option A — same venv as the API (simplest)
 pip install -r mcp/requirements.txt
-AGENT_API_KEY=<same as .env> python mcp/mcp_server.py
+TASKABLE_API_KEY=<key-created-in-profile> python mcp/mcp_server.py
 
 # Option B — global isolated install via pipx (recommended for IDE use)
 pipx install ./mcp
@@ -125,6 +137,9 @@ The MCP server is **not** containerized — it runs on the host via stdio per `d
 # Backend (unit + agent simulator subprocess)
 pytest api/tests/ -v
 
+# Migration head and ORM schema parity for DATABASE_URL
+python -m api.migrations check
+
 # Frontend type-check + production build
 cd web && npm run build
 
@@ -149,6 +164,9 @@ make e2e          # playwright realtime spec
 
 | Verb   | Path                                                | Notes                         |
 | ------ | --------------------------------------------------- | ----------------------------- |
+| GET    | `/api/v1/workspaces`                                | Caller memberships and roles. |
+| POST   | `/api/v1/workspaces`                                | Creates an owned workspace.   |
+| GET    | `/api/v1/workspaces/{id}/members`                   | OWNER/ADMIN only.             |
 | GET    | `/api/v1/projects`                                  |                               |
 | POST   | `/api/v1/projects`                                  |                               |
 | GET    | `/api/v1/projects/{id}`                             |                               |
@@ -234,11 +252,17 @@ paths, URLs) render as muted monospace chips.
 
 ## Auth model
 
-Per decision in `learnings.md`:
-
-- **UI**: Runs on localhost, writes unauthenticated. Bearer header absent ⇒ audit entries tagged `HUMAN`.
-- **MCP server**: Always injects `Authorization: Bearer ${AGENT_API_KEY}`. Routes under `/agent/*` **require** the bearer token.
-- The API tags audit entries and SSE metadata with `HUMAN` vs `AGENT` based on the header.
+- **UI:** Google authorization-code sign-in issues an HttpOnly session cookie.
+- **MCP server:** Injects a per-user API key as an Authorization bearer token.
+- **Audit attribution:** Cookie-authenticated writes are currently tagged
+  `HUMAN`; API-key writes are tagged `AGENT`.
+- **Tenant boundary:** Projects belong to workspaces, descendants inherit that
+  boundary, and centralized authorization checks the caller's membership.
+  Ambiguous legacy projects fail closed until an owner is configured.
+- **Alpha boundary:** Do not expose the current build as a production public
+  SaaS. Browser-session revocation, complete CSRF defense, rate limiting,
+  shared realtime, recovery automation, and protected delivery remain open.
+  See `docs/security_and_trust.md`.
 
 ## Working directory layout
 

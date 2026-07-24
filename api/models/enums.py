@@ -11,6 +11,16 @@ class SubprojectStatus(str, Enum):
     COMPLETED = "COMPLETED"
 
 
+class WorkspaceRole(str, Enum):
+    """Membership role inside a workspace security boundary."""
+
+    OWNER = "OWNER"
+    ADMIN = "ADMIN"
+    MEMBER = "MEMBER"
+    VIEWER = "VIEWER"
+    SERVICE = "SERVICE"
+
+
 class TicketStatus(str, Enum):
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 from sqlmodel import select
 
+from api.auth import CurrentUser
+from api.authorization import (
+    ensure_personal_workspace,
+    require_project,
+    require_workspace,
+)
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
-from api.models.entities import Project, Subproject, Ticket
+from api.models.entities import Project, Subproject, Ticket, WorkspaceMembership
 from api.models.enums import SSEAction
 from api.schemas import (
     ProjectCreate,
@@ -22,8 +28,21 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.get("", response_model=list[ProjectRead])
-def list_projects(session: SessionDep) -> list[Project]:
-    return list(session.exec(select(Project).order_by(Project.created_at)).all())
+def list_projects(
+    session: SessionDep,
+    user: CurrentUser,
+) -> list[Project]:
+    return list(
+        session.exec(
+            select(Project)
+            .join(
+                WorkspaceMembership,
+                WorkspaceMembership.workspace_id == Project.workspace_id,  # type: ignore[arg-type]
+            )
+            .where(WorkspaceMembership.user_id == user.id)
+            .order_by(Project.created_at)
+        ).all()
+    )
 
 
 @router.post(
@@ -31,8 +50,25 @@ def list_projects(session: SessionDep) -> list[Project]:
     response_model=ProjectRead,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_project(payload: ProjectCreate, session: SessionDep) -> Project:
-    project = Project(name=payload.name, description=payload.description)
+async def create_project(
+    payload: ProjectCreate,
+    session: SessionDep,
+    user: CurrentUser,
+) -> Project:
+    if payload.workspace_id is None:
+        workspace = ensure_personal_workspace(session, user)
+    else:
+        workspace, _ = require_workspace(
+            session,
+            user,
+            payload.workspace_id,
+            write=True,
+        )
+    project = Project(
+        workspace_id=workspace.id,
+        name=payload.name,
+        description=payload.description,
+    )
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -42,24 +78,29 @@ async def create_project(payload: ProjectCreate, session: SessionDep) -> Project
             action=SSEAction.PROJECT_CREATED,
             entity="project",
             entity_id=project.id,  # type: ignore[arg-type]
+            workspace_id=workspace.id,
         )
     )
     return project
 
 
 @router.get("/{project_id}", response_model=ProjectRead)
-def get_project(project_id: int, session: SessionDep) -> Project:
-    project = session.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
-    return project
+def get_project(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> Project:
+    return require_project(session, user, project_id)
 
 
 @router.get("/{project_id}/tickets", response_model=list[TicketRef])
-def list_project_tickets(project_id: int, session: SessionDep) -> list[TicketRef]:
+def list_project_tickets(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> list[TicketRef]:
     """List compact ticket records for choosing in-project dependencies."""
-    if session.get(Project, project_id) is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    require_project(session, user, project_id)
 
     ticket_ids = list(
         session.exec(
@@ -77,15 +118,18 @@ def list_project_tickets(project_id: int, session: SessionDep) -> list[TicketRef
     "/{project_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_project(project_id: int, session: SessionDep) -> None:
+async def delete_project(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> None:
     """Delete a project and cascade its subprojects, tickets, and knowledge nodes.
 
     The ORM relationships on ``Project`` have ``cascade="all, delete-orphan"``
     so a single ``session.delete`` sweeps the tree.
     """
-    project = session.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = require_project(session, user, project_id, admin=True)
+    workspace_id = project.workspace_id
     ticket_ids = list(
         session.exec(
             select(Ticket.id)
@@ -102,6 +146,7 @@ async def delete_project(project_id: int, session: SessionDep) -> None:
             action=SSEAction.PROJECT_DELETED,
             entity="project",
             entity_id=project_id,
+            workspace_id=workspace_id,
         )
     )
     return None
@@ -111,9 +156,12 @@ async def delete_project(project_id: int, session: SessionDep) -> None:
     "/{project_id}/subprojects",
     response_model=list[SubprojectRead],
 )
-def list_subprojects(project_id: int, session: SessionDep) -> list[Subproject]:
-    if session.get(Project, project_id) is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
+def list_subprojects(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> list[Subproject]:
+    require_project(session, user, project_id)
     return list(
         session.exec(
             select(Subproject)
@@ -132,9 +180,9 @@ async def create_subproject(
     project_id: int,
     payload: SubprojectCreate,
     session: SessionDep,
+    user: CurrentUser,
 ) -> Subproject:
-    if session.get(Project, project_id) is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = require_project(session, user, project_id, write=True)
 
     subproject = Subproject(
         project_id=project_id,
@@ -152,6 +200,7 @@ async def create_subproject(
             entity="subproject",
             entity_id=subproject.id,  # type: ignore[arg-type]
             parent_id=project_id,
+            workspace_id=project.workspace_id,
         )
     )
     return subproject

@@ -24,6 +24,7 @@ from fastapi.responses import RedirectResponse
 from sqlmodel import Session, select
 
 from api.auth import COOKIE_NAME, create_jwt, get_current_user
+from api.authorization import ensure_personal_workspace
 from api.config import Settings, get_settings
 from api.dependencies import SessionDep, SettingsDep
 from api.models.entities import User
@@ -40,8 +41,10 @@ STATE_COOKIE = "oauth_state"
 STATE_COOKIE_MAX_AGE = 600  # 10 minutes
 
 
-def _redirect_uri(request: Request) -> str:
-    """Derive the OAuth callback URL from the incoming request."""
+def _redirect_uri(request: Request, settings: Settings) -> str:
+    """Return a trusted callback in production and a port-aware local callback."""
+    if settings.is_production():
+        return f"{settings.public_origin()}/api/v1/auth/callback"
     base = str(request.base_url).rstrip("/")
     return f"{base}/api/v1/auth/callback"
 
@@ -70,7 +73,7 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
         )
 
     state = secrets.token_urlsafe(32)
-    redirect_uri = _redirect_uri(request)
+    redirect_uri = _redirect_uri(request, settings)
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri,
@@ -119,7 +122,7 @@ async def auth_callback(
             detail="Invalid OAuth state",
         )
 
-    redirect_uri = _redirect_uri(request)
+    redirect_uri = _redirect_uri(request, settings)
 
     # Exchange the authorization code for tokens.
     async with httpx.AsyncClient(timeout=10) as client:
@@ -180,6 +183,8 @@ async def auth_callback(
         session.commit()
         session.refresh(user)
 
+    ensure_personal_workspace(session, user)
+
     # Issue JWT and set session cookie.
     jwt_token = create_jwt(user.id, user.email, settings.jwt_secret)
     response = RedirectResponse(
@@ -191,7 +196,7 @@ async def auth_callback(
         jwt_token,
         **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),  # 30 days
     )
-    response.delete_cookie(STATE_COOKIE)
+    response.delete_cookie(STATE_COOKIE, **_cookie_kwargs(settings))
     return response
 
 

@@ -5,8 +5,25 @@ Target framework: `SQLModel` (FastAPI). Engine: `SQLite`. All datetime fields sh
 
 ## Entities & Attributes
 
+### Workspace
+* `id`: Integer, Primary Key
+* `name`: String
+* `slug`: String, Unique
+* `created_at`: DateTime
+* Relationships: owns `projects` and cascades `memberships`.
+
+### WorkspaceMembership
+* `id`: Integer, Primary Key
+* `workspace_id`: Integer, ForeignKey(`workspace.id`)
+* `user_id`: Integer, ForeignKey(`user.id`)
+* `role`: Enum (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`, `SERVICE`)
+* `created_at`: DateTime
+* Constraint: unique (`workspace_id`, `user_id`).
+
 ### Project
 * `id`: Integer, Primary Key
+* `workspace_id`: Integer, ForeignKey(`workspace.id`). Nullable only as a
+  temporary bridge for legacy databases awaiting safe ownership assignment.
 * `name`: String
 * `description`: String, Optional
 * `created_at`: DateTime
@@ -28,7 +45,16 @@ Target framework: `SQLModel` (FastAPI). Engine: `SQLite`. All datetime fields sh
 * `status`: Enum (`TODO`, `IN_PROGRESS`, `BLOCKED`, `REVIEW`, `DONE`)
 * `assignee`: Enum (`HUMAN`, `AGENT`, `UNASSIGNED`)
 * `mr_link`: String, Optional (GitHub PR URL)
+* `source_refs`: JSON array of strings
+* `claimed_by`: String, Optional
+* `claimed_at`: DateTime, Optional
+* `lease_expires_at`: DateTime, Optional
 * Relationships: cascades `comments` and `audit_logs`.
+
+### TicketDependency
+* `ticket_id`: Integer, ForeignKey(`ticket.id`), composite Primary Key
+* `depends_on_ticket_id`: Integer, ForeignKey(`ticket.id`), composite Primary Key
+* Constraint: unique (`ticket_id`, `depends_on_ticket_id`).
 
 ### Comment
 * `id`: Integer, Primary Key
@@ -40,7 +66,8 @@ Target framework: `SQLModel` (FastAPI). Engine: `SQLite`. All datetime fields sh
 ### AuditLog (Ledger)
 * `id`: Integer, Primary Key
 * `ticket_id`: Integer, ForeignKey(`ticket.id`)
-* `action`: Enum (`STATUS_UPDATE`, `CONTENT_UPDATE`, `MR_LINKED`)
+* `action`: Enum (`STATUS_UPDATE`, `CONTENT_UPDATE`, `MR_LINKED`,
+  `TICKET_CLAIMED`, `TICKET_REQUEUED`)
 * `actor`: Enum (`HUMAN`, `AGENT`)
 * `timestamp`: DateTime
 

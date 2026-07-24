@@ -138,7 +138,9 @@ class TestTicketDependencies:
             json={"title": "Cross", "depends_on": [t1["id"]]},
         )
         assert r.status_code == 422
-        assert "different project" in r.json()["detail"]
+        # Cross-project IDs are deliberately indistinguishable from missing
+        # IDs so callers cannot enumerate inaccessible workspace objects.
+        assert "not found" in r.json()["detail"]
 
     def test_subproject_detail_includes_depends_on(self, client: TestClient):
         _, sp_id = _make_project_and_subproject(client)
@@ -485,21 +487,3 @@ def test_claim_compare_and_set_allows_one_concurrent_winner(tmp_path):
         claimed = session.get(Ticket, ticket_id)
         assert claimed.status.value == "IN_PROGRESS"
         assert claimed.claimed_by in {"worker-1", "worker-2"}
-
-
-def test_legacy_ticket_table_gets_coordination_columns(tmp_path):
-    from sqlalchemy import create_engine, inspect, text
-
-    from api.database import _upgrade_ticket_coordination_schema
-
-    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
-    with engine.begin() as connection:
-        connection.execute(
-            text("CREATE TABLE ticket (id INTEGER PRIMARY KEY, title VARCHAR NOT NULL)")
-        )
-
-    _upgrade_ticket_coordination_schema(engine)
-    _upgrade_ticket_coordination_schema(engine)
-
-    columns = {column["name"] for column in inspect(engine).get_columns("ticket")}
-    assert {"claimed_by", "claimed_at", "lease_expires_at"} <= columns

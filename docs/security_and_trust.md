@@ -1,0 +1,477 @@
+# Mouvadah Security and Trust Baseline
+
+Status: verified alpha posture and target control plan
+Audit date: 2026-07-25
+Scope: repository application, local deployment, proposed hosted service
+
+## Plain-language posture
+
+Mouvadah now has an application-layer workspace boundary suitable for
+multi-user development evaluation: projects belong to workspaces, descendants
+inherit that boundary, and every application route resolves the caller's
+membership before returning or mutating an object.
+
+It is **still not safe to describe as a production-ready public SaaS**.
+Browser-session revocation, CSRF enforcement, rate limits, multi-instance
+realtime delivery, restore automation, monitoring, and a protected
+software-delivery process remain open release gates.
+
+This document deliberately separates verified controls from target controls.
+Security guarantees must be limited to what the code, tests, and operational
+evidence support.
+
+## Verified controls today
+
+### Identity and credentials
+
+- Google authorization-code sign-in uses a random state value bound to an
+  HttpOnly cookie.
+- Application sessions are HS256 JWTs in an HttpOnly, SameSite=Lax cookie.
+- The cookie is marked Secure when the configured frontend URL uses HTTPS.
+- Agent API keys contain 32 bytes of random entropy, are returned only at
+  creation, and are stored as SHA-256 hashes.
+- API keys can expire and be revoked.
+- Authenticated requests resolve an actual user record.
+- Production OAuth callbacks derive from the configured public origin rather
+  than the request Host.
+- Production startup rejects a default or short JWT secret and missing Google
+  OAuth credentials when `FRONTEND_URL` uses HTTPS.
+
+### Authorization and tenancy
+
+- Workspaces own projects; project descendants inherit that tenant boundary.
+- Membership roles are OWNER, ADMIN, MEMBER, VIEWER, and SERVICE.
+- Central authorization helpers protect project, subproject, ticket, comment,
+  knowledge, proposal, session, and agent routes.
+- Inaccessible object IDs return 404, including cross-workspace dependency,
+  knowledge-parent, and session-node references.
+- API keys act as their owning user and cannot escape that user's workspace
+  memberships.
+- Every emitted application event carries a workspace ID; the SSE stream
+  re-checks current membership before delivery.
+- Legacy projects are adopted only by an explicitly configured owner or by the
+  sole user of a local-development database. Ambiguous legacy projects remain
+  inaccessible.
+
+### Data and execution integrity
+
+- SQLModel/SQLAlchemy uses parameterized database operations in normal paths.
+- Ticket claiming uses a conditional compare-and-set update.
+- Heartbeats cannot revive an expired lease.
+- Requeue logic conditionally updates expired claims.
+- Dependency cycles and invalid dependency targets are rejected.
+- Ticket state changes and selected actions create audit records.
+- Destructive project, subproject, ticket, and knowledge actions have explicit
+  routes and tests.
+
+### Verification
+
+- 88 backend tests pass.
+- The suite includes concurrent claim, expiry, dependency, cascade, state,
+  knowledge, cross-workspace read/write/delete isolation, role enforcement,
+  tenant-filtered events, safe legacy adoption, OAuth hardening, and MCP
+  subprocess coverage. Alembic upgrades and exact ORM parity were also
+  exercised against ephemeral PostgreSQL 17.
+- The frontend TypeScript and production build pass.
+- A browser-level realtime specification exists.
+
+## Explicit non-guarantees
+
+Mouvadah does not currently guarantee:
+
+- database-enforced tenant isolation or PostgreSQL row-level security;
+- granular custom roles or per-action API-key scopes;
+- independently assessed confidentiality controls;
+- CSRF protection beyond SameSite cookies and OAuth state;
+- rate limiting, abuse prevention, or denial-of-service resistance;
+- revocable browser sessions;
+- multi-instance realtime delivery;
+- encrypted application-layer fields or customer-managed keys;
+- migration rollback, point-in-time recovery, or tested disaster recovery;
+- vulnerability scanning, signed builds, SBOMs, or provenance attestations;
+- a response-time SLA, RPO, or RTO;
+- SOC 2, ISO 27001, HIPAA, FedRAMP, or other certification;
+- independent penetration testing; or
+- exactly-once external side effects from agents.
+
+These omissions are release blockers for different offerings, not fine print to
+hide in customer terms.
+
+## Assets
+
+High-value assets include:
+
+- project descriptions, requirements, technical designs, and source references;
+- tickets, dependencies, comments, handoffs, and execution history;
+- repository and pull-request links;
+- user identity and profile data;
+- browser sessions and API keys;
+- OAuth client credentials and application signing secrets;
+- database backups and exported audit data; and
+- future tracker, repository, and agent-runtime credentials.
+
+Source references may reveal sensitive local paths even when file contents are
+not stored. Treat them as customer data.
+
+## Trust boundaries
+
+1. Browser to API over cookie-authenticated HTTPS.
+2. Local or remote MCP client to API using an API key or future OAuth token.
+3. API to database.
+4. API to Google OAuth.
+5. Future API to GitHub, Linear, Jira, object storage, email, and observability
+   vendors.
+6. Human-approved project state to untrusted or semi-trusted agent actions.
+7. Tenant data to operator tooling, backups, logs, and support workflows.
+
+Agents are not trusted simply because they possess credentials. Credentials
+need scopes, resource boundaries, expiry, revocation, and policy enforcement.
+
+## Current findings
+
+### Resolved critical: object-level tenant authorization
+
+Workspace ownership, membership roles, centralized object lookups,
+non-enumerating failures, cross-reference validation, and tenant-filtered SSE
+are implemented and covered by adversarial two-user tests.
+
+Residual risk:
+
+- the boundary is enforced by application queries rather than database
+  row-level security;
+- no independent penetration test has been performed;
+- membership administration currently exposes listing, not invitation,
+  role-change, removal, or ownership-transfer workflows; and
+- API keys inherit all permissions of their user instead of carrying explicit
+  workspace, project, and action scopes.
+
+### Resolved high: trusted OAuth callback origin
+
+Production redirects now derive from validated `FRONTEND_URL` configuration.
+Loopback request ports remain available only for local development, and
+focused tests cover spoofed Hosts, invalid public URLs, state-cookie cleanup,
+and production secret requirements.
+
+### Resolved high: ordered migration and deployment gate
+
+Alembic now owns the release schema. The migration runner recognizes fresh
+databases, the supported unversioned 0.1.0 pre-tenancy schema, already-created
+unversioned tenancy schemas, and known Alembic revisions. Partial or unknown
+schemas fail closed.
+
+Verified behavior:
+
+- file-backed SQLite creates a consistent pre-migration backup automatically;
+- an existing non-SQLite database requires explicit backup confirmation;
+- production configuration rejects application-startup upgrade mode;
+- application replicas in `check` mode refuse an unversioned or behind
+  database;
+- fresh and unversioned SQLite upgrades preserve data and match ORM metadata;
+- fresh and unversioned PostgreSQL 17 upgrades preserve data and match ORM
+  metadata; and
+- the operator runbook defines backup, failure, forward-fix, and restore-based
+  rollback procedures.
+
+Residual risk:
+
+- managed PostgreSQL backup and restore automation remains ticket #84;
+- no historical schema older than the documented 0.1.0 baseline is guessed at
+  or silently repaired; and
+- production restore exercises have not yet established an RPO or RTO.
+
+### High: process-local realtime fan-out
+
+The SSE stream is authenticated and tenant-filtered, including a membership
+check immediately before each event is delivered. The broadcaster remains
+process-local, so multiple API processes would deliver inconsistent updates.
+
+Required outcome:
+
+- use a durable or shared fan-out mechanism for multi-instance deployment;
+- test disconnect, replay policy, and cross-tenant silence.
+
+### Medium: browser mutation CSRF defense is incomplete
+
+SameSite=Lax is useful defense in depth but is not a complete general CSRF
+control, especially across same-site subdomains. State-changing routes rely on
+the session cookie and accept JSON requests without a separate CSRF mechanism
+or explicit Origin enforcement.
+
+Required outcome:
+
+- reject unsafe cookie-authenticated requests with an untrusted Origin;
+- add a synchronizer or signed double-submit token if deployment topology
+  requires cross-origin browser writes;
+- use Fetch Metadata as an additional signal, not the sole control;
+- keep API-key requests outside the cookie CSRF flow;
+- test cross-site and same-site sibling-origin attempts.
+
+### Medium: sessions are long-lived and not revocable
+
+Browser JWTs last 30 days and have no server-side session identifier, rotation,
+or revocation list. Password or OAuth-account events cannot immediately revoke
+an issued token.
+
+Required outcome:
+
+- use a server-side session record or short-lived access token plus rotating
+  refresh session;
+- record issued, last-used, expires, revoked, and authentication assurance;
+- revoke all sessions from the user profile and operator tooling;
+- rotate signing keys with a documented procedure.
+
+### Medium: authorization and audit identity are too coarse
+
+Several audit records identify only HUMAN versus AGENT. They do not reliably
+identify a user, API key, worker, source IP, request, before/after values, or
+workspace.
+
+Required outcome:
+
+- immutable actor ID, credential ID, workspace, request/correlation ID, action,
+  target, timestamp, and safe change metadata;
+- never log raw session, OAuth, API, or integration credentials;
+- append-only export and defined retention.
+
+### Medium: no rate or resource limits
+
+Authentication, API-key verification, search, large text bodies, SSE
+connections, and write routes have no visible rate, concurrency, or payload
+limits.
+
+Required outcome:
+
+- per-IP limits for login/callback failures;
+- per-user, API-key, and workspace quotas;
+- maximum content, source-ref, query, and dependency counts;
+- connection and timeout limits;
+- backpressure and explicit 429 behavior.
+
+### Medium: software supply-chain and delivery controls are absent
+
+No repository CI workflow, dependency scanning, secret scanning, SAST, SBOM,
+artifact signing, or automated image scan is present. Docker images run with
+the image default user and install the combined production and test dependency
+set.
+
+Required outcome:
+
+- protected CI for tests and builds;
+- dependency, secret, static, and container scanning;
+- lock or compile reproducible dependency sets;
+- non-root minimal runtime images;
+- SBOM and build provenance for releases;
+- documented patch severity targets.
+
+### Medium: recovery and deletion are immature
+
+SQLite is easy to copy, but there is no verified scheduled backup, restore
+exercise, retention policy, soft-delete/recovery window, or tenant export.
+Destructive MCP tools hard-delete immediately.
+
+Required outcome:
+
+- automated encrypted backups with restore tests;
+- recoverable deletion window for hosted offerings;
+- explicit confirmation or policy approval for high-impact agent deletion;
+- tenant export and verified purge workflow;
+- measured RPO/RTO before publishing targets.
+
+### Low: operational visibility is minimal
+
+Only a basic health endpoint is visible. There are no structured security
+events, traces, service metrics, error aggregation, operator audit trail, or
+incident playbooks.
+
+Required outcome:
+
+- structured redacted logs and correlation IDs;
+- latency, error, saturation, auth-failure, job, and SSE metrics;
+- tracing across API, jobs, and integrations;
+- alert thresholds and incident severity/runbooks.
+
+## Target security architecture
+
+### Identity and access
+
+- Workspaces own projects and all descendants inherit that boundary.
+- Membership roles start with OWNER, ADMIN, MEMBER, VIEWER, and SERVICE.
+- Permissions are checked through centralized policy helpers on every object
+  read and action.
+- API keys belong to a workspace and principal, have explicit scopes, optional
+  project restrictions, expiry, last use, and revocation.
+- Agent workers use distinct identities; never share one all-powerful token.
+- Destructive and administrative operations support step-up or explicit
+  approval policy.
+
+### Remote MCP
+
+Keep stdio credentials in the environment for the local product. For hosted
+Streamable HTTP:
+
+- follow the current MCP authorization specification;
+- expose protected-resource metadata;
+- use an OAuth authorization server with PKCE and resource indicators;
+- request least-privilege scopes;
+- validate audience/resource on every token;
+- support machine-to-machine identities separately from human delegation;
+- provide a read-only connection option.
+
+### Data protection
+
+- TLS for every hosted connection.
+- Managed database encryption at rest and encrypted backups.
+- Secret manager for OAuth, signing, integration, and database credentials.
+- Object storage with private buckets, short-lived signed access, MIME
+  allowlists, and malware scanning before attachments launch.
+- Redaction rules for logs, errors, support bundles, and analytics.
+- Per-workspace export and deletion with documented retention.
+
+### Application controls
+
+- Exact trusted OAuth redirects and one-time state.
+- Origin/CSRF enforcement for cookie writes.
+- Strict input schemas, size limits, safe URL validation, and pagination.
+- Idempotency keys for retryable create/action endpoints.
+- Security headers: CSP, frame-ancestors, nosniff, referrer policy, and HSTS at
+  the trusted TLS edge.
+- Safe error messages and no stack traces or secrets in client responses.
+- Authorization checks before existence-sensitive responses.
+
+### Agent safety controls
+
+- Tool scopes by workspace, project, action, and risk.
+- Read-only defaults for newly connected agents where practical.
+- Approval gates for destructive, external, billing, identity, and policy
+  actions.
+- Lease and idempotency semantics documented honestly.
+- Egress/integration allowlists for managed execution connectors.
+- Full agent action attribution and a kill/revoke control.
+- Budget and concurrency limits before Mouvadah launches paid execution.
+
+## Secure development program
+
+Use OWASP ASVS 5.0 as the application control checklist and NIST SSDF as the
+development-program structure. This is an internal verification target, not a
+certification claim.
+
+### Pull-request gates
+
+- Backend tests, frontend type/build, and relevant Playwright tests.
+- Authorization tests for every new object endpoint.
+- Dependency and secret scan.
+- Migration upgrade test for schema changes.
+- Threat review for new credentials, integrations, uploads, or destructive
+  actions.
+- No high/critical known vulnerability without an explicit time-bounded risk
+  acceptance.
+
+### Patch targets
+
+Initial internal targets:
+
+- Critical exploitable issue: contain immediately; remediation target 24 hours.
+- High: remediation target 7 days.
+- Medium: remediation target 30 days.
+- Low: prioritized with normal maintenance.
+
+Targets become customer commitments only after the team proves it can meet
+them.
+
+### Release evidence
+
+Each release should retain:
+
+- commit and build identity;
+- tests and security scans;
+- dependency/SBOM snapshot;
+- migration result;
+- reviewer and approval;
+- deployment and rollback record; and
+- customer-impacting security changes.
+
+## Availability, backup, and incident targets
+
+Do not publish an SLA before collecting production evidence.
+
+Private-beta internal objectives:
+
+- daily automated backup plus managed PostgreSQL point-in-time recovery;
+- quarterly restore exercise initially, moving to monthly before paid GA;
+- documented restore ownership and evidence;
+- single-region recovery objective measured in exercises;
+- public status communication path;
+- incident roles, severity, containment, evidence preservation, customer
+  notification, and post-incident review.
+
+RPO and RTO must be measured from actual restore exercises before they become
+contract terms.
+
+## Privacy and compliance path
+
+Before accepting public customers:
+
+- publish privacy policy, terms, security contact, and subprocessors;
+- document data categories, purposes, retention, location, and deletion;
+- support account/workspace export and deletion;
+- execute DPAs with relevant vendors;
+- minimize analytics and make product telemetry transparent;
+- define law-enforcement and support-access handling;
+- maintain an access-reviewed production operator roster.
+
+SOC 2 Type I is a possible later milestone after the control system operates
+consistently. It is not the first security task and must not substitute for
+tenant isolation, restore testing, or secure authorization.
+
+## Offering security gates
+
+### Community/local
+
+- Bind to loopback by default.
+- Reject insecure defaults on non-loopback or HTTPS-style production config.
+- Document backup, upgrade, exposure, and credential rotation.
+- CI and dependency/security scans on release.
+- Published vulnerability reporting address.
+
+### Cloud private beta
+
+- Complete tenant authorization and cross-tenant tests.
+- Trusted OAuth, CSRF, revocable sessions, rate limits, and headers.
+- Alembic migration evidence and a production-like PostgreSQL restore
+  exercise.
+- Tenant-scoped realtime and logs.
+- Operational monitoring, incident process, export, and deletion.
+
+### Enterprise
+
+- SSO/SCIM, granular RBAC, group mapping, and service identities.
+- Independent penetration test with remediation.
+- SIEM export, retention, access reviews, and vendor evidence.
+- Supported deployment architecture and upgrade policy.
+- Contracted controls only where operating evidence exists.
+
+## Immediate verification backlog
+
+1. Add protected CI and software supply-chain gates.
+2. Add cookie-write Origin/CSRF enforcement and security headers.
+3. Add revocable browser sessions and scoped API keys.
+4. Automate managed PostgreSQL backup/restore and measure recovery.
+5. Build tenant export, deletion, and verified purge workflows.
+6. Replace process-local SSE with tested shared fan-out for hosted deployments.
+7. Add rate limits, abuse controls, monitoring, and operator alerting.
+8. Create a threat model for GitHub/Linear integrations before implementation.
+
+## Standards and primary references
+
+- OWASP API1:2023 Broken Object Level Authorization:
+  https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/
+- OWASP Application Security Verification Standard 5.0:
+  https://owasp.org/www-project-application-security-verification-standard/
+- OWASP CSRF Prevention Cheat Sheet:
+  https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+- OAuth 2.0 Security Best Current Practice, RFC 9700:
+  https://www.rfc-editor.org/rfc/rfc9700.html
+- MCP Authorization specification (2025-11-25):
+  https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+- NIST Secure Software Development Framework, SP 800-218:
+  https://csrc.nist.gov/pubs/sp/800/218/final

@@ -98,7 +98,7 @@ def test_knowledge_node_parent_must_be_same_project(client):
         json={"title": "Child", "parent_id": foreign["id"]},
     )
     assert response.status_code == 400
-    assert "different project" in response.json()["detail"]
+    assert "does not exist" in response.json()["detail"]
 
 
 def test_knowledge_node_parent_cycle_rejected(client):
