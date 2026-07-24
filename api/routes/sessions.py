@@ -5,9 +5,15 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from sqlmodel import select
 
+from api.auth import CurrentUser
+from api.authorization import (
+    require_agent_session,
+    require_project,
+    workspace_id_for_project,
+)
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
-from api.models.entities import AgentSession, Project
+from api.models.entities import AgentSession, KnowledgeNode
 from api.models.enums import SSEAction
 from api.schemas import AgentSessionCreate, AgentSessionRead, AgentSessionUpdate
 from api.utils.time import utcnow
@@ -15,18 +21,27 @@ from api.utils.time import utcnow
 router = APIRouter(tags=["sessions"])
 
 
-def _get_project_or_404(session, project_id: int) -> Project:
-    project = session.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
-    return project
-
-
-def _get_session_or_404(session, session_id: int) -> AgentSession:
-    agent_session = session.get(AgentSession, session_id)
-    if agent_session is None:
-        raise HTTPException(status_code=404, detail="Agent session not found.")
-    return agent_session
+def _validate_loaded_nodes(
+    session,
+    project_id: int,
+    node_ids: list[int],
+) -> None:
+    ids = sorted(set(node_ids))
+    if not ids:
+        return
+    valid_ids = set(
+        session.exec(
+            select(KnowledgeNode.id).where(
+                KnowledgeNode.id.in_(ids),
+                KnowledgeNode.project_id == project_id,
+            )
+        ).all()
+    )
+    if valid_ids != set(ids):
+        raise HTTPException(
+            status_code=422,
+            detail="loaded_node_ids contains an unknown project node.",
+        )
 
 
 @router.post(
@@ -38,9 +53,11 @@ async def start_session(
     project_id: int,
     payload: AgentSessionCreate,
     session: SessionDep,
+    user: CurrentUser,
 ) -> AgentSession:
     """Start a new agent session, recording intent and initial loaded nodes."""
-    _get_project_or_404(session, project_id)
+    require_project(session, user, project_id, write=True)
+    _validate_loaded_nodes(session, project_id, payload.loaded_node_ids)
 
     agent_session = AgentSession(
         project_id=project_id,
@@ -58,6 +75,7 @@ async def start_session(
             entity="agent_session",
             entity_id=agent_session.id,  # type: ignore[arg-type]
             parent_id=project_id,
+            workspace_id=workspace_id_for_project(session, project_id),
         )
     )
     return agent_session
@@ -67,9 +85,13 @@ async def start_session(
     "/projects/{project_id}/sessions",
     response_model=list[AgentSessionRead],
 )
-def list_sessions(project_id: int, session: SessionDep) -> list[AgentSession]:
+def list_sessions(
+    project_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> list[AgentSession]:
     """Return all sessions for a project, most recent first."""
-    _get_project_or_404(session, project_id)
+    require_project(session, user, project_id)
     return list(
         session.exec(
             select(AgentSession)
@@ -87,10 +109,22 @@ async def update_session(
     session_id: int,
     payload: AgentSessionUpdate,
     session: SessionDep,
+    user: CurrentUser,
 ) -> AgentSession:
     """Checkpoint or close an agent session."""
-    agent_session = _get_session_or_404(session, session_id)
+    agent_session = require_agent_session(
+        session,
+        user,
+        session_id,
+        write=True,
+    )
     updates = payload.model_dump(exclude_unset=True)
+    if "loaded_node_ids" in updates:
+        _validate_loaded_nodes(
+            session,
+            agent_session.project_id,
+            updates["loaded_node_ids"],
+        )
 
     for key, value in updates.items():
         setattr(agent_session, key, value)
@@ -108,6 +142,10 @@ async def update_session(
             entity="agent_session",
             entity_id=session_id,
             parent_id=agent_session.project_id,
+            workspace_id=workspace_id_for_project(
+                session,
+                agent_session.project_id,
+            ),
         )
     )
     return agent_session
@@ -117,5 +155,9 @@ async def update_session(
     "/agent/sessions/{session_id}",
     response_model=AgentSessionRead,
 )
-def get_session(session_id: int, session: SessionDep) -> AgentSession:
-    return _get_session_or_404(session, session_id)
+def get_session(
+    session_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> AgentSession:
+    return require_agent_session(session, user, session_id)

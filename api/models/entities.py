@@ -25,6 +25,7 @@ from api.models.enums import (
     SubprojectStatus,
     TicketAssignee,
     TicketStatus,
+    WorkspaceRole,
 )
 from api.utils.time import utcnow
 
@@ -46,10 +47,50 @@ class AgentSession(SQLModel, table=True):
     project: Optional["Project"] = Relationship(back_populates="sessions")
 
 
+class Workspace(SQLModel, table=True):
+    """Tenant boundary that owns projects and memberships."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    slug: str = Field(unique=True, index=True)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    projects: List["Project"] = Relationship(back_populates="workspace")
+    memberships: List["WorkspaceMembership"] = Relationship(
+        back_populates="workspace",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+class WorkspaceMembership(SQLModel, table=True):
+    """A user's role inside a workspace."""
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(foreign_key="workspace.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    role: WorkspaceRole = Field(
+        default=WorkspaceRole.MEMBER,
+        sa_column=Column(String, nullable=False, default="MEMBER"),
+    )
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    workspace: Optional[Workspace] = Relationship(back_populates="memberships")
+    user: Optional["User"] = Relationship(back_populates="memberships")
+
+
 class Project(SQLModel, table=True):
     """Top-level container grouping a set of subprojects."""
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    # Nullable only while a legacy installation awaits an explicit safe
+    # ownership backfill. All newly created projects set this field.
+    workspace_id: Optional[int] = Field(
+        default=None, foreign_key="workspace.id", index=True
+    )
     name: str = Field(index=True)
     description: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
@@ -66,6 +107,7 @@ class Project(SQLModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    workspace: Optional[Workspace] = Relationship(back_populates="projects")
 
 
 class Subproject(SQLModel, table=True):
@@ -123,8 +165,6 @@ class TicketDependency(SQLModel, table=True):
     reasons are different concepts. A ticket with unmet dependencies is
     "not ready" but may still be in TODO status.
     """
-
-    __table_args__ = (UniqueConstraint("ticket_id", "depends_on_ticket_id", name="uq_ticket_dependency"),)
 
     ticket_id: int = Field(foreign_key="ticket.id", primary_key=True, index=True)
     depends_on_ticket_id: int = Field(foreign_key="ticket.id", primary_key=True, index=True)
@@ -217,6 +257,8 @@ class User(SQLModel, table=True):
     name: str
     avatar_url: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    memberships: List[WorkspaceMembership] = Relationship(back_populates="user")
 
 
 class ApiKey(SQLModel, table=True):

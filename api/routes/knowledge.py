@@ -4,13 +4,9 @@ The knowledge tree sits *upstream* of subprojects and tickets: it is where
 agents persist raw research, compressed summaries, and drafted PRD/TDD
 artifacts before breaking work down into actionable tickets.
 
-Mirrors the existing routing conventions:
-
-* UI-side CRUD is unauthenticated (localhost only), per the decision in
-  ``learnings.md`` — every mutation emits an SSE event so the React tree
-  view reconciles live.
-* An agent-flattened outline lives under ``/agent/*`` and requires the
-  bearer token (see ``api.routes.agent``).
+Every route is authenticated and resolved through a workspace-authorized
+project or knowledge node. Every mutation emits an SSE event so the React tree
+view can reconcile live.
 """
 
 from __future__ import annotations
@@ -18,9 +14,15 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlmodel import select
 
+from api.auth import CurrentUser
+from api.authorization import (
+    require_knowledge_node,
+    require_project,
+    workspace_id_for_project,
+)
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
-from api.models.entities import KnowledgeNode, Project
+from api.models.entities import KnowledgeNode
 from api.models.enums import ActorRole, KnowledgeNodeStatus, SSEAction
 from api.schemas import (
     KnowledgeNodeCreate,
@@ -32,20 +34,6 @@ from api.utils.context_trails import build_context_trail
 from api.utils.time import utcnow
 
 router = APIRouter(tags=["knowledge"])
-
-
-def _require_project(session, project_id: int) -> Project:
-    project = session.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
-    return project
-
-
-def _require_node(session, node_id: int) -> KnowledgeNode:
-    node = session.get(KnowledgeNode, node_id)
-    if node is None:
-        raise HTTPException(status_code=404, detail="Knowledge node not found.")
-    return node
 
 
 def _infer_actor(request: Request) -> ActorRole:
@@ -69,14 +57,14 @@ def _validate_parent(
     """Reject parent references that cross projects or form a cycle."""
     if parent_id is None:
         return
-    parent = session.get(KnowledgeNode, parent_id)
+    parent = session.exec(
+        select(KnowledgeNode).where(
+            KnowledgeNode.id == parent_id,
+            KnowledgeNode.project_id == project_id,
+        )
+    ).first()
     if parent is None:
         raise HTTPException(status_code=400, detail="Parent node does not exist.")
-    if parent.project_id != project_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Parent node belongs to a different project.",
-        )
     # Cycle guard: walk up the ancestor chain, refusing if we hit ``self_id``.
     if self_id is not None:
         cursor = parent
@@ -103,6 +91,7 @@ def _validate_parent(
 def list_knowledge_nodes(
     project_id: int,
     session: SessionDep,
+    user: CurrentUser,
     include_stale: bool = Query(default=False),
 ) -> list[KnowledgeNode]:
     """Return knowledge nodes for a project.
@@ -113,7 +102,7 @@ def list_knowledge_nodes(
     locally using ``parent_id``. This keeps the endpoint cheap (one query)
     and SSE-friendly (a single action invalidates the whole panel).
     """
-    _require_project(session, project_id)
+    require_project(session, user, project_id)
     query = (
         select(KnowledgeNode)
         .where(KnowledgeNode.project_id == project_id)
@@ -131,12 +120,13 @@ def list_knowledge_nodes(
 def get_context_trail(
     project_id: int,
     session: SessionDep,
+    user: CurrentUser,
     query: str = Query(default="", max_length=200),
     limit: int = Query(default=6, ge=1, le=12),
     include_stale: bool = Query(default=False),
 ) -> ContextTrailRead:
     """Find the most relevant knowledge branches for a task-intent query."""
-    project = _require_project(session, project_id)
+    project = require_project(session, user, project_id)
     stmt = (
         select(KnowledgeNode)
         .where(KnowledgeNode.project_id == project_id)
@@ -158,8 +148,9 @@ async def create_knowledge_node(
     payload: KnowledgeNodeCreate,
     session: SessionDep,
     request: Request,
+    user: CurrentUser,
 ) -> KnowledgeNode:
-    _require_project(session, project_id)
+    require_project(session, user, project_id, write=True)
     _validate_parent(session, project_id, payload.parent_id)
 
     actor = _infer_actor(request)
@@ -182,14 +173,19 @@ async def create_knowledge_node(
             entity="knowledge_node",
             entity_id=node.id,  # type: ignore[arg-type]
             parent_id=project_id,
+            workspace_id=workspace_id_for_project(session, project_id),
         )
     )
     return node
 
 
 @router.get("/knowledge/{node_id}", response_model=KnowledgeNodeRead)
-def get_knowledge_node(node_id: int, session: SessionDep) -> KnowledgeNode:
-    return _require_node(session, node_id)
+def get_knowledge_node(
+    node_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> KnowledgeNode:
+    return require_knowledge_node(session, user, node_id)
 
 
 @router.patch("/knowledge/{node_id}", response_model=KnowledgeNodeRead)
@@ -197,8 +193,9 @@ async def update_knowledge_node(
     node_id: int,
     payload: KnowledgeNodeUpdate,
     session: SessionDep,
+    user: CurrentUser,
 ) -> KnowledgeNode:
-    node = _require_node(session, node_id)
+    node = require_knowledge_node(session, user, node_id, write=True)
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields provided to update.")
@@ -210,6 +207,18 @@ async def update_knowledge_node(
             updates["parent_id"],
             self_id=node.id,
         )
+    if updates.get("superseded_by") is not None:
+        superseding_node = session.exec(
+            select(KnowledgeNode).where(
+                KnowledgeNode.id == updates["superseded_by"],
+                KnowledgeNode.project_id == node.project_id,
+            )
+        ).first()
+        if superseding_node is None or superseding_node.id == node.id:
+            raise HTTPException(
+                status_code=400,
+                detail="superseded_by must reference another node in this project.",
+            )
 
     for key, value in updates.items():
         setattr(node, key, value)
@@ -225,6 +234,10 @@ async def update_knowledge_node(
             entity="knowledge_node",
             entity_id=node.id,  # type: ignore[arg-type]
             parent_id=node.project_id,
+            workspace_id=workspace_id_for_project(
+                session,
+                node.project_id,
+            ),
         )
     )
     return node
@@ -234,8 +247,12 @@ async def update_knowledge_node(
     "/knowledge/{node_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_knowledge_node(node_id: int, session: SessionDep) -> None:
-    node = _require_node(session, node_id)
+async def delete_knowledge_node(
+    node_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> None:
+    node = require_knowledge_node(session, user, node_id, write=True)
     project_id = node.project_id
     session.delete(node)
     session.commit()
@@ -246,6 +263,7 @@ async def delete_knowledge_node(node_id: int, session: SessionDep) -> None:
             entity="knowledge_node",
             entity_id=node_id,
             parent_id=project_id,
+            workspace_id=workspace_id_for_project(session, project_id),
         )
     )
     return None

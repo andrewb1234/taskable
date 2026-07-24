@@ -1,6 +1,18 @@
-# Co-Pilot Workspace: Knowledge Index
+# Mouvadah Knowledge Index
 
-This directory contains the strict specifications for the "Taskable" Co-Pilot Workspace. Read the relevant documents before implementing or modifying any system component. 
+This directory contains the product, company, security, and technical
+specifications for Mouvadah. Read the relevant documents before implementing
+or modifying any system component.
+
+## 0. Company and trust source of truth
+
+* `company_blueprint.md`: Positioning, customer, competitors, moat, offerings,
+  pricing hypotheses, go-to-market, product architecture, roadmap, and release
+  gates.
+* `security_and_trust.md`: Verified controls, explicit non-guarantees, threat
+  boundaries, findings, target controls, and offering security gates.
+* `migrations.md`: Supported database states, backup-before-migrate behavior,
+  PostgreSQL deployment gate, failure handling, and rollback policy.
 
 ## 1. System Foundations
 * `prd.md`: High-level objectives, capabilities, and system architecture.

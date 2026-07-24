@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, HTTPException, status
 from sqlmodel import select
 
+from api.auth import CurrentUser
+from api.authorization import (
+    require_knowledge_node,
+    require_project,
+    require_proposal,
+    workspace_id_for_project,
+)
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
 from api.models.entities import KnowledgeNode, KnowledgeProposal
@@ -21,20 +26,6 @@ from api.utils.time import utcnow
 router = APIRouter(tags=["proposals"])
 
 
-def _get_node_or_404(session, node_id: int) -> KnowledgeNode:
-    node = session.get(KnowledgeNode, node_id)
-    if node is None:
-        raise HTTPException(status_code=404, detail="Knowledge node not found.")
-    return node
-
-
-def _get_proposal_or_404(session, proposal_id: int) -> KnowledgeProposal:
-    proposal = session.get(KnowledgeProposal, proposal_id)
-    if proposal is None:
-        raise HTTPException(status_code=404, detail="Proposal not found.")
-    return proposal
-
-
 @router.post(
     "/knowledge/{node_id}/proposals",
     response_model=KnowledgeProposalRead,
@@ -44,9 +35,10 @@ async def create_proposal(
     node_id: int,
     payload: KnowledgeProposalCreate,
     session: SessionDep,
+    user: CurrentUser,
 ) -> KnowledgeProposal:
     """Agent submits a proposed change for human review."""
-    node = _get_node_or_404(session, node_id)
+    node = require_knowledge_node(session, user, node_id, write=True)
 
     proposal = KnowledgeProposal(
         node_id=node_id,
@@ -65,6 +57,10 @@ async def create_proposal(
             entity="knowledge_proposal",
             entity_id=proposal.id,  # type: ignore[arg-type]
             parent_id=node.project_id,
+            workspace_id=workspace_id_for_project(
+                session,
+                node.project_id,
+            ),
         )
     )
     return proposal
@@ -77,8 +73,10 @@ async def create_proposal(
 def list_proposals(
     project_id: int,
     session: SessionDep,
+    user: CurrentUser,
 ) -> list[KnowledgeProposal]:
     """List all pending proposals for a project."""
+    require_project(session, user, project_id)
     nodes = list(
         session.exec(
             select(KnowledgeNode).where(KnowledgeNode.project_id == project_id)
@@ -100,9 +98,13 @@ def list_proposals(
     "/knowledge/{node_id}/proposals",
     response_model=list[KnowledgeProposalRead],
 )
-def list_node_proposals(node_id: int, session: SessionDep) -> list[KnowledgeProposal]:
+def list_node_proposals(
+    node_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> list[KnowledgeProposal]:
     """List proposals for a specific node."""
-    _get_node_or_404(session, node_id)
+    require_knowledge_node(session, user, node_id)
     return list(
         session.exec(
             select(KnowledgeProposal)
@@ -120,12 +122,19 @@ async def review_proposal(
     proposal_id: int,
     payload: KnowledgeProposalReview,
     session: SessionDep,
+    user: CurrentUser,
 ) -> KnowledgeProposal:
     """Human accepts or rejects a proposal. Accepting applies the patch."""
     if payload.action not in ("accept", "reject"):
         raise HTTPException(status_code=422, detail="action must be 'accept' or 'reject'.")
 
-    proposal = _get_proposal_or_404(session, proposal_id)
+    proposal = require_proposal(session, user, proposal_id, write=True)
+    proposal_node = require_knowledge_node(
+        session,
+        user,
+        proposal.node_id,
+        write=True,
+    )
     if proposal.status != "PENDING":
         raise HTTPException(status_code=409, detail="Proposal is already reviewed.")
 
@@ -134,13 +143,28 @@ async def review_proposal(
     proposal.reviewed_at = utcnow()
 
     if payload.action == "accept":
-        node = _get_node_or_404(session, proposal.node_id)
+        node = proposal_node
         allowed_fields = {"title", "node_type", "status", "content", "source_refs", "parent_id", "superseded_by"}
         for key, value in proposal.proposed_changes.items():
             if key in allowed_fields:
                 if key == "parent_id" and value is not None:
                     from api.routes.knowledge import _validate_parent
                     _validate_parent(session, node.project_id, value, self_id=node.id)
+                if key == "superseded_by" and value is not None:
+                    superseding_node = session.exec(
+                        select(KnowledgeNode).where(
+                            KnowledgeNode.id == value,
+                            KnowledgeNode.project_id == node.project_id,
+                        )
+                    ).first()
+                    if superseding_node is None or superseding_node.id == node.id:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "superseded_by must reference another node "
+                                "in this project."
+                            ),
+                        )
                 setattr(node, key, value)
         from api.utils.time import utcnow as _utcnow
         node.updated_at = _utcnow()
@@ -156,6 +180,10 @@ async def review_proposal(
             entity="knowledge_proposal",
             entity_id=proposal_id,
             parent_id=proposal.node_id,
+            workspace_id=workspace_id_for_project(
+                session,
+                proposal_node.project_id,
+            ),
         )
     )
     if payload.action == "accept":
@@ -165,6 +193,10 @@ async def review_proposal(
                 entity="knowledge_node",
                 entity_id=proposal.node_id,
                 parent_id=node.project_id,
+                workspace_id=workspace_id_for_project(
+                    session,
+                    node.project_id,
+                ),
             )
         )
     return proposal

@@ -9,9 +9,17 @@ from sqlalchemy import update
 from sqlalchemy.orm import aliased
 from sqlmodel import select
 
+from api.auth import CurrentUser
+from api.authorization import (
+    require_knowledge_node,
+    require_subproject,
+    require_ticket,
+    workspace_id_for_subproject,
+    workspace_id_for_ticket,
+)
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
-from api.models.entities import AuditLog, Comment, KnowledgeNode, Ticket, TicketDependency
+from api.models.entities import AuditLog, Comment, Subproject, Ticket, TicketDependency
 from api.models.enums import (
     ActorRole,
     AuditAction,
@@ -40,13 +48,6 @@ from api.utils.ticket_deps import (
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
-def _get_or_404(session, ticket_id: int) -> Ticket:
-    ticket = session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise HTTPException(status_code=404, detail="Ticket not found.")
-    return ticket
-
-
 def _infer_actor(request: Request) -> ActorRole:
     """Detect whether the caller is the agent (API key) or the UI (cookie).
 
@@ -59,8 +60,12 @@ def _infer_actor(request: Request) -> ActorRole:
 
 
 @router.get("/{ticket_id}", response_model=TicketDetail)
-def get_ticket(ticket_id: int, session: SessionDep) -> TicketDetail:
-    ticket = _get_or_404(session, ticket_id)
+def get_ticket(
+    ticket_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> TicketDetail:
+    ticket = require_ticket(session, user, ticket_id)
     comments = list(
         session.exec(
             select(Comment)
@@ -89,8 +94,9 @@ async def update_ticket(
     payload: TicketUpdate,
     session: SessionDep,
     request: Request,
+    user: CurrentUser,
 ) -> Ticket:
-    ticket = _get_or_404(session, ticket_id)
+    ticket = require_ticket(session, user, ticket_id, write=True)
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields provided to update.")
@@ -145,6 +151,10 @@ async def update_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            workspace_id=workspace_id_for_ticket(
+                session,
+                ticket.id,  # type: ignore[arg-type]
+            ),
         )
     )
     return build_ticket_read(session, ticket)
@@ -154,10 +164,15 @@ async def update_ticket(
     "/{ticket_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_ticket(ticket_id: int, session: SessionDep) -> None:
+async def delete_ticket(
+    ticket_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> None:
     """Delete a ticket and cascade its comments, audit logs, and dependency edges."""
-    ticket = _get_or_404(session, ticket_id)
+    ticket = require_ticket(session, user, ticket_id, write=True)
     subproject_id = ticket.subproject_id
+    workspace_id = workspace_id_for_ticket(session, ticket_id)
     delete_ticket_dependencies(session, [ticket_id])
     session.delete(ticket)
     session.commit()
@@ -168,6 +183,7 @@ async def delete_ticket(ticket_id: int, session: SessionDep) -> None:
             entity="ticket",
             entity_id=ticket_id,
             parent_id=subproject_id,
+            workspace_id=workspace_id,
         )
     )
     return None
@@ -183,13 +199,14 @@ async def attach_mr_link(
     payload: MRLinkPayload,
     session: SessionDep,
     request: Request,
+    user: CurrentUser,
 ) -> Ticket:
     """Attach (or replace) the Git MR link on a ticket.
 
     Branch generation is intentionally out-of-scope for MVP. If a ``GITHUB_PAT``
     is provided later, this route can grow a branch-creation side-effect.
     """
-    ticket = _get_or_404(session, ticket_id)
+    ticket = require_ticket(session, user, ticket_id, write=True)
     actor = _infer_actor(request)
 
     ticket.mr_link = payload.url
@@ -206,20 +223,33 @@ async def attach_mr_link(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            workspace_id=workspace_id_for_ticket(
+                session,
+                ticket.id,  # type: ignore[arg-type]
+            ),
         )
     )
     return build_ticket_read(session, ticket)
 
 
 @router.get("/knowledge/{node_id}/tickets", response_model=list[TicketRef])
-def get_tickets_for_node(node_id: int, session: SessionDep) -> list[TicketRef]:
+def get_tickets_for_node(
+    node_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> list[TicketRef]:
     """Return all tickets whose source_refs include this knowledge node."""
-    node = session.get(KnowledgeNode, node_id)
-    if node is None:
-        raise HTTPException(status_code=404, detail="Knowledge node not found.")
+    node = require_knowledge_node(session, user, node_id)
     ref_str = f"node:{node_id}"
     tickets = list(
-        session.exec(select(Ticket)).all()
+        session.exec(
+            select(Ticket)
+            .join(
+                Subproject,
+                Ticket.subproject_id == Subproject.id,  # type: ignore[arg-type]
+            )
+            .where(Subproject.project_id == node.project_id)
+        ).all()
     )
     matched = [t for t in tickets if ref_str in (t.source_refs or [])]
     ref_map = resolve_ticket_refs(session, [t.id for t in matched if t.id])  # type: ignore[misc]
@@ -263,6 +293,7 @@ async def claim_ticket(
     payload: ClaimPayload,
     session: SessionDep,
     request: Request,
+    user: CurrentUser,
 ) -> TicketRead:
     """Atomically transition a TODO ticket to IN_PROGRESS and set worker identity.
 
@@ -270,7 +301,7 @@ async def claim_ticket(
     """
     from api.utils.time import utcnow
 
-    ticket = _get_or_404(session, ticket_id)
+    ticket = require_ticket(session, user, ticket_id, write=True)
     now = utcnow().replace(microsecond=0)
     if not _claim_ticket_atomic(session, ticket_id, payload.worker_id, now):
         session.rollback()
@@ -288,7 +319,7 @@ async def claim_ticket(
     )
     session.commit()
     session.expire_all()
-    ticket = _get_or_404(session, ticket_id)
+    ticket = require_ticket(session, user, ticket_id)
 
     await get_broadcaster().publish(
         Event(
@@ -296,6 +327,10 @@ async def claim_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            workspace_id=workspace_id_for_ticket(
+                session,
+                ticket.id,  # type: ignore[arg-type]
+            ),
         )
     )
     return build_ticket_read(session, ticket)
@@ -306,6 +341,7 @@ async def heartbeat_ticket(
     ticket_id: int,
     payload: HeartbeatPayload,
     session: SessionDep,
+    user: CurrentUser,
 ) -> TicketRead:
     """Extend the lease on a claimed ticket.
 
@@ -314,7 +350,7 @@ async def heartbeat_ticket(
     """
     from api.utils.time import utcnow
 
-    ticket = _get_or_404(session, ticket_id)
+    ticket = require_ticket(session, user, ticket_id, write=True)
     now = utcnow().replace(microsecond=0)
     heartbeat = session.execute(
         update(Ticket)
@@ -334,7 +370,7 @@ async def heartbeat_ticket(
 
     session.commit()
     session.expire_all()
-    ticket = _get_or_404(session, ticket_id)
+    ticket = require_ticket(session, user, ticket_id)
 
     await get_broadcaster().publish(
         Event(
@@ -342,6 +378,10 @@ async def heartbeat_ticket(
             entity="ticket",
             entity_id=ticket.id,  # type: ignore[arg-type]
             parent_id=ticket.subproject_id,
+            workspace_id=workspace_id_for_ticket(
+                session,
+                ticket.id,  # type: ignore[arg-type]
+            ),
         )
     )
     return build_ticket_read(session, ticket)
@@ -351,6 +391,7 @@ async def heartbeat_ticket(
 async def requeue_expired(
     subproject_id: int,
     session: SessionDep,
+    user: CurrentUser,
 ) -> list[TicketRead]:
     """Revert IN_PROGRESS tickets with expired leases back to TODO.
 
@@ -358,6 +399,8 @@ async def requeue_expired(
     """
     from api.utils.time import utcnow
 
+    require_subproject(session, user, subproject_id, write=True)
+    workspace_id = workspace_id_for_subproject(session, subproject_id)
     now = utcnow()
     candidate_ids = list(
         session.exec(
@@ -405,6 +448,7 @@ async def requeue_expired(
                 entity="ticket",
                 entity_id=ticket_id,
                 parent_id=subproject_id,
+                workspace_id=workspace_id,
             )
         )
     return result

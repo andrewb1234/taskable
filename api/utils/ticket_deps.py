@@ -125,8 +125,22 @@ def validate_and_set_deps(
     # All dep IDs must exist and belong to the same project (cross-subproject
     # dependencies within a project are allowed; cross-project ones are not).
     if deps:
+        this_subproject = session.get(Subproject, subproject_id)
+        project_id = this_subproject.project_id if this_subproject else None
+
+        # Filter through the already-authorized project's boundary. IDs from
+        # another project are deliberately indistinguishable from nonexistent
+        # IDs to avoid object enumeration across workspaces.
         existing = session.exec(
-            select(Ticket).where(Ticket.id.in_(deps))
+            select(Ticket)
+            .join(
+                Subproject,
+                Ticket.subproject_id == Subproject.id,  # type: ignore[arg-type]
+            )
+            .where(
+                Ticket.id.in_(deps),
+                Subproject.project_id == project_id,
+            )
         ).all()
         existing_ids = {t.id for t in existing}
         missing = set(deps) - existing_ids
@@ -134,28 +148,6 @@ def validate_and_set_deps(
             raise HTTPException(
                 status_code=422,
                 detail=f"Dependency ticket(s) not found: {sorted(missing)}",
-            )
-
-        this_subproject = session.get(Subproject, subproject_id)
-        project_id = this_subproject.project_id if this_subproject else None
-
-        dep_subproject_ids = {t.subproject_id for t in existing}
-        dep_subprojects = session.exec(
-            select(Subproject).where(Subproject.id.in_(dep_subproject_ids))
-        ).all()
-        subproject_project_map = {sp.id: sp.project_id for sp in dep_subprojects}
-
-        wrong_project = [
-            t for t in existing
-            if subproject_project_map.get(t.subproject_id) != project_id
-        ]
-        if wrong_project:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Dependency ticket(s) belong to a different project: "
-                    f"{sorted(t.id for t in wrong_project)}"
-                ),
             )
 
     # Cycle detection.

@@ -37,6 +37,7 @@ from api.routes import (
     sessions,
     subprojects,
     tickets,
+    workspaces,
 )
 from api.version import __version__, git_sha
 
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(sessions.router, dependencies=ui_auth)
     api_v1.include_router(events.router, dependencies=ui_auth)
     api_v1.include_router(apikeys.router, dependencies=ui_auth)
+    api_v1.include_router(workspaces.router, dependencies=ui_auth)
 
     # Agent routes (also require authenticated user via session or API key).
     api_v1.include_router(agent.router, dependencies=ui_auth)

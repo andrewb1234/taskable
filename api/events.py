@@ -27,6 +27,7 @@ class Event:
     entity: str
     entity_id: int
     parent_id: int | None = None
+    workspace_id: int | None = None
 
     def to_json(self) -> str:
         return json.dumps(
@@ -35,6 +36,7 @@ class Event:
                 "entity": self.entity,
                 "entity_id": self.entity_id,
                 "parent_id": self.parent_id,
+                "workspace_id": self.workspace_id,
             }
         )
 
