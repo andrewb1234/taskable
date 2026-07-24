@@ -14,8 +14,9 @@ from api.schemas import (
     ProjectRead,
     SubprojectCreate,
     SubprojectRead,
+    TicketRef,
 )
-from api.utils.ticket_deps import delete_ticket_dependencies
+from api.utils.ticket_deps import delete_ticket_dependencies, resolve_ticket_refs
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -52,6 +53,24 @@ def get_project(project_id: int, session: SessionDep) -> Project:
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     return project
+
+
+@router.get("/{project_id}/tickets", response_model=list[TicketRef])
+def list_project_tickets(project_id: int, session: SessionDep) -> list[TicketRef]:
+    """List compact ticket records for choosing in-project dependencies."""
+    if session.get(Project, project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    ticket_ids = list(
+        session.exec(
+            select(Ticket.id)
+            .join(Subproject, Ticket.subproject_id == Subproject.id)  # type: ignore[arg-type]
+            .where(Subproject.project_id == project_id)
+            .order_by(Ticket.id)
+        ).all()
+    )
+    refs = resolve_ticket_refs(session, ticket_ids)
+    return [TicketRef(**refs[ticket_id]) for ticket_id in ticket_ids if ticket_id in refs]
 
 
 @router.delete(

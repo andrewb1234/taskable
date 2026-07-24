@@ -71,6 +71,8 @@ async function request<T>(
 
 export const listProjects = () => request<Project[]>("/projects");
 export const getProject = (id: number) => request<Project>(`/projects/${id}`);
+export const listProjectTickets = (projectId: number) =>
+  request<TicketRef[]>(`/projects/${projectId}/tickets`);
 export const createProject = (payload: {
   name: string;
   description?: string;

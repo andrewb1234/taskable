@@ -32,6 +32,22 @@ def _make_project_and_subproject(client: TestClient):
 
 
 class TestTicketDependencies:
+    def test_list_project_tickets_for_dependency_picker(self, client: TestClient):
+        project_id, first_subproject_id = _make_project_and_subproject(client)
+        second_subproject = client.post(
+            f"/api/v1/projects/{project_id}/subprojects",
+            json={"name": "Second", "context_brief": ""},
+        )
+        assert second_subproject.status_code == 201
+        first = _create_ticket(client, first_subproject_id, "First")
+        second = _create_ticket(client, second_subproject.json()["id"], "Second")
+
+        response = client.get(f"/api/v1/projects/{project_id}/tickets")
+
+        assert response.status_code == 200
+        assert [ticket["id"] for ticket in response.json()] == [first["id"], second["id"]]
+        assert response.json()[1]["subproject_name"] == "Second"
+
     def test_create_ticket_with_depends_on(self, client: TestClient):
         _, sp_id = _make_project_and_subproject(client)
         t1 = _create_ticket(client, sp_id, "First")
