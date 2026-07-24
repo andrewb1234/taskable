@@ -2,19 +2,28 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlmodel import select
 
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
 from api.models.entities import Subproject, Ticket
-from api.models.enums import SSEAction
+from api.models.enums import SSEAction, TicketStatus
 from api.schemas import (
     SubprojectDetail,
     SubprojectRead,
     SubprojectUpdate,
     TicketCreate,
     TicketRead,
+    TicketRef,
+)
+from api.utils.ticket_deps import (
+    build_ticket_read,
+    delete_ticket_dependencies,
+    get_depends_on_map,
+    is_ticket_ready,
+    resolve_ticket_refs,
+    validate_and_set_deps,
 )
 
 router = APIRouter(prefix="/subprojects", tags=["subprojects"])
@@ -28,7 +37,11 @@ def _get_or_404(session, subproject_id: int) -> Subproject:
 
 
 @router.get("/{subproject_id}", response_model=SubprojectDetail)
-def get_subproject(subproject_id: int, session: SessionDep) -> SubprojectDetail:
+def get_subproject(
+    subproject_id: int,
+    session: SessionDep,
+    ready: bool = Query(default=False),
+) -> SubprojectDetail:
     subproject = _get_or_404(session, subproject_id)
     tickets = list(
         session.exec(
@@ -37,13 +50,28 @@ def get_subproject(subproject_id: int, session: SessionDep) -> SubprojectDetail:
             .order_by(Ticket.id)
         ).all()
     )
+    if ready:
+        tickets = [t for t in tickets if is_ticket_ready(session, t)]
+    dep_map = get_depends_on_map(session, [t.id for t in tickets if t.id])  # type: ignore[arg-type]
+    all_dep_ids = sorted({dep_id for deps in dep_map.values() for dep_id in deps})
+    ref_map = resolve_ticket_refs(session, all_dep_ids)
+    ticket_reads = []
+    for t in tickets:
+        tr = TicketRead.model_validate(t)
+        tr.project_id = subproject.project_id
+        dep_ids = dep_map.get(t.id, [])  # type: ignore[arg-type]
+        tr.depends_on = dep_ids
+        tr.depends_on_refs = [
+            TicketRef(**ref_map[d]) for d in dep_ids if d in ref_map
+        ]
+        ticket_reads.append(tr)
     return SubprojectDetail(
         id=subproject.id,  # type: ignore[arg-type]
         project_id=subproject.project_id,
         name=subproject.name,
         context_brief=subproject.context_brief,
         status=subproject.status,
-        tickets=[TicketRead.model_validate(t) for t in tickets],
+        tickets=ticket_reads,
     )
 
 
@@ -85,6 +113,10 @@ async def delete_subproject(subproject_id: int, session: SessionDep) -> None:
     """Delete a subproject and cascade its tickets, comments, and audit logs."""
     subproject = _get_or_404(session, subproject_id)
     project_id = subproject.project_id
+    ticket_ids = list(
+        session.exec(select(Ticket.id).where(Ticket.subproject_id == subproject_id)).all()
+    )
+    delete_ticket_dependencies(session, ticket_ids)
     session.delete(subproject)
     session.commit()
 
@@ -108,7 +140,7 @@ async def create_ticket(
     subproject_id: int,
     payload: TicketCreate,
     session: SessionDep,
-) -> Ticket:
+) -> TicketRead:
     _get_or_404(session, subproject_id)
 
     ticket = Ticket(
@@ -120,6 +152,11 @@ async def create_ticket(
         source_refs=list(payload.source_refs),
     )
     session.add(ticket)
+    session.flush()  # get the id without committing yet
+
+    if payload.depends_on:
+        validate_and_set_deps(session, ticket.id, subproject_id, payload.depends_on)  # type: ignore[arg-type]
+
     session.commit()
     session.refresh(ticket)
 
@@ -131,4 +168,4 @@ async def create_ticket(
             parent_id=subproject_id,
         )
     )
-    return ticket
+    return build_ticket_read(session, ticket)

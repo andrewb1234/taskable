@@ -68,12 +68,26 @@ class SubprojectRead(BaseModel):
 # ---- Ticket ---------------------------------------------------------------
 
 
+class TicketRef(BaseModel):
+    """Compact ticket reference used for dependency edges and backlinks."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    status: TicketStatus
+    assignee: TicketAssignee
+    subproject_id: int
+    subproject_name: Optional[str] = None
+
+
 class TicketCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: Optional[str] = None
     assignee: TicketAssignee = TicketAssignee.UNASSIGNED
     status: TicketStatus = TicketStatus.TODO
     source_refs: list[str] = Field(default_factory=list)
+    depends_on: list[int] = Field(default_factory=list)
 
 
 class TicketUpdate(BaseModel):
@@ -85,6 +99,7 @@ class TicketUpdate(BaseModel):
     blocked_by: Optional[BlockedByCategory] = None
     blocked_reason: Optional[str] = None
     source_refs: Optional[list[str]] = None
+    depends_on: Optional[list[int]] = None
 
 
 class TicketRead(BaseModel):
@@ -92,6 +107,7 @@ class TicketRead(BaseModel):
 
     id: int
     subproject_id: int
+    project_id: Optional[int] = None
     title: str
     description: Optional[str] = None
     status: TicketStatus
@@ -100,6 +116,11 @@ class TicketRead(BaseModel):
     blocked_by: Optional[BlockedByCategory] = None
     blocked_reason: Optional[str] = None
     source_refs: list[str] = Field(default_factory=list)
+    depends_on: list[int] = Field(default_factory=list)
+    depends_on_refs: list[TicketRef] = Field(default_factory=list)
+    claimed_by: Optional[str] = None
+    claimed_at: Optional[datetime] = None
+    lease_expires_at: Optional[datetime] = None
 
 
 class MRLinkPayload(BaseModel):
@@ -151,6 +172,15 @@ class TicketDetail(TicketRead):
 
     comments: list[CommentRead] = Field(default_factory=list)
     audit_logs: list[AuditLogRead] = Field(default_factory=list)
+
+
+class ClaimPayload(BaseModel):
+    worker_id: str = Field(min_length=1, max_length=200)
+
+
+class HeartbeatPayload(BaseModel):
+    worker_id: str = Field(min_length=1, max_length=200)
+    extend_seconds: int = Field(default=600, ge=60, le=86400)
 
 
 # ---- KnowledgeNode -------------------------------------------------------
@@ -290,16 +320,5 @@ class AgentSessionRead(BaseModel):
     status: str
 
 
-# ---- Knowledge tickets backlink ------------------------------------------
-
-
-class TicketRef(BaseModel):
-    """Compact ticket reference returned from knowledge backlink queries."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    title: str
-    status: TicketStatus
-    assignee: TicketAssignee
-    subproject_id: int
+# ---- Knowledge tickets backlink --------------------------------------------
+# (TicketRef is defined above, near the Ticket schemas.)

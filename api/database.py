@@ -12,6 +12,7 @@ import os
 from collections.abc import Iterator
 from pathlib import Path
 
+from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel, create_engine
 
 from api.config import get_settings
@@ -41,12 +42,28 @@ _ensure_sqlite_dir(_settings.database_url)
 engine = create_engine(_settings.database_url, **_engine_kwargs(_settings.database_url))
 
 
+def _upgrade_ticket_coordination_schema(target_engine) -> None:
+    columns = {column["name"] for column in inspect(target_engine).get_columns("ticket")}
+    missing = {
+        "claimed_by": "VARCHAR",
+        "claimed_at": "TIMESTAMP",
+        "lease_expires_at": "TIMESTAMP",
+    }
+    with target_engine.begin() as connection:
+        for name, column_type in missing.items():
+            if name not in columns:
+                connection.execute(text(f"ALTER TABLE ticket ADD COLUMN {name} {column_type}"))
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_ticket_claimed_by ON ticket (claimed_by)")
+        )
+
+
 def init_db() -> None:
-    """Create all tables. Safe to call repeatedly."""
-    # Importing models ensures they are registered with SQLModel.metadata.
+    """Create all tables and apply narrow compatibility upgrades."""
     import api.models.entities  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
+    _upgrade_ticket_coordination_schema(engine)
 
 
 def get_session() -> Iterator[Session]:

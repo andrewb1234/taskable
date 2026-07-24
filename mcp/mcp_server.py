@@ -166,6 +166,7 @@ async def create_ticket(
     title: str,
     description: str,
     assignee: str,
+    depends_on: list[int] | None = None,
 ) -> str:
     """Create a new ticket inside a subproject.
 
@@ -174,6 +175,7 @@ async def create_ticket(
     ``assignee`` must be one of HUMAN, AGENT, or UNASSIGNED (case-insensitive
     on the way in; normalized before the request). New tickets always start
     in TODO status — use ``update_ticket_status`` afterwards to move them.
+    Optionally pass ``depends_on`` as a list of ticket IDs this ticket depends on.
     """
     assignee_upper = assignee.upper()
     if assignee_upper not in VALID_TICKET_ASSIGNEES:
@@ -182,14 +184,18 @@ async def create_ticket(
             f"Valid values: {sorted(VALID_TICKET_ASSIGNEES)}."
         )
 
+    payload: dict[str, Any] = {
+        "title": title,
+        "description": description,
+        "assignee": assignee_upper,
+    }
+    if depends_on:
+        payload["depends_on"] = depends_on
+
     response = await _request(
         "POST",
         f"/subprojects/{int(subproject_id)}/tickets",
-        json={
-            "title": title,
-            "description": description,
-            "assignee": assignee_upper,
-        },
+        json=payload,
     )
     if response.status_code == 404:
         return f"ERROR: subproject {subproject_id} does not exist."
@@ -292,6 +298,110 @@ async def link_mr(ticket_id: int, url: str) -> str:
         )
     ticket = response.json()
     return f"Linked MR on ticket #{ticket['id']}: {ticket['mr_link']}"
+
+
+async def get_ready_tickets(subproject_id: int) -> str:
+    """List tickets in a subproject that are ready to be claimed.
+
+    A ticket is *ready* iff status==TODO and all tickets it depends_on are DONE.
+    Calls ``GET /api/v1/subprojects/{subproject_id}?ready=true``.
+    """
+    response = await _request(
+        "GET", f"/subprojects/{int(subproject_id)}?ready=true"
+    )
+    if response.status_code != 200:
+        return (
+            f"ERROR: ready-ticket query failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    data = response.json()
+    tickets = data.get("tickets", [])
+    if not tickets:
+        return f"No ready tickets in subproject {subproject_id}."
+    lines = [f"# Ready tickets in subproject {subproject_id} ({len(tickets)})"]
+    for t in tickets:
+        deps = f" deps={t['depends_on']}" if t.get("depends_on") else ""
+        lines.append(f"- #{t['id']} [{t['status']}] {t['title']}{deps}")
+    return "\n".join(lines)
+
+
+async def claim_ticket(ticket_id: int, worker_id: str) -> str:
+    """Atomically claim a ticket for a worker.
+
+    Transitions the ticket from TODO to IN_PROGRESS, sets ``claimed_by``,
+    ``claimed_at``, and ``lease_expires_at``. Returns 409 if the ticket is
+    not TODO or has unmet dependencies.
+    Calls ``POST /api/v1/tickets/{ticket_id}/claim``.
+    """
+    response = await _request(
+        "POST", f"/tickets/{int(ticket_id)}/claim", json={"worker_id": worker_id}
+    )
+    if response.status_code == 409:
+        return f"ERROR: ticket {ticket_id} is not available for claiming: {response.json().get('detail', '')}"
+    if response.status_code == 404:
+        return f"ERROR: ticket {ticket_id} does not exist."
+    if response.status_code != 200:
+        return (
+            f"ERROR: claim ticket failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    ticket = response.json()
+    return (
+        f"Claimed ticket #{ticket['id']} for worker '{ticket['claimed_by']}'. "
+        f"Status={ticket['status']}, lease_expires_at={ticket['lease_expires_at']}."
+    )
+
+
+async def heartbeat_ticket(
+    ticket_id: int, worker_id: str, extend_seconds: int
+) -> str:
+    """Extend the lease on a claimed ticket.
+
+    The ``worker_id`` must match the ticket's ``claimed_by``.
+    Calls ``POST /api/v1/tickets/{ticket_id}/heartbeat``.
+    """
+    response = await _request(
+        "POST",
+        f"/tickets/{int(ticket_id)}/heartbeat",
+        json={"worker_id": worker_id, "extend_seconds": extend_seconds},
+    )
+    if response.status_code == 409:
+        return f"ERROR: worker '{worker_id}' does not own ticket {ticket_id}."
+    if response.status_code == 404:
+        return f"ERROR: ticket {ticket_id} does not exist."
+    if response.status_code != 200:
+        return (
+            f"ERROR: heartbeat failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    ticket = response.json()
+    return (
+        f"Heartbeat acknowledged on ticket #{ticket['id']}. "
+        f"New lease_expires_at={ticket['lease_expires_at']}."
+    )
+
+
+async def requeue_expired(subproject_id: int) -> str:
+    """Revert IN_PROGRESS tickets with expired leases back to TODO.
+
+    Clears claim fields and writes a TICKET_REQUEUED audit log entry for each.
+    Calls ``POST /api/v1/tickets/subprojects/{subproject_id}/requeue-expired``.
+    """
+    response = await _request(
+        "POST", f"/tickets/subprojects/{int(subproject_id)}/requeue-expired"
+    )
+    if response.status_code != 200:
+        return (
+            f"ERROR: requeue-expired failed "
+            f"(status={response.status_code}): {response.text}"
+        )
+    requeued = response.json()
+    if not requeued:
+        return f"No expired leases found in subproject {subproject_id}."
+    lines = [f"# Requeued {len(requeued)} expired ticket(s) in subproject {subproject_id}"]
+    for t in requeued:
+        lines.append(f"- #{t['id']} {t['title']} → TODO (was claimed by expired lease)")
+    return "\n".join(lines)
 
 
 async def delete_project(project_id: int) -> str:
@@ -649,6 +759,11 @@ TOOLS: list[Tool] = [
                     "enum": sorted(VALID_TICKET_ASSIGNEES),
                     "description": "Who owns the ticket on creation.",
                 },
+                "depends_on": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Ticket IDs this ticket depends on. All deps must be in the same project.",
+                },
             },
             "required": [
                 "subproject_id",
@@ -730,6 +845,73 @@ TOOLS: list[Tool] = [
                 },
             },
             "required": ["ticket_id", "url"],
+        },
+    ),
+    Tool(
+        name="get_ready_tickets",
+        description=(
+            "List tickets in a subproject that are ready to be claimed "
+            "(status==TODO and all depends_on tickets are DONE)."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "subproject_id": {"type": "integer"},
+            },
+            "required": ["subproject_id"],
+        },
+    ),
+    Tool(
+        name="claim_ticket",
+        description=(
+            "Atomically claim a ticket for a worker. Transitions TODO → IN_PROGRESS "
+            "and sets claimed_by, claimed_at, lease_expires_at. Returns 409 if not "
+            "TODO or dependencies are unmet."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "integer"},
+                "worker_id": {
+                    "type": "string",
+                    "description": "Unique identifier for the claiming worker.",
+                    "minLength": 1,
+                },
+            },
+            "required": ["ticket_id", "worker_id"],
+        },
+    ),
+    Tool(
+        name="heartbeat_ticket",
+        description=(
+            "Extend the lease on a claimed ticket. worker_id must match claimed_by."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "integer"},
+                "worker_id": {"type": "string", "minLength": 1},
+                "extend_seconds": {
+                    "type": "integer",
+                    "description": "How many seconds to extend the lease (default 600, range 60-86400).",
+                    "default": 600,
+                },
+            },
+            "required": ["ticket_id", "worker_id"],
+        },
+    ),
+    Tool(
+        name="requeue_expired",
+        description=(
+            "Revert IN_PROGRESS tickets with expired leases back to TODO in a subproject. "
+            "Clears claim fields and writes TICKET_REQUEUED audit log entries."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "subproject_id": {"type": "integer"},
+            },
+            "required": ["subproject_id"],
         },
     ),
     Tool(
@@ -951,6 +1133,10 @@ TOOL_DISPATCH = {
     "get_active_tasks": get_active_tasks,
     "update_ticket_status": update_ticket_status,
     "link_mr": link_mr,
+    "get_ready_tickets": get_ready_tickets,
+    "claim_ticket": claim_ticket,
+    "heartbeat_ticket": heartbeat_ticket,
+    "requeue_expired": requeue_expired,
     "leave_comment": leave_comment,
     "delete_project": delete_project,
     "delete_subproject": delete_subproject,

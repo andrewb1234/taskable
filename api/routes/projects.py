@@ -7,7 +7,7 @@ from sqlmodel import select
 
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
-from api.models.entities import Project, Subproject
+from api.models.entities import Project, Subproject, Ticket
 from api.models.enums import SSEAction
 from api.schemas import (
     ProjectCreate,
@@ -15,6 +15,7 @@ from api.schemas import (
     SubprojectCreate,
     SubprojectRead,
 )
+from api.utils.ticket_deps import delete_ticket_dependencies
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -66,6 +67,14 @@ async def delete_project(project_id: int, session: SessionDep) -> None:
     project = session.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
+    ticket_ids = list(
+        session.exec(
+            select(Ticket.id)
+            .join(Subproject, Ticket.subproject_id == Subproject.id)  # type: ignore[arg-type]
+            .where(Subproject.project_id == project_id)
+        ).all()
+    )
+    delete_ticket_dependencies(session, ticket_ids)
     session.delete(project)
     session.commit()
 

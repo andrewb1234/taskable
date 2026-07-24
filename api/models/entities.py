@@ -13,7 +13,7 @@ rather than stringified PEP 563 forms.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Column, JSON, String
+from sqlalchemy import Column, JSON, String, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 from api.models.enums import (
@@ -101,6 +101,9 @@ class Ticket(SQLModel, table=True):
     source_refs: List[str] = Field(
         default_factory=list, sa_column=Column(JSON, nullable=False, default=list)
     )
+    claimed_by: Optional[str] = Field(default=None, index=True)
+    claimed_at: Optional[datetime] = Field(default=None)
+    lease_expires_at: Optional[datetime] = Field(default=None)
 
     subproject: Optional[Subproject] = Relationship(back_populates="tickets")
     comments: List["Comment"] = Relationship(
@@ -111,6 +114,20 @@ class Ticket(SQLModel, table=True):
         back_populates="ticket",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
+
+class TicketDependency(SQLModel, table=True):
+    """Many-to-many edge: ticket_id depends_on depends_on_ticket_id.
+
+    Kept separate from ``Ticket.blocked_by`` (a reason enum) — edges and
+    reasons are different concepts. A ticket with unmet dependencies is
+    "not ready" but may still be in TODO status.
+    """
+
+    __table_args__ = (UniqueConstraint("ticket_id", "depends_on_ticket_id", name="uq_ticket_dependency"),)
+
+    ticket_id: int = Field(foreign_key="ticket.id", primary_key=True, index=True)
+    depends_on_ticket_id: int = Field(foreign_key="ticket.id", primary_key=True, index=True)
 
 
 class Comment(SQLModel, table=True):

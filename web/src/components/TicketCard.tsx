@@ -1,8 +1,8 @@
-import { GitPullRequest, Bot, User, HelpCircle, Trash2, BookOpen } from "lucide-react";
+import { GitPullRequest, Bot, User, HelpCircle, Trash2, BookOpen, Link2, Clock, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { Ticket, TicketAssignee } from "@/types";
-import { BLOCKED_BY_LABELS, BLOCKED_BY_COLORS } from "@/types";
+import type { Ticket, TicketAssignee, TicketRef } from "@/types";
+import { BLOCKED_BY_LABELS, BLOCKED_BY_COLORS, TICKET_STATUS_LABELS } from "@/types";
 
 const assigneeIcon: Record<TicketAssignee, JSX.Element> = {
   HUMAN: <User className="h-3 w-3" />,
@@ -93,6 +93,34 @@ export function TicketCard({
           {BLOCKED_BY_LABELS[ticket.blocked_by]}
         </div>
       )}
+      {ticket.depends_on && ticket.depends_on.length > 0 && (
+        <div className="mt-1.5 space-y-1">
+          <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Link2 className="h-3 w-3" />
+            <span>depends on</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {ticket.depends_on_refs && ticket.depends_on_refs.length > 0
+              ? ticket.depends_on_refs.map((depRef) => (
+                  <DepChip key={depRef.id} depRef={depRef} />
+                ))
+              : ticket.depends_on.map((id) => (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                  >
+                    #{id}
+                  </span>
+                ))}
+          </div>
+        </div>
+      )}
+      {ticket.claimed_by && (
+        <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          <span>claimed by {ticket.claimed_by}</span>
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <Badge
           variant={assigneeVariant[ticket.assignee]}
@@ -124,5 +152,40 @@ export function TicketCard({
         )}
       </div>
     </div>
+  );
+}
+
+const statusDotColor: Record<string, string> = {
+  TODO: "bg-muted-foreground/40",
+  IN_PROGRESS: "bg-blue-500",
+  BLOCKED: "bg-red-500",
+  REVIEW: "bg-yellow-500",
+  DONE: "bg-green-500",
+};
+
+function DepChip({ depRef }: { depRef: TicketRef }) {
+  const done = depRef.status === "DONE";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
+        done
+          ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400"
+          : "bg-muted text-muted-foreground",
+      )}
+      title={`${TICKET_STATUS_LABELS[depRef.status]} · ${depRef.subproject_name ?? "same subproject"}`}
+    >
+      {done ? (
+        <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+      ) : (
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDotColor[depRef.status] ?? "bg-muted-foreground/40")} />
+      )}
+      <span className="max-w-[140px] truncate">
+        #{depRef.id} {depRef.title}
+      </span>
+      {depRef.subproject_name && (
+        <span className="shrink-0 opacity-60">· {depRef.subproject_name}</span>
+      )}
+    </span>
   );
 }

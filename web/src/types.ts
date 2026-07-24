@@ -16,7 +16,7 @@ export type TicketAssignee = "HUMAN" | "AGENT" | "UNASSIGNED";
 
 export type ActorRole = "HUMAN" | "AGENT";
 
-export type AuditAction = "STATUS_UPDATE" | "CONTENT_UPDATE" | "MR_LINKED";
+export type AuditAction = "STATUS_UPDATE" | "CONTENT_UPDATE" | "MR_LINKED" | "TICKET_CLAIMED" | "TICKET_REQUEUED";
 
 export type SSEAction =
   | "PROJECT_CREATED"
@@ -35,7 +35,9 @@ export type SSEAction =
   | "KNOWLEDGE_PROPOSAL_CREATED"
   | "KNOWLEDGE_PROPOSAL_REVIEWED"
   | "SESSION_STARTED"
-  | "SESSION_ENDED";
+  | "SESSION_ENDED"
+  | "TICKET_CLAIMED"
+  | "TICKET_REQUEUED";
 
 export type KnowledgeNodeType = "RAW" | "SUMMARY" | "PRD" | "TDD";
 
@@ -65,6 +67,7 @@ export interface Subproject {
 export interface Ticket {
   id: number;
   subproject_id: number;
+  project_id?: number | null;
   title: string;
   description?: string | null;
   status: TicketStatus;
@@ -73,6 +76,11 @@ export interface Ticket {
   blocked_by?: BlockedByCategory | null;
   blocked_reason?: string | null;
   source_refs: string[];
+  depends_on: number[];
+  depends_on_refs?: TicketRef[];
+  claimed_by?: string | null;
+  claimed_at?: string | null;
+  lease_expires_at?: string | null;
 }
 
 export interface Comment {
@@ -162,6 +170,7 @@ export interface TicketRef {
   status: TicketStatus;
   assignee: TicketAssignee;
   subproject_id: number;
+  subproject_name?: string | null;
 }
 
 export interface AgentSession {

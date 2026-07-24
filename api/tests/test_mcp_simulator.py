@@ -246,6 +246,11 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
             "update_ticket_status",
             "link_mr",
             "leave_comment",
+            # Coordination primitives
+            "get_ready_tickets",
+            "claim_ticket",
+            "heartbeat_ticket",
+            "requeue_expired",
             # Delete
             "delete_project",
             "delete_subproject",

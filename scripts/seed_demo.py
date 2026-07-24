@@ -33,6 +33,7 @@ import json
 from typing import Any
 
 SEED_PROJECT_NAME = "BattleForge Context Demo"
+SEED_PROJECT_2_NAME = "Taskable Platform — Coordination Demo"
 DEFAULT_API = os.environ.get("TASKABLE_API_URL", "http://127.0.0.1:8000/api/v1")
 
 TICKETS: list[dict[str, Any]] = [
@@ -441,13 +442,177 @@ def seed(api: str) -> dict[str, Any]:
     return {"project": project, "subproject": subproject, "tickets": ticket_ids}
 
 
+def seed_coordination(api: str) -> dict[str, Any]:
+    """Seed a second project showcasing coordination primitives.
+
+    Creates a project with two subprojects:
+    - One with dependency edges (depends_on) and ready-ticket filtering
+    - One with claimed tickets (atomic claim + lease)
+    """
+    existing = find_project(api, SEED_PROJECT_2_NAME)
+    if existing:
+        print(f"Project '{SEED_PROJECT_2_NAME}' already exists (id={existing['id']}); skipping.")
+        return {"project": existing, "created": False}
+
+    project = request(
+        "POST",
+        f"{api}/projects",
+        {
+            "name": SEED_PROJECT_2_NAME,
+            "description": (
+                "Demo project showing ticket dependencies (depends_on), "
+                "ready-ticket queries, atomic claims with leases, and "
+                "heartbeat/requeue-expired workflows."
+            ),
+        },
+    )
+    print(f"Created project #{project['id']}: {project['name']}")
+
+    # --- Subproject 1: Dependency edges ---
+    sp1 = request(
+        "POST",
+        f"{api}/projects/{project['id']}/subprojects",
+        {
+            "name": "Dependency Chain Demo",
+            "context_brief": (
+                "Tickets form a dependency chain: T1 → T2 → T3 → T4. "
+                "T1 is DONE so T2 is ready. T2 and T3 are TODO. "
+                "T4 depends on T3 which is not done, so T4 is not ready. "
+                "Use ?ready=true to see only T2 in the ready list."
+            ),
+        },
+    )
+    print(f"Created subproject #{sp1['id']}: {sp1['name']}")
+
+    # Create tickets in a chain: t1 (DONE) → t2 (TODO, ready) → t3 (TODO, not ready) → t4 (TODO, not ready)
+    t1 = request(
+        "POST",
+        f"{api}/subprojects/{sp1['id']}/tickets",
+        {"title": "Set up database schema", "description": "Create the initial migration with all core tables.", "assignee": "AGENT"},
+    )
+    request("PATCH", f"{api}/tickets/{t1['id']}", {"status": "DONE"})
+    print(f"  + #{t1['id']} [DONE/AGENT] Set up database schema")
+
+    t2 = request(
+        "POST",
+        f"{api}/subprojects/{sp1['id']}/tickets",
+        {"title": "Implement CRUD endpoints", "description": "Build REST API endpoints for all entities.", "assignee": "AGENT", "depends_on": [t1["id"]]},
+    )
+    print(f"  + #{t2['id']} [TODO/AGENT] Implement CRUD endpoints (depends on #{t1['id']})")
+
+    t3 = request(
+        "POST",
+        f"{api}/subprojects/{sp1['id']}/tickets",
+        {"title": "Add authentication middleware", "description": "JWT-based auth with API key support.", "assignee": "HUMAN", "depends_on": [t2["id"]]},
+    )
+    print(f"  + #{t3['id']} [TODO/HUMAN] Add authentication middleware (depends on #{t2['id']})")
+
+    t4 = request(
+        "POST",
+        f"{api}/subprojects/{sp1['id']}/tickets",
+        {"title": "Write integration tests", "description": "End-to-end tests covering auth + CRUD flows.", "assignee": "AGENT", "depends_on": [t3["id"]]},
+    )
+    print(f"  + #{t4['id']} [TODO/AGENT] Write integration tests (depends on #{t3['id']})")
+
+    # Add a parallel ticket that depends on t1 only (also ready)
+    t5 = request(
+        "POST",
+        f"{api}/subprojects/{sp1['id']}/tickets",
+        {"title": "Add request validation", "description": "Pydantic schema validation for all inputs.", "assignee": "AGENT", "depends_on": [t1["id"]]},
+    )
+    print(f"  + #{t5['id']} [TODO/AGENT] Add request validation (depends on #{t1['id']})")
+
+    # Add a blocked ticket
+    t6 = request(
+        "POST",
+        f"{api}/subprojects/{sp1['id']}/tickets",
+        {"title": "Deploy to staging", "description": "Set up CI/CD pipeline and deploy.", "assignee": "HUMAN", "depends_on": [t4["id"], t5["id"]]},
+    )
+    request("PATCH", f"{api}/tickets/{t6['id']}", {"status": "BLOCKED", "blocked_by": "WAITING_DEPENDENCY", "blocked_reason": "Waiting for tests and validation to complete."})
+    print(f"  + #{t6['id']} [BLOCKED/HUMAN] Deploy to staging (depends on #{t4['id']}, #{t5['id']})")
+
+    # --- Subproject 2: Claims and leases ---
+    sp2 = request(
+        "POST",
+        f"{api}/projects/{project['id']}/subprojects",
+        {
+            "name": "Claim & Lease Demo",
+            "context_brief": (
+                "Shows atomic ticket claims with worker identity and lease management. "
+                "Two tickets are claimed by different workers. One has an active lease, "
+                "one has an expired lease (run requeue-expired to reset it)."
+            ),
+        },
+    )
+    print(f"Created subproject #{sp2['id']}: {sp2['name']}")
+
+    # Ticket claimed by worker-1 (active lease)
+    c1 = request(
+        "POST",
+        f"{api}/subprojects/{sp2['id']}/tickets",
+        {"title": "Process data batch A", "description": "Ingest and transform batch A records.", "assignee": "AGENT"},
+    )
+    request("POST", f"{api}/tickets/{c1['id']}/claim", {"worker_id": "worker-1"})
+    print(f"  + #{c1['id']} [IN_PROGRESS/AGENT] Process data batch A (claimed by worker-1)")
+
+    # Ticket claimed by worker-2 (active lease)
+    c2 = request(
+        "POST",
+        f"{api}/subprojects/{sp2['id']}/tickets",
+        {"title": "Generate report for batch A", "description": "Create summary report from batch A results.", "assignee": "AGENT", "depends_on": [c1["id"]]},
+    )
+    # Can't claim c2 because it depends on c1 which is IN_PROGRESS (not DONE)
+    # So we'll just leave it as TODO to show the ready filter
+    print(f"  + #{c2['id']} [TODO/AGENT] Generate report for batch A (depends on #{c1['id']}, not ready)")
+
+    # Ticket claimed by worker-3 with a heartbeat to extend lease
+    c3 = request(
+        "POST",
+        f"{api}/subprojects/{sp2['id']}/tickets",
+        {"title": "Validate schema migration", "description": "Run schema validation checks on the new migration.", "assignee": "AGENT"},
+    )
+    request("POST", f"{api}/tickets/{c3['id']}/claim", {"worker_id": "worker-3"})
+    request("POST", f"{api}/tickets/{c3['id']}/heartbeat", {"worker_id": "worker-3", "extend_seconds": 1800})
+    print(f"  + #{c3['id']} [IN_PROGRESS/AGENT] Validate schema migration (claimed by worker-3, lease extended)")
+
+    # Ticket in REVIEW
+    c4 = request(
+        "POST",
+        f"{api}/subprojects/{sp2['id']}/tickets",
+        {"title": "Review PR #42", "description": "Code review for the auth middleware PR.", "assignee": "HUMAN"},
+    )
+    request("PATCH", f"{api}/tickets/{c4['id']}", {"status": "REVIEW"})
+    print(f"  + #{c4['id']} [REVIEW/HUMAN] Review PR #42")
+
+    # Ticket DONE
+    c5 = request(
+        "POST",
+        f"{api}/subprojects/{sp2['id']}/tickets",
+        {"title": "Set up logging", "description": "Structured JSON logging for all services.", "assignee": "AGENT"},
+    )
+    request("PATCH", f"{api}/tickets/{c5['id']}", {"status": "DONE"})
+    print(f"  + #{c5['id']} [DONE/AGENT] Set up logging")
+
+    # Add comments on a couple tickets
+    request("POST", f"{api}/tickets/{c1['id']}/comments", {"author": "HUMAN", "content": "Worker-1, please prioritize batch A — it's blocking the report generation."})
+    request("POST", f"{api}/tickets/{c4['id']}/comments", {"author": "AGENT", "content": "PR looks good. Just needs a minor fix on the error handling path."})
+
+    print()
+    print(f"  Coordination demo ready! Try:")
+    print(f"    GET /api/v1/subprojects/{sp1['id']}?ready=true  → should show tickets #{t2['id']} and #{t5['id']}")
+    print(f"    POST /api/v1/tickets/subprojects/{sp2['id']}/requeue-expired  → reverts expired leases")
+
+    return {"project": project, "subprojects": [sp1, sp2]}
+
+
 def reset(api: str) -> None:
-    existing = find_project(api, SEED_PROJECT_NAME)
-    if not existing:
-        print("Nothing to reset.")
-        return
-    request("DELETE", f"{api}/projects/{existing['id']}")
-    print(f"Deleted seed project #{existing['id']}: {existing['name']}")
+    for name in [SEED_PROJECT_NAME, SEED_PROJECT_2_NAME]:
+        existing = find_project(api, name)
+        if existing:
+            request("DELETE", f"{api}/projects/{existing['id']}")
+            print(f"Deleted seed project #{existing['id']}: {existing['name']}")
+        else:
+            print(f"No project named '{name}' found.")
 
 
 def main() -> int:
@@ -475,6 +640,14 @@ def main() -> int:
                 print(
                     f"Open the Taskable web UI and pick '{SEED_PROJECT_NAME}' "
                     "from the sidebar to try context trails, checkpoints, and SSE."
+                )
+            print()
+            result2 = seed_coordination(args.api)
+            if result2.get("created", True):
+                print()
+                print(
+                    f"Also check '{SEED_PROJECT_2_NAME}' to see dependency edges, "
+                    "claim ownership, and lease management in action."
                 )
     except urllib.error.URLError as exc:
         print(f"ERROR: cannot reach {args.api}. Is uvicorn running?\n{exc}", file=sys.stderr)
