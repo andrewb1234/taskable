@@ -16,7 +16,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -40,43 +40,23 @@ STATE_COOKIE = "oauth_state"
 STATE_COOKIE_MAX_AGE = 600  # 10 minutes
 
 
-def _redirect_uri(request: Request) -> str:
-    """Derive the OAuth callback URL from the incoming request.
-
-    Respects the ``X-Forwarded-Proto`` header so the redirect URI is
-    ``https://`` when behind a reverse proxy like Render.
-    """
-    forwarded_proto = request.headers.get("x-forwarded-proto", "")
-    scheme = forwarded_proto.split(",")[0].strip() if forwarded_proto else request.url.scheme
-    host = request.headers.get("host") or request.url.netloc
-    return f"{scheme}://{host}/api/v1/auth/callback"
-
-
-def _is_https(request: Request, settings: Settings) -> bool:
-    """Determine if the request is HTTPS.
-
-    In production (frontend_url is HTTPS), we trust the X-Forwarded-Proto
-    header set by the reverse proxy. In development, we fall back to the
-    request scheme to avoid trusting client-supplied headers when not
-    behind a proxy.
-    """
-    if settings.frontend_url.startswith("https://"):
-        forwarded_proto = request.headers.get("x-forwarded-proto", "")
-        if forwarded_proto:
-            return forwarded_proto.split(",")[0].strip() == "https"
-    return request.url.scheme == "https"
+def _redirect_uri(request: Request, settings: Settings) -> str:
+    """Derive the callback from trusted config in production."""
+    if settings._is_production():
+        frontend = urlsplit(settings.frontend_url)
+        return urlunsplit(
+            (frontend.scheme, frontend.netloc, "/api/v1/auth/callback", "", "")
+        )
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/v1/auth/callback"
 
 
-def _cookie_kwargs(settings: Settings, request: Request | None = None, max_age: int | None = None) -> dict:
-    """Build cookie kwargs. Use Secure when the serving context is HTTPS."""
-    if request is not None:
-        secure = _is_https(request, settings)
-    else:
-        secure = settings.frontend_url.startswith("https://")
+def _cookie_kwargs(settings: Settings, max_age: int | None = None) -> dict:
+    """Build cookie kwargs from trusted deployment configuration."""
     kwargs: dict = {
         "httponly": True,
         "samesite": "lax",
-        "secure": secure,
+        "secure": settings._is_production(),
         "path": "/",
     }
     if max_age is not None:
@@ -94,7 +74,7 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
         )
 
     state = secrets.token_urlsafe(32)
-    redirect_uri = _redirect_uri(request)
+    redirect_uri = _redirect_uri(request, settings)
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri,
@@ -109,7 +89,7 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
     response.set_cookie(
         STATE_COOKIE,
         state,
-        **_cookie_kwargs(settings, request, max_age=STATE_COOKIE_MAX_AGE),
+        **_cookie_kwargs(settings, max_age=STATE_COOKIE_MAX_AGE),
     )
     return response
 
@@ -143,7 +123,7 @@ async def auth_callback(
             detail="Invalid OAuth state",
         )
 
-    redirect_uri = _redirect_uri(request)
+    redirect_uri = _redirect_uri(request, settings)
 
     # Exchange the authorization code for tokens.
     async with httpx.AsyncClient(timeout=10) as client:
@@ -213,9 +193,9 @@ async def auth_callback(
     response.set_cookie(
         COOKIE_NAME,
         jwt_token,
-        **_cookie_kwargs(settings, request, max_age=60 * 60 * 24 * 30),  # 30 days
+        **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),  # 30 days
     )
-    response.delete_cookie(STATE_COOKIE, **_cookie_kwargs(settings, request))
+    response.delete_cookie(STATE_COOKIE, **_cookie_kwargs(settings))
     return response
 
 
@@ -237,5 +217,5 @@ async def auth_logout(
 ) -> Response:
     """Clear the session cookie."""
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings, request))
+    response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings))
     return response
