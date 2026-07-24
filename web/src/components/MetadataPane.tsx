@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GitPullRequest, Link as LinkIcon, Link2, Save, CheckCircle2 } from "lucide-react";
 import {
   Select,
@@ -16,9 +16,9 @@ import {
   TICKET_STATUS_LABELS,
 } from "@/types";
 import type { BlockedByCategory, TicketAssignee, TicketDetail, TicketStatus } from "@/types";
-import { linkTicketMR, updateTicket } from "@/lib/api";
-import { useWorkspace } from "@/context/WorkspaceContext";
+import { linkTicketMR, listProjectTickets, updateTicket } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useAsync } from "@/hooks/useAsync";
 
 const BLOCKED_BY_OPTIONS: BlockedByCategory[] = [
   "WAITING_HUMAN",
@@ -43,10 +43,20 @@ const statusDotColor: Record<string, string> = {
 };
 
 export function MetadataPane({ ticket, onChanged }: Props) {
-  const { openTicket } = useWorkspace();
   const [mrUrl, setMrUrl] = useState(ticket.mr_link ?? "");
   const [savingMR, setSavingMR] = useState(false);
   const [blockedReason, setBlockedReason] = useState(ticket.blocked_reason ?? "");
+  const [dependencyIds, setDependencyIds] = useState<number[]>(ticket.depends_on ?? []);
+  const [savingDependencies, setSavingDependencies] = useState(false);
+  const projectTickets = useAsync(
+    () => ticket.project_id ? listProjectTickets(ticket.project_id) : Promise.resolve([]),
+    [ticket.project_id],
+  );
+
+  useEffect(() => {
+    setBlockedReason(ticket.blocked_reason ?? "");
+    setDependencyIds(ticket.depends_on ?? []);
+  }, [ticket.id, ticket.blocked_reason, ticket.depends_on]);
 
   async function setStatus(status: TicketStatus) {
     const patch: Parameters<typeof updateTicket>[1] = { status };
@@ -58,8 +68,27 @@ export function MetadataPane({ ticket, onChanged }: Props) {
   }
 
   async function setBlockedBy(blocked_by: BlockedByCategory) {
-    await updateTicket(ticket.id, { blocked_by });
+    await updateTicket(ticket.id, {
+      blocked_by,
+      ...(ticket.status === "BLOCKED" ? {} : { status: "BLOCKED" }),
+    });
     onChanged();
+  }
+
+  async function saveDependencies() {
+    setSavingDependencies(true);
+    try {
+      await updateTicket(ticket.id, { depends_on: dependencyIds });
+      onChanged();
+    } finally {
+      setSavingDependencies(false);
+    }
+  }
+
+  function toggleDependency(id: number) {
+    setDependencyIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+    );
   }
 
   async function saveBlockedReason() {
@@ -108,26 +137,26 @@ export function MetadataPane({ ticket, onChanged }: Props) {
         </Select>
       </div>
 
-      {ticket.status === "BLOCKED" && (
-        <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Blocked by
-          </label>
-          <Select
-            value={ticket.blocked_by ?? ""}
-            onValueChange={(v) => void setBlockedBy(v as BlockedByCategory)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select reason…" />
-            </SelectTrigger>
-            <SelectContent>
-              {BLOCKED_BY_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {BLOCKED_BY_LABELS[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Blocked by
+        </label>
+        <Select
+          value={ticket.status === "BLOCKED" ? (ticket.blocked_by ?? "") : ""}
+          onValueChange={(v) => void setBlockedBy(v as BlockedByCategory)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Mark as blocked…" />
+          </SelectTrigger>
+          <SelectContent>
+            {BLOCKED_BY_OPTIONS.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {BLOCKED_BY_LABELS[opt]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {ticket.status === "BLOCKED" && (
           <Input
             value={blockedReason}
             onChange={(e) => setBlockedReason(e.target.value)}
@@ -135,8 +164,8 @@ export function MetadataPane({ ticket, onChanged }: Props) {
             placeholder="Optional reason…"
             className="mt-1.5 h-8 text-xs"
           />
-        </div>
-      )}
+        )}
+      </div>
 
       <div>
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -195,65 +224,43 @@ export function MetadataPane({ ticket, onChanged }: Props) {
         )}
       </div>
 
-      {ticket.depends_on && ticket.depends_on.length > 0 && (
-        <div>
-          <label className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Link2 className="h-3 w-3" />
-            Dependencies ({ticket.depends_on.length})
-          </label>
-          <ul className="space-y-1">
-            {ticket.depends_on_refs && ticket.depends_on_refs.length > 0
-              ? ticket.depends_on_refs.map((ref) => (
-                  <li key={ref.id}>
-                    <button
-                      type="button"
-                      onClick={() => openTicket(ref.id)}
-                      className={cn(
-                        "flex w-full items-center gap-1.5 rounded-md border px-2 py-1 text-left text-[11px] transition hover:border-primary/40 hover:bg-accent",
-                        ref.status === "DONE"
-                          ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30"
-                          : "border-border bg-card",
-                      )}
-                      title={`Open ticket #${ref.id}`}
-                    >
-                      {ref.status === "DONE" ? (
-                        <CheckCircle2 className="h-3 w-3 shrink-0 text-green-600" />
-                      ) : (
-                        <span
-                          className={cn(
-                            "h-2 w-2 shrink-0 rounded-full",
-                            statusDotColor[ref.status] ?? "bg-muted-foreground/40",
-                          )}
-                        />
-                      )}
-                      <span className="shrink-0 font-mono text-muted-foreground">
-                        #{ref.id}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">
-                        {ref.title}
-                      </span>
-                      {ref.subproject_name && (
-                        <span className="shrink-0 text-muted-foreground/70">
-                          {ref.subproject_name}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                ))
-              : ticket.depends_on.map((id) => (
-                  <li key={id}>
-                    <button
-                      type="button"
-                      onClick={() => openTicket(id)}
-                      className="flex w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-left text-[11px] transition hover:border-primary/40 hover:bg-accent"
-                    >
-                      <span className="font-mono text-muted-foreground">#{id}</span>
-                    </button>
-                  </li>
-                ))}
-          </ul>
+      <div>
+        <label className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <Link2 className="h-3 w-3" />
+          Dependencies ({dependencyIds.length})
+        </label>
+        <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border border-border p-1.5">
+          {projectTickets.loading && (
+            <p className="px-2 py-1 text-xs text-muted-foreground">Loading tickets…</p>
+          )}
+          {projectTickets.data?.filter((ref) => ref.id !== ticket.id).map((ref) => (
+            <label key={ref.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent">
+              <input type="checkbox" checked={dependencyIds.includes(ref.id)} onChange={() => toggleDependency(ref.id)} />
+              {ref.status === "DONE" ? (
+                <CheckCircle2 className="h-3 w-3 shrink-0 text-green-600" />
+              ) : (
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDotColor[ref.status] ?? "bg-muted-foreground/40")} />
+              )}
+              <span className="font-mono text-muted-foreground">#{ref.id}</span>
+              <span className="min-w-0 flex-1 truncate">{ref.title}</span>
+              {ref.subproject_name && <span className="shrink-0 text-muted-foreground/70">{ref.subproject_name}</span>}
+            </label>
+          ))}
+          {projectTickets.data?.filter((ref) => ref.id !== ticket.id).length === 0 && !projectTickets.loading && (
+            <p className="px-2 py-1 text-xs text-muted-foreground">No other tickets in this project.</p>
+          )}
         </div>
-      )}
+        <Button
+          className="mt-2 w-full"
+          size="sm"
+          variant="outline"
+          onClick={() => void saveDependencies()}
+          disabled={savingDependencies || (dependencyIds.length === ticket.depends_on.length && dependencyIds.every((id) => ticket.depends_on.includes(id)))}
+        >
+          <Save className="mr-1 h-3.5 w-3.5" />
+          {savingDependencies ? "Saving…" : "Save dependencies"}
+        </Button>
+      </div>
 
       {ticket.source_refs && ticket.source_refs.length > 0 && (
         <div>
