@@ -16,7 +16,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -40,19 +40,23 @@ STATE_COOKIE = "oauth_state"
 STATE_COOKIE_MAX_AGE = 600  # 10 minutes
 
 
-def _redirect_uri(request: Request) -> str:
-    """Derive the OAuth callback URL from the incoming request."""
+def _redirect_uri(request: Request, settings: Settings) -> str:
+    """Derive the callback from trusted config in production."""
+    if settings._is_production():
+        frontend = urlsplit(settings.frontend_url)
+        return urlunsplit(
+            (frontend.scheme, frontend.netloc, "/api/v1/auth/callback", "", "")
+        )
     base = str(request.base_url).rstrip("/")
     return f"{base}/api/v1/auth/callback"
 
 
 def _cookie_kwargs(settings: Settings, max_age: int | None = None) -> dict:
-    """Build cookie kwargs. Use Secure in production (HTTPS)."""
-    secure = settings.frontend_url.startswith("https://")
+    """Build cookie kwargs from trusted deployment configuration."""
     kwargs: dict = {
         "httponly": True,
         "samesite": "lax",
-        "secure": secure,
+        "secure": settings._is_production(),
         "path": "/",
     }
     if max_age is not None:
@@ -70,7 +74,7 @@ async def auth_login(request: Request, settings: SettingsDep) -> RedirectRespons
         )
 
     state = secrets.token_urlsafe(32)
-    redirect_uri = _redirect_uri(request)
+    redirect_uri = _redirect_uri(request, settings)
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri,
@@ -119,7 +123,7 @@ async def auth_callback(
             detail="Invalid OAuth state",
         )
 
-    redirect_uri = _redirect_uri(request)
+    redirect_uri = _redirect_uri(request, settings)
 
     # Exchange the authorization code for tokens.
     async with httpx.AsyncClient(timeout=10) as client:
@@ -191,7 +195,7 @@ async def auth_callback(
         jwt_token,
         **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),  # 30 days
     )
-    response.delete_cookie(STATE_COOKIE)
+    response.delete_cookie(STATE_COOKIE, **_cookie_kwargs(settings))
     return response
 
 
