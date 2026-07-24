@@ -762,7 +762,7 @@ TOOLS: list[Tool] = [
                 "depends_on": {
                     "type": "array",
                     "items": {"type": "integer"},
-                    "description": "Ticket IDs this ticket depends on. All deps must be in the same subproject.",
+                    "description": "Ticket IDs this ticket depends on. All deps must be in the same project.",
                 },
             },
             "required": [

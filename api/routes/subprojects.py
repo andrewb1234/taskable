@@ -15,8 +15,16 @@ from api.schemas import (
     SubprojectUpdate,
     TicketCreate,
     TicketRead,
+    TicketRef,
 )
-from api.utils.ticket_deps import get_depends_on_map, is_ticket_ready
+from api.utils.ticket_deps import (
+    build_ticket_read,
+    delete_ticket_dependencies,
+    get_depends_on_map,
+    is_ticket_ready,
+    resolve_ticket_refs,
+    validate_and_set_deps,
+)
 
 router = APIRouter(prefix="/subprojects", tags=["subprojects"])
 
@@ -45,10 +53,17 @@ def get_subproject(
     if ready:
         tickets = [t for t in tickets if is_ticket_ready(session, t)]
     dep_map = get_depends_on_map(session, [t.id for t in tickets if t.id])  # type: ignore[arg-type]
+    all_dep_ids = sorted({dep_id for deps in dep_map.values() for dep_id in deps})
+    ref_map = resolve_ticket_refs(session, all_dep_ids)
     ticket_reads = []
     for t in tickets:
         tr = TicketRead.model_validate(t)
-        tr.depends_on = dep_map.get(t.id, [])  # type: ignore[arg-type]
+        tr.project_id = subproject.project_id
+        dep_ids = dep_map.get(t.id, [])  # type: ignore[arg-type]
+        tr.depends_on = dep_ids
+        tr.depends_on_refs = [
+            TicketRef(**ref_map[d]) for d in dep_ids if d in ref_map
+        ]
         ticket_reads.append(tr)
     return SubprojectDetail(
         id=subproject.id,  # type: ignore[arg-type]
@@ -98,6 +113,10 @@ async def delete_subproject(subproject_id: int, session: SessionDep) -> None:
     """Delete a subproject and cascade its tickets, comments, and audit logs."""
     subproject = _get_or_404(session, subproject_id)
     project_id = subproject.project_id
+    ticket_ids = list(
+        session.exec(select(Ticket.id).where(Ticket.subproject_id == subproject_id)).all()
+    )
+    delete_ticket_dependencies(session, ticket_ids)
     session.delete(subproject)
     session.commit()
 
@@ -136,16 +155,10 @@ async def create_ticket(
     session.flush()  # get the id without committing yet
 
     if payload.depends_on:
-        from api.utils.ticket_deps import validate_and_set_deps
-
         validate_and_set_deps(session, ticket.id, subproject_id, payload.depends_on)  # type: ignore[arg-type]
 
     session.commit()
     session.refresh(ticket)
-
-    from api.utils.ticket_deps import get_depends_on
-
-    deps = get_depends_on(session, ticket.id)  # type: ignore[arg-type]
 
     await get_broadcaster().publish(
         Event(
@@ -155,19 +168,4 @@ async def create_ticket(
             parent_id=subproject_id,
         )
     )
-    return TicketRead(
-        id=ticket.id,  # type: ignore[arg-type]
-        subproject_id=ticket.subproject_id,
-        title=ticket.title,
-        description=ticket.description,
-        status=ticket.status,
-        assignee=ticket.assignee,
-        mr_link=ticket.mr_link,
-        blocked_by=ticket.blocked_by,
-        blocked_reason=ticket.blocked_reason,
-        source_refs=ticket.source_refs or [],
-        depends_on=deps,
-        claimed_by=ticket.claimed_by,
-        claimed_at=ticket.claimed_at,
-        lease_expires_at=ticket.lease_expires_at,
-    )
+    return build_ticket_read(session, ticket)

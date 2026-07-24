@@ -113,7 +113,7 @@ class TestTicketDependencies:
         assert r.status_code == 422
         assert "not found" in r.json()["detail"].lower()
 
-    def test_dependency_cross_subproject_rejected(self, client: TestClient):
+    def test_dependency_cross_project_rejected(self, client: TestClient):
         _, sp1 = _make_project_and_subproject(client)
         _, sp2 = _make_project_and_subproject(client)
         t1 = _create_ticket(client, sp1, "InSP1")
@@ -122,7 +122,7 @@ class TestTicketDependencies:
             json={"title": "Cross", "depends_on": [t1["id"]]},
         )
         assert r.status_code == 422
-        assert "different subproject" in r.json()["detail"]
+        assert "different project" in r.json()["detail"]
 
     def test_subproject_detail_includes_depends_on(self, client: TestClient):
         _, sp_id = _make_project_and_subproject(client)
@@ -369,3 +369,121 @@ class TestRequeueExpired:
         r = client.get(f"/api/v1/tickets/{t1['id']}")
         actions = [a["action"] for a in r.json()["audit_logs"]]
         assert "TICKET_REQUEUED" in actions
+
+
+def test_dependency_cross_subproject_same_project_allowed(client: TestClient):
+    project_id, sp1 = _make_project_and_subproject(client)
+    response = client.post(
+        f"/api/v1/projects/{project_id}/subprojects",
+        json={"name": "SecondSubproject"},
+    )
+    sp2 = response.json()["id"]
+    dependency = _create_ticket(client, sp1, "Dependency")
+    ticket = _create_ticket(client, sp2, "Cross-subproject", [dependency["id"]])
+
+    assert ticket["depends_on"] == [dependency["id"]]
+    assert ticket["depends_on_refs"][0]["subproject_id"] == sp1
+
+
+def test_delete_subproject_cleans_cross_subproject_dependencies(client: TestClient):
+    project_id, sp1 = _make_project_and_subproject(client)
+    response = client.post(
+        f"/api/v1/projects/{project_id}/subprojects",
+        json={"name": "SecondSubproject"},
+    )
+    sp2 = response.json()["id"]
+    dependency = _create_ticket(client, sp1, "Dependency")
+    ticket = _create_ticket(client, sp2, "Cross-subproject", [dependency["id"]])
+
+    assert client.delete(f"/api/v1/subprojects/{sp1}").status_code == 204
+    response = client.get(f"/api/v1/tickets/{ticket['id']}")
+    assert response.status_code == 200
+    assert response.json()["depends_on"] == []
+
+
+def test_heartbeat_rejects_expired_lease(client: TestClient, engine):
+    from datetime import timedelta
+
+    from sqlmodel import Session
+
+    from api.models.entities import Ticket
+    from api.utils.time import utcnow
+
+    _, sp_id = _make_project_and_subproject(client)
+    ticket = _create_ticket(client, sp_id, "Expired heartbeat")
+    client.post(f"/api/v1/tickets/{ticket['id']}/claim", json={"worker_id": "w1"})
+    with Session(engine) as session:
+        claimed = session.get(Ticket, ticket["id"])
+        claimed.lease_expires_at = utcnow() - timedelta(seconds=1)
+        session.add(claimed)
+        session.commit()
+
+    response = client.post(
+        f"/api/v1/tickets/{ticket['id']}/heartbeat",
+        json={"worker_id": "w1", "extend_seconds": 600},
+    )
+    assert response.status_code == 409
+
+
+def test_claim_compare_and_set_allows_one_concurrent_winner(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from sqlmodel import Session, SQLModel, create_engine
+
+    from api.models.entities import Project, Subproject, Ticket
+    from api.routes.tickets import _claim_ticket_atomic
+    from api.utils.time import utcnow
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'claims.db'}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project = Project(name="Concurrent")
+        session.add(project)
+        session.flush()
+        subproject = Subproject(project_id=project.id, name="Claims")
+        session.add(subproject)
+        session.flush()
+        ticket = Ticket(subproject_id=subproject.id, title="Claim once")
+        session.add(ticket)
+        session.commit()
+        ticket_id = ticket.id
+
+    barrier = Barrier(2)
+
+    def attempt(worker_id: str) -> bool:
+        with Session(engine) as session:
+            barrier.wait()
+            won = _claim_ticket_atomic(session, ticket_id, worker_id, utcnow())
+            session.commit() if won else session.rollback()
+            return won
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(attempt, ["worker-1", "worker-2"]))
+
+    assert sorted(outcomes) == [False, True]
+    with Session(engine) as session:
+        claimed = session.get(Ticket, ticket_id)
+        assert claimed.status.value == "IN_PROGRESS"
+        assert claimed.claimed_by in {"worker-1", "worker-2"}
+
+
+def test_legacy_ticket_table_gets_coordination_columns(tmp_path):
+    from sqlalchemy import create_engine, inspect, text
+
+    from api.database import _upgrade_ticket_coordination_schema
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE ticket (id INTEGER PRIMARY KEY, title VARCHAR NOT NULL)")
+        )
+
+    _upgrade_ticket_coordination_schema(engine)
+    _upgrade_ticket_coordination_schema(engine)
+
+    columns = {column["name"] for column in inspect(engine).get_columns("ticket")}
+    assert {"claimed_by", "claimed_at", "lease_expires_at"} <= columns

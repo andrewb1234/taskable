@@ -68,6 +68,19 @@ class SubprojectRead(BaseModel):
 # ---- Ticket ---------------------------------------------------------------
 
 
+class TicketRef(BaseModel):
+    """Compact ticket reference used for dependency edges and backlinks."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    status: TicketStatus
+    assignee: TicketAssignee
+    subproject_id: int
+    subproject_name: Optional[str] = None
+
+
 class TicketCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: Optional[str] = None
@@ -94,6 +107,7 @@ class TicketRead(BaseModel):
 
     id: int
     subproject_id: int
+    project_id: Optional[int] = None
     title: str
     description: Optional[str] = None
     status: TicketStatus
@@ -103,6 +117,7 @@ class TicketRead(BaseModel):
     blocked_reason: Optional[str] = None
     source_refs: list[str] = Field(default_factory=list)
     depends_on: list[int] = Field(default_factory=list)
+    depends_on_refs: list[TicketRef] = Field(default_factory=list)
     claimed_by: Optional[str] = None
     claimed_at: Optional[datetime] = None
     lease_expires_at: Optional[datetime] = None
@@ -305,16 +320,5 @@ class AgentSessionRead(BaseModel):
     status: str
 
 
-# ---- Knowledge tickets backlink ------------------------------------------
-
-
-class TicketRef(BaseModel):
-    """Compact ticket reference returned from knowledge backlink queries."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    title: str
-    status: TicketStatus
-    assignee: TicketAssignee
-    subproject_id: int
+# ---- Knowledge tickets backlink --------------------------------------------
+# (TicketRef is defined above, near the Ticket schemas.)

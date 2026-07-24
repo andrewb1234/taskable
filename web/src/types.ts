@@ -67,6 +67,7 @@ export interface Subproject {
 export interface Ticket {
   id: number;
   subproject_id: number;
+  project_id?: number | null;
   title: string;
   description?: string | null;
   status: TicketStatus;
@@ -76,6 +77,7 @@ export interface Ticket {
   blocked_reason?: string | null;
   source_refs: string[];
   depends_on: number[];
+  depends_on_refs?: TicketRef[];
   claimed_by?: string | null;
   claimed_at?: string | null;
   lease_expires_at?: string | null;
@@ -168,6 +170,7 @@ export interface TicketRef {
   status: TicketStatus;
   assignee: TicketAssignee;
   subproject_id: number;
+  subproject_name?: string | null;
 }
 
 export interface AgentSession {

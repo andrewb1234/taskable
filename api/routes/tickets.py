@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Request, status
+from sqlalchemy import update
+from sqlalchemy.orm import aliased
 from sqlmodel import select
 
 from api.dependencies import SessionDep
@@ -28,7 +30,12 @@ from api.schemas import (
     TicketRef,
     TicketUpdate,
 )
-from api.utils.ticket_deps import get_depends_on, validate_and_set_deps
+from api.utils.ticket_deps import (
+    build_ticket_read,
+    delete_ticket_dependencies,
+    resolve_ticket_refs,
+    validate_and_set_deps,
+)
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -68,21 +75,9 @@ def get_ticket(ticket_id: int, session: SessionDep) -> TicketDetail:
             .order_by(AuditLog.timestamp)
         ).all()
     )
+    base = build_ticket_read(session, ticket)
     return TicketDetail(
-        id=ticket.id,  # type: ignore[arg-type]
-        subproject_id=ticket.subproject_id,
-        title=ticket.title,
-        description=ticket.description,
-        status=ticket.status,
-        assignee=ticket.assignee,
-        mr_link=ticket.mr_link,
-        blocked_by=ticket.blocked_by,
-        blocked_reason=ticket.blocked_reason,
-        source_refs=ticket.source_refs or [],
-        depends_on=get_depends_on(session, ticket_id),
-        claimed_by=ticket.claimed_by,
-        claimed_at=ticket.claimed_at,
-        lease_expires_at=ticket.lease_expires_at,
+        **base.model_dump(),
         comments=[CommentRead.model_validate(c) for c in comments],
         audit_logs=[AuditLogRead.model_validate(a) for a in audit_logs],
     )
@@ -152,22 +147,7 @@ async def update_ticket(
             parent_id=ticket.subproject_id,
         )
     )
-    return TicketRead(
-        id=ticket.id,  # type: ignore[arg-type]
-        subproject_id=ticket.subproject_id,
-        title=ticket.title,
-        description=ticket.description,
-        status=ticket.status,
-        assignee=ticket.assignee,
-        mr_link=ticket.mr_link,
-        blocked_by=ticket.blocked_by,
-        blocked_reason=ticket.blocked_reason,
-        source_refs=ticket.source_refs or [],
-        depends_on=get_depends_on(session, ticket.id),
-        claimed_by=ticket.claimed_by,
-        claimed_at=ticket.claimed_at,
-        lease_expires_at=ticket.lease_expires_at,
-    )
+    return build_ticket_read(session, ticket)
 
 
 @router.delete(
@@ -178,14 +158,7 @@ async def delete_ticket(ticket_id: int, session: SessionDep) -> None:
     """Delete a ticket and cascade its comments, audit logs, and dependency edges."""
     ticket = _get_or_404(session, ticket_id)
     subproject_id = ticket.subproject_id
-    # Remove both outgoing and incoming dependency edges.
-    for dep in session.exec(
-        select(TicketDependency).where(
-            (TicketDependency.ticket_id == ticket_id)
-            | (TicketDependency.depends_on_ticket_id == ticket_id)
-        )
-    ).all():
-        session.delete(dep)
+    delete_ticket_dependencies(session, [ticket_id])
     session.delete(ticket)
     session.commit()
 
@@ -235,26 +208,11 @@ async def attach_mr_link(
             parent_id=ticket.subproject_id,
         )
     )
-    return TicketRead(
-        id=ticket.id,  # type: ignore[arg-type]
-        subproject_id=ticket.subproject_id,
-        title=ticket.title,
-        description=ticket.description,
-        status=ticket.status,
-        assignee=ticket.assignee,
-        mr_link=ticket.mr_link,
-        blocked_by=ticket.blocked_by,
-        blocked_reason=ticket.blocked_reason,
-        source_refs=ticket.source_refs or [],
-        depends_on=get_depends_on(session, ticket.id),
-        claimed_by=ticket.claimed_by,
-        claimed_at=ticket.claimed_at,
-        lease_expires_at=ticket.lease_expires_at,
-    )
+    return build_ticket_read(session, ticket)
 
 
 @router.get("/knowledge/{node_id}/tickets", response_model=list[TicketRef])
-def get_tickets_for_node(node_id: int, session: SessionDep) -> list[Ticket]:
+def get_tickets_for_node(node_id: int, session: SessionDep) -> list[TicketRef]:
     """Return all tickets whose source_refs include this knowledge node."""
     node = session.get(KnowledgeNode, node_id)
     if node is None:
@@ -263,13 +221,40 @@ def get_tickets_for_node(node_id: int, session: SessionDep) -> list[Ticket]:
     tickets = list(
         session.exec(select(Ticket)).all()
     )
-    return [t for t in tickets if ref_str in (t.source_refs or [])]
+    matched = [t for t in tickets if ref_str in (t.source_refs or [])]
+    ref_map = resolve_ticket_refs(session, [t.id for t in matched if t.id])  # type: ignore[misc]
+    return [TicketRef(**ref_map[t.id]) for t in matched if t.id in ref_map]
 
 
 # ---- Claim / heartbeat / requeue -----------------------------------------
 
 
 _DEFAULT_LEASE_SECONDS = 600  # 10 minutes
+
+
+def _claim_ticket_atomic(session, ticket_id: int, worker_id: str, now) -> bool:
+    dependency = aliased(Ticket)
+    has_unmet_dependency = (
+        select(TicketDependency.ticket_id)
+        .join(dependency, TicketDependency.depends_on_ticket_id == dependency.id)
+        .where(TicketDependency.ticket_id == ticket_id)
+        .where(dependency.status != TicketStatus.DONE)
+        .exists()
+    )
+    claim = session.execute(
+        update(Ticket)
+        .where(Ticket.id == ticket_id)
+        .where(Ticket.status == TicketStatus.TODO)
+        .where(~has_unmet_dependency)
+        .values(
+            status=TicketStatus.IN_PROGRESS,
+            claimed_by=worker_id,
+            claimed_at=now,
+            lease_expires_at=now + timedelta(seconds=_DEFAULT_LEASE_SECONDS),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return claim.rowcount == 1
 
 
 @router.post("/{ticket_id}/claim", response_model=TicketRead)
@@ -284,33 +269,26 @@ async def claim_ticket(
     Returns 200 on success, 409 if already claimed or not ready (unmet deps).
     """
     from api.utils.time import utcnow
-    from api.utils.ticket_deps import is_ticket_ready
 
     ticket = _get_or_404(session, ticket_id)
-
-    if ticket.status != TicketStatus.TODO or not is_ticket_ready(session, ticket):
+    now = utcnow().replace(microsecond=0)
+    if not _claim_ticket_atomic(session, ticket_id, payload.worker_id, now):
+        session.rollback()
         raise HTTPException(
             status_code=409,
             detail="Ticket is not available for claiming (not TODO or dependencies unmet).",
         )
 
-    now = utcnow()
-    ticket.status = TicketStatus.IN_PROGRESS
-    ticket.claimed_by = payload.worker_id
-    ticket.claimed_at = now
-    ticket.lease_expires_at = now.replace(microsecond=0) + timedelta(seconds=_DEFAULT_LEASE_SECONDS)
-
-    actor = _infer_actor(request)
-    session.add(ticket)
     session.add(
         AuditLog(
-            ticket_id=ticket.id,
+            ticket_id=ticket_id,
             action=AuditAction.TICKET_CLAIMED,
-            actor=actor,
+            actor=_infer_actor(request),
         )
     )
     session.commit()
-    session.refresh(ticket)
+    session.expire_all()
+    ticket = _get_or_404(session, ticket_id)
 
     await get_broadcaster().publish(
         Event(
@@ -320,22 +298,7 @@ async def claim_ticket(
             parent_id=ticket.subproject_id,
         )
     )
-    return TicketRead(
-        id=ticket.id,  # type: ignore[arg-type]
-        subproject_id=ticket.subproject_id,
-        title=ticket.title,
-        description=ticket.description,
-        status=ticket.status,
-        assignee=ticket.assignee,
-        mr_link=ticket.mr_link,
-        blocked_by=ticket.blocked_by,
-        blocked_reason=ticket.blocked_reason,
-        source_refs=ticket.source_refs or [],
-        depends_on=get_depends_on(session, ticket_id),
-        claimed_by=ticket.claimed_by,
-        claimed_at=ticket.claimed_at,
-        lease_expires_at=ticket.lease_expires_at,
-    )
+    return build_ticket_read(session, ticket)
 
 
 @router.post("/{ticket_id}/heartbeat", response_model=TicketRead)
@@ -352,19 +315,26 @@ async def heartbeat_ticket(
     from api.utils.time import utcnow
 
     ticket = _get_or_404(session, ticket_id)
-
-    if ticket.claimed_by != payload.worker_id:
+    now = utcnow().replace(microsecond=0)
+    heartbeat = session.execute(
+        update(Ticket)
+        .where(Ticket.id == ticket_id)
+        .where(Ticket.status == TicketStatus.IN_PROGRESS)
+        .where(Ticket.claimed_by == payload.worker_id)
+        .where(Ticket.lease_expires_at >= now)
+        .values(lease_expires_at=now + timedelta(seconds=payload.extend_seconds))
+        .execution_options(synchronize_session=False)
+    )
+    if heartbeat.rowcount != 1:
+        session.rollback()
         raise HTTPException(
             status_code=409,
-            detail=f"Worker '{payload.worker_id}' does not own ticket {ticket_id}.",
+            detail=f"Worker '{payload.worker_id}' does not own an active lease on ticket {ticket_id}.",
         )
 
-    now = utcnow()
-    ticket.lease_expires_at = now.replace(microsecond=0) + timedelta(seconds=payload.extend_seconds)
-
-    session.add(ticket)
     session.commit()
-    session.refresh(ticket)
+    session.expire_all()
+    ticket = _get_or_404(session, ticket_id)
 
     await get_broadcaster().publish(
         Event(
@@ -374,22 +344,7 @@ async def heartbeat_ticket(
             parent_id=ticket.subproject_id,
         )
     )
-    return TicketRead(
-        id=ticket.id,  # type: ignore[arg-type]
-        subproject_id=ticket.subproject_id,
-        title=ticket.title,
-        description=ticket.description,
-        status=ticket.status,
-        assignee=ticket.assignee,
-        mr_link=ticket.mr_link,
-        blocked_by=ticket.blocked_by,
-        blocked_reason=ticket.blocked_reason,
-        source_refs=ticket.source_refs or [],
-        depends_on=get_depends_on(session, ticket_id),
-        claimed_by=ticket.claimed_by,
-        claimed_at=ticket.claimed_at,
-        lease_expires_at=ticket.lease_expires_at,
-    )
+    return build_ticket_read(session, ticket)
 
 
 @router.post("/subprojects/{subproject_id}/requeue-expired", response_model=list[TicketRead])
@@ -404,55 +359,51 @@ async def requeue_expired(
     from api.utils.time import utcnow
 
     now = utcnow()
-    tickets = list(
+    candidate_ids = list(
         session.exec(
-            select(Ticket)
+            select(Ticket.id)
             .where(Ticket.subproject_id == subproject_id)
             .where(Ticket.status == TicketStatus.IN_PROGRESS)
             .where(Ticket.lease_expires_at.is_not(None))  # type: ignore[union-attr]
             .where(Ticket.lease_expires_at < now)  # type: ignore[operator]
         ).all()
     )
-    result: list[TicketRead] = []
-    for ticket in tickets:
-        ticket.status = TicketStatus.TODO
-        ticket.claimed_by = None
-        ticket.claimed_at = None
-        ticket.lease_expires_at = None
-        session.add(ticket)
+    requeued_ids: list[int] = []
+    for candidate_id in candidate_ids:
+        requeue = session.execute(
+            update(Ticket)
+            .where(Ticket.id == candidate_id)
+            .where(Ticket.status == TicketStatus.IN_PROGRESS)
+            .where(Ticket.lease_expires_at < now)
+            .values(
+                status=TicketStatus.TODO,
+                claimed_by=None,
+                claimed_at=None,
+                lease_expires_at=None,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if requeue.rowcount != 1:
+            continue
+        requeued_ids.append(candidate_id)
         session.add(
             AuditLog(
-                ticket_id=ticket.id,
+                ticket_id=candidate_id,
                 action=AuditAction.TICKET_REQUEUED,
                 actor=ActorRole.AGENT,
             )
         )
-        result.append(
-            TicketRead(
-                id=ticket.id,  # type: ignore[arg-type]
-                subproject_id=ticket.subproject_id,
-                title=ticket.title,
-                description=ticket.description,
-                status=ticket.status,
-                assignee=ticket.assignee,
-                mr_link=ticket.mr_link,
-                blocked_by=ticket.blocked_by,
-                blocked_reason=ticket.blocked_reason,
-                source_refs=ticket.source_refs or [],
-                depends_on=get_depends_on(session, ticket.id),  # type: ignore[arg-type]
-                claimed_by=ticket.claimed_by,
-                claimed_at=ticket.claimed_at,
-                lease_expires_at=ticket.lease_expires_at,
-            )
-        )
     session.commit()
+    session.expire_all()
+    tickets = [session.get(Ticket, ticket_id) for ticket_id in requeued_ids]
+    result = [build_ticket_read(session, ticket) for ticket in tickets if ticket]
 
-    for ticket in tickets:
+    for ticket_id in requeued_ids:
         await get_broadcaster().publish(
             Event(
                 action=SSEAction.TICKET_REQUEUED,
                 entity="ticket",
-                entity_id=ticket.id,  # type: ignore[arg-type]
+                entity_id=ticket_id,
                 parent_id=subproject_id,
             )
         )
