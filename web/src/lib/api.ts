@@ -124,6 +124,7 @@ export const createTicket = (
     description?: string;
     assignee?: TicketAssignee;
     status?: TicketStatus;
+    depends_on?: number[];
   },
 ) =>
   request<Ticket>(`/subprojects/${subprojectId}/tickets`, {
@@ -142,6 +143,7 @@ export const updateTicket = (
     blocked_by: BlockedByCategory | null;
     blocked_reason: string | null;
     source_refs: string[];
+    depends_on: number[];
   }>,
 ) =>
   request<Ticket>(`/tickets/${id}`, {
@@ -157,6 +159,27 @@ export const linkTicketMR = (id: number, url: string) =>
 
 export const deleteTicket = (id: number) =>
   request<void>(`/tickets/${id}`, { method: "DELETE" });
+
+export const claimTicket = (id: number, workerId: string) =>
+  request<Ticket>(`/tickets/${id}/claim`, {
+    method: "POST",
+    body: JSON.stringify({ worker_id: workerId }),
+  });
+
+export const heartbeatTicket = (
+  id: number,
+  workerId: string,
+  extendSeconds = 600,
+) =>
+  request<Ticket>(`/tickets/${id}/heartbeat`, {
+    method: "POST",
+    body: JSON.stringify({ worker_id: workerId, extend_seconds: extendSeconds }),
+  });
+
+export const requeueExpired = (subprojectId: number) =>
+  request<Ticket[]>(`/tickets/subprojects/${subprojectId}/requeue-expired`, {
+    method: "POST",
+  });
 
 // ---- Knowledge nodes ----------------------------------------------------
 

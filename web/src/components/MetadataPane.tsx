@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitPullRequest, Link as LinkIcon, Save } from "lucide-react";
+import { GitPullRequest, Link as LinkIcon, Link2, Save, CheckCircle2 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -17,6 +17,8 @@ import {
 } from "@/types";
 import type { BlockedByCategory, TicketAssignee, TicketDetail, TicketStatus } from "@/types";
 import { linkTicketMR, updateTicket } from "@/lib/api";
+import { useWorkspace } from "@/context/WorkspaceContext";
+import { cn } from "@/lib/utils";
 
 const BLOCKED_BY_OPTIONS: BlockedByCategory[] = [
   "WAITING_HUMAN",
@@ -32,7 +34,16 @@ interface Props {
 
 const ASSIGNEES: TicketAssignee[] = ["UNASSIGNED", "HUMAN", "AGENT"];
 
+const statusDotColor: Record<string, string> = {
+  TODO: "bg-muted-foreground/40",
+  IN_PROGRESS: "bg-blue-500",
+  BLOCKED: "bg-red-500",
+  REVIEW: "bg-yellow-500",
+  DONE: "bg-green-500",
+};
+
 export function MetadataPane({ ticket, onChanged }: Props) {
+  const { openTicket } = useWorkspace();
   const [mrUrl, setMrUrl] = useState(ticket.mr_link ?? "");
   const [savingMR, setSavingMR] = useState(false);
   const [blockedReason, setBlockedReason] = useState(ticket.blocked_reason ?? "");
@@ -183,6 +194,66 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           </a>
         )}
       </div>
+
+      {ticket.depends_on && ticket.depends_on.length > 0 && (
+        <div>
+          <label className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Link2 className="h-3 w-3" />
+            Dependencies ({ticket.depends_on.length})
+          </label>
+          <ul className="space-y-1">
+            {ticket.depends_on_refs && ticket.depends_on_refs.length > 0
+              ? ticket.depends_on_refs.map((ref) => (
+                  <li key={ref.id}>
+                    <button
+                      type="button"
+                      onClick={() => openTicket(ref.id)}
+                      className={cn(
+                        "flex w-full items-center gap-1.5 rounded-md border px-2 py-1 text-left text-[11px] transition hover:border-primary/40 hover:bg-accent",
+                        ref.status === "DONE"
+                          ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30"
+                          : "border-border bg-card",
+                      )}
+                      title={`Open ticket #${ref.id}`}
+                    >
+                      {ref.status === "DONE" ? (
+                        <CheckCircle2 className="h-3 w-3 shrink-0 text-green-600" />
+                      ) : (
+                        <span
+                          className={cn(
+                            "h-2 w-2 shrink-0 rounded-full",
+                            statusDotColor[ref.status] ?? "bg-muted-foreground/40",
+                          )}
+                        />
+                      )}
+                      <span className="shrink-0 font-mono text-muted-foreground">
+                        #{ref.id}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {ref.title}
+                      </span>
+                      {ref.subproject_name && (
+                        <span className="shrink-0 text-muted-foreground/70">
+                          {ref.subproject_name}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))
+              : ticket.depends_on.map((id) => (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      onClick={() => openTicket(id)}
+                      className="flex w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-left text-[11px] transition hover:border-primary/40 hover:bg-accent"
+                    >
+                      <span className="font-mono text-muted-foreground">#{id}</span>
+                    </button>
+                  </li>
+                ))}
+          </ul>
+        </div>
+      )}
 
       {ticket.source_refs && ticket.source_refs.length > 0 && (
         <div>
