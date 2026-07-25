@@ -16,11 +16,16 @@ RUN python3 -m pip install \
 
 COPY api /app/api
 COPY scripts/backup_to_s3.sh /app/scripts/backup_to_s3.sh
+COPY scripts/check_backup_freshness.sh /app/scripts/check_backup_freshness.sh
+COPY scripts/restore_drill_from_s3.sh /app/scripts/restore_drill_from_s3.sh
 
-RUN chmod 0755 /app/scripts/backup_to_s3.sh
+RUN chmod 0755 \
+    /app/scripts/backup_to_s3.sh \
+    /app/scripts/check_backup_freshness.sh \
+    /app/scripts/restore_drill_from_s3.sh
 
 ENV PYTHONUNBUFFERED=1
 
 USER postgres
 
-ENTRYPOINT ["/app/scripts/backup_to_s3.sh"]
+CMD ["/app/scripts/backup_to_s3.sh"]

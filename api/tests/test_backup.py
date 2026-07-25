@@ -13,6 +13,7 @@ from api.backup import (
     BackupError,
     _safe_postgres_url,
     create_backup,
+    reset_restore_drill_target,
     restore_backup,
     verify_backup,
 )
@@ -180,4 +181,43 @@ def test_restore_guards_confirmation_existing_targets_and_configured_db(
             source_url,
             confirm_database=source_path.name,
             encryption_key=_key(),
+        )
+
+
+def test_restore_drill_reset_rejects_non_postgres_and_unsafe_names(
+    monkeypatch,
+):
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///configured.db")
+    get_settings.cache_clear()
+
+    with pytest.raises(BackupError, match="PostgreSQL target"):
+        reset_restore_drill_target(
+            "sqlite:///mouvadah_restore_drill.db",
+            confirm_database="mouvadah_restore_drill.db",
+        )
+
+    with pytest.raises(BackupError, match="must start"):
+        reset_restore_drill_target(
+            "postgresql://operator:secret@db.example.com/customer_data",
+            confirm_database="customer_data",
+        )
+
+
+def test_restore_drill_reset_rejects_configured_application_database(
+    monkeypatch,
+):
+    configured_url = (
+        "postgresql://operator:secret@db.example.com/"
+        "mouvadah_restore_drill_production"
+    )
+    monkeypatch.setenv("DATABASE_URL", configured_url)
+    get_settings.cache_clear()
+
+    with pytest.raises(
+        BackupError,
+        match="configured application database",
+    ):
+        reset_restore_drill_target(
+            configured_url,
+            confirm_database="mouvadah_restore_drill_production",
         )

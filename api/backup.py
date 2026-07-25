@@ -24,7 +24,7 @@ from typing import BinaryIO
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
 from api.config import get_settings
@@ -59,6 +59,7 @@ REQUIRED_POSTGRES_TABLES = {
     "workspacelifecycleevent",
     "workspacemembership",
 }
+RESTORE_DRILL_DATABASE_PREFIX = "mouvadah_restore_drill"
 
 
 class BackupError(RuntimeError):
@@ -660,6 +661,51 @@ def restore_backup(
     return manifest
 
 
+def reset_restore_drill_target(
+    target_url: str,
+    *,
+    confirm_database: str,
+) -> dict[str, str]:
+    """Remove restored data from an explicitly named disposable database.
+
+    The configured application database is always rejected.  Requiring a
+    dedicated database-name prefix makes this destructive operation fail
+    closed even when an operator supplies a valid but unintended URL.
+    """
+    _guard_restore_target(
+        target_url,
+        confirm_database=confirm_database,
+        allow_configured_target=False,
+        backup_evidence="",
+    )
+    parsed = make_url(target_url)
+    database_name = parsed.database or ""
+    if parsed.get_backend_name() != "postgresql":
+        raise BackupError(
+            "Restore-drill cleanup requires a PostgreSQL target."
+        )
+    if not database_name.startswith(RESTORE_DRILL_DATABASE_PREFIX):
+        raise BackupError(
+            "Restore-drill database names must start with "
+            f"{RESTORE_DRILL_DATABASE_PREFIX!r}."
+        )
+
+    target_engine = create_engine(
+        target_url,
+        isolation_level="AUTOCOMMIT",
+    )
+    try:
+        with target_engine.connect() as connection:
+            connection.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+            connection.execute(text("CREATE SCHEMA public"))
+    finally:
+        target_engine.dispose()
+    return {
+        "database_name": database_name,
+        "status": "reset",
+    }
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Mouvadah encrypted database backup and restore."
@@ -686,6 +732,9 @@ def _parser() -> argparse.ArgumentParser:
     restore.add_argument("--allow-configured-target", action="store_true")
     restore.add_argument("--backup-evidence", default="")
     restore.add_argument("--postgres-host-override")
+    reset_drill = subparsers.add_parser("reset-drill-target")
+    reset_drill.add_argument("--target-url", required=True)
+    reset_drill.add_argument("--confirm-database", required=True)
     return parser
 
 
@@ -709,7 +758,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     configure_runtime(settings)
     try:
-        with observe_job(f"database_{args.command}"):
+        with observe_job(f"database_{args.command.replace('-', '_')}"):
             if args.command == "backup":
                 manifest = create_backup(
                     args.database_url or settings.database_url,
@@ -734,13 +783,20 @@ def main(argv: list[str] | None = None) -> int:
                     backup_evidence=args.backup_evidence,
                     postgres_host_override=args.postgres_host_override,
                 )
+            elif args.command == "reset-drill-target":
+                summary = reset_restore_drill_target(
+                    args.target_url,
+                    confirm_database=args.confirm_database,
+                )
             else:  # pragma: no cover - argparse invariant
                 raise BackupError(
                     f"Unsupported command {args.command!r}."
                 )
     finally:
         flush_telemetry()
-    print(json.dumps(_safe_summary(manifest), sort_keys=True))
+    if args.command != "reset-drill-target":
+        summary = _safe_summary(manifest)
+    print(json.dumps(summary, sort_keys=True))
     return 0
 
 
