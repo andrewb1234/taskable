@@ -7,6 +7,8 @@ import { E2E_API_KEY, E2E_JWT_SECRET } from "./tests/authFixture";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "..");
+const E2E_PYTHON =
+  process.env.E2E_PYTHON ?? (process.env.CI ? "python" : "./.venv/bin/python");
 
 /**
  * Playwright configuration for the realtime-SSE e2e suite.
@@ -49,8 +51,8 @@ export default defineConfig({
       // ~/.taskable/taskable.db is never mutated by tests. The seed script
       // fails closed unless this exact test database path is configured.
       command:
-        `./.venv/bin/python -m scripts.seed_e2e && ` +
-        `./.venv/bin/uvicorn api.main:app ` +
+        `${E2E_PYTHON} -m scripts.seed_e2e && ` +
+        `${E2E_PYTHON} -m uvicorn api.main:app ` +
         `--host 127.0.0.1 --port 8000 --log-level warning`,
       url: "http://127.0.0.1:8000/healthz",
       cwd: REPO_ROOT,
