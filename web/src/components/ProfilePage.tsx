@@ -25,6 +25,7 @@ import {
   exportWorkspace,
   restoreWorkspace,
   scheduleWorkspaceDeletion,
+  acceptWorkspaceInvitation,
 } from "@/lib/api";
 import type {
   ApiKey,
@@ -36,12 +37,23 @@ import type {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { McpSetupModal } from "@/components/McpSetupModal";
+import { WorkspaceMembersSection } from "@/components/WorkspaceMembersSection";
 
 interface ProfilePageProps {
   onBack: () => void;
+  pendingInvitationToken?: string | null;
+  onInvitationHandled?: () => void;
+  onInvitationTerminalFailure?: () => void;
+  onInvitationSwitchAccount?: () => Promise<void>;
 }
 
-export function ProfilePage({ onBack }: ProfilePageProps) {
+export function ProfilePage({
+  onBack,
+  pendingInvitationToken = null,
+  onInvitationHandled,
+  onInvitationTerminalFailure,
+  onInvitationSwitchAccount,
+}: ProfilePageProps) {
   const { user, logout } = useAuth();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +77,9 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
   );
   const [exportHashes, setExportHashes] = useState<Record<number, string>>({});
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
+  const [invitationNotice, setInvitationNotice] = useState<string | null>(null);
+  const [invitationError, setInvitationError] = useState<string | null>(null);
+  const [acceptingInvitation, setAcceptingInvitation] = useState(false);
 
   const fetchKeys = useCallback(async () => {
     try {
@@ -115,6 +130,29 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
       );
     });
   }, [fetchAccessData]);
+
+  async function handleAcceptInvitation() {
+    if (!pendingInvitationToken || acceptingInvitation) return;
+    setAcceptingInvitation(true);
+    setInvitationError(null);
+    try {
+      const workspace = await acceptWorkspaceInvitation(
+        pendingInvitationToken,
+      );
+      setInvitationNotice(`You joined ${workspace.name} as ${workspace.role}.`);
+      onInvitationHandled?.();
+      await fetchAccessData();
+    } catch (err) {
+      setInvitationError(
+        err instanceof Error
+          ? err.message
+          : "This invitation is not available for your account",
+      );
+      onInvitationTerminalFailure?.();
+    } finally {
+      setAcceptingInvitation(false);
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -236,7 +274,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
         return next;
       });
       setRecoveryNotice(
-        `${workspace.name} is hidden and recoverable until ${formatDateTime(result.purge_after)}. Its API keys were revoked.`,
+        `${workspace.name} is hidden and recoverable until ${formatDateTime(result.purge_after)}. Its API keys and pending invitations were revoked.`,
       );
     } catch (err) {
       setError(
@@ -347,6 +385,59 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
               <p className="text-sm text-muted-foreground">{user?.email}</p>
             </div>
           </section>
+
+          {invitationNotice && (
+            <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-700 dark:text-green-400">
+              {invitationNotice}
+            </div>
+          )}
+
+          {pendingInvitationToken && !invitationNotice && (
+            <div className="space-y-3 rounded-md border border-primary/30 bg-primary/5 p-4">
+              <div>
+                <p className="text-sm font-semibold">Workspace invitation</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Accept only if you expected this invitation. It is bound to
+                  your signed-in email and can be used once.
+                </p>
+              </div>
+              {invitationError && (
+                <p className="text-xs text-destructive-foreground/80">
+                  {invitationError}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {!invitationError && (
+                  <Button
+                    size="sm"
+                    disabled={acceptingInvitation}
+                    onClick={handleAcceptInvitation}
+                  >
+                    {acceptingInvitation && (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    )}
+                    Accept invitation
+                  </Button>
+                )}
+                {invitationError && onInvitationSwitchAccount && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={onInvitationSwitchAccount}
+                  >
+                    Switch account
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={onInvitationHandled}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* MCP Setup */}
           <section className="rounded-lg border border-border bg-card p-5">
@@ -636,6 +727,15 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
               </div>
             )}
           </section>
+
+          {user && (
+            <WorkspaceMembersSection
+              workspaces={workspaces}
+              currentUserId={user.id}
+              onWorkspacesChanged={fetchAccessData}
+              onError={setError}
+            />
+          )}
 
           {/* Data recovery */}
           <section className="space-y-4">

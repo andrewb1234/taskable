@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+import secrets
 from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Response, status
+from sqlalchemy import func
 from sqlmodel import select
 
 from api.auth import CurrentUser
@@ -14,18 +17,33 @@ from api.authorization import require_workspace
 from api.dependencies import SessionDep
 from api.models.entities import (
     ApiKey,
+    BrowserSession,
     User,
     Workspace,
+    WorkspaceInvitation,
     WorkspaceLifecycleEvent,
     WorkspaceMembership,
+    WorkspaceMembershipEvent,
 )
-from api.models.enums import WorkspaceLifecycleAction, WorkspaceRole
+from api.models.enums import (
+    WorkspaceLifecycleAction,
+    WorkspaceMembershipAction,
+    WorkspaceRole,
+)
 from api.schemas import (
     WorkspaceCreate,
     WorkspaceDeletionCreate,
     WorkspaceDeletionRead,
+    WorkspaceInvitationAccept,
+    WorkspaceInvitationCreate,
+    WorkspaceInvitationCreated,
+    WorkspaceInvitationRead,
     WorkspaceLifecycleEventRead,
     WorkspaceMemberRead,
+    WorkspaceMemberRoleUpdate,
+    WorkspaceMembershipEventRead,
+    WorkspaceMembershipMutationRead,
+    WorkspaceOwnershipTransfer,
     WorkspaceRead,
 )
 from api.security import get_api_key_authorization
@@ -33,6 +51,12 @@ from api.utils.time import utcnow
 from api.workspace_export import build_workspace_export
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
+
+_MANAGED_MEMBER_ROLES = {
+    WorkspaceRole.ADMIN,
+    WorkspaceRole.MEMBER,
+    WorkspaceRole.VIEWER,
+}
 
 
 def _slugify(value: str) -> str:
@@ -47,6 +71,37 @@ def _available_slug(session, requested: str) -> str:
         slug = f"{requested[:70]}-{suffix}"
         suffix += 1
     return slug
+
+
+def _normalize_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def _hash_invitation_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _invitation_read(invitation: WorkspaceInvitation) -> WorkspaceInvitationRead:
+    return WorkspaceInvitationRead(
+        id=invitation.id,  # type: ignore[arg-type]
+        workspace_id=invitation.workspace_id,
+        email=invitation.email,
+        role=invitation.role,
+        created_by_user_id=invitation.created_by_user_id,
+        expires_at=invitation.expires_at,
+        accepted_at=invitation.accepted_at,
+        accepted_by_user_id=invitation.accepted_by_user_id,
+        revoked_at=invitation.revoked_at,
+        created_at=invitation.created_at,
+    )
+
+
+def _require_interactive_browser() -> None:
+    if get_api_key_authorization() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workspace membership controls require a browser session.",
+        )
 
 
 @router.get("", response_model=list[WorkspaceRead])
@@ -153,6 +208,517 @@ def _require_owner_browser(
     if WorkspaceRole(membership.role) != WorkspaceRole.OWNER:
         raise HTTPException(status_code=404, detail="Workspace not found.")
     return workspace, membership
+
+
+@router.post(
+    "/{workspace_id}/invitations",
+    response_model=WorkspaceInvitationCreated,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_workspace_invitation(
+    workspace_id: int,
+    payload: WorkspaceInvitationCreate,
+    session: SessionDep,
+    user: CurrentUser,
+) -> WorkspaceInvitationCreated:
+    workspace, _ = _require_owner_browser(
+        session,
+        user,
+        workspace_id,
+        lock=True,
+    )
+    role = WorkspaceRole(payload.role)
+    if role not in _MANAGED_MEMBER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invitations support ADMIN, MEMBER, or VIEWER roles.",
+        )
+
+    email = _normalize_email(payload.email)
+    existing_member = session.exec(
+        select(WorkspaceMembership.id)
+        .join(User, WorkspaceMembership.user_id == User.id)  # type: ignore[arg-type]
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            func.lower(User.email) == email,
+        )
+    ).first()
+    if existing_member is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That email already belongs to a workspace member.",
+        )
+
+    now = utcnow()
+    active_invitation = session.exec(
+        select(WorkspaceInvitation.id).where(
+            WorkspaceInvitation.workspace_id == workspace_id,
+            WorkspaceInvitation.email == email,
+            WorkspaceInvitation.accepted_at.is_(None),
+            WorkspaceInvitation.revoked_at.is_(None),
+            WorkspaceInvitation.expires_at > now,
+        )
+    ).first()
+    if active_invitation is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An active invitation already exists for that email.",
+        )
+
+    token = secrets.token_urlsafe(32)
+    invitation = WorkspaceInvitation(
+        workspace_id=workspace_id,
+        email=email,
+        role=role,
+        token_hash=_hash_invitation_token(token),
+        created_by_user_id=user.id,  # type: ignore[arg-type]
+        created_at=now,
+        expires_at=now + timedelta(days=payload.expires_in_days),
+    )
+    session.add(invitation)
+    session.flush()
+    session.add(
+        WorkspaceMembershipEvent(
+            workspace_id=workspace_id,
+            action=WorkspaceMembershipAction.INVITATION_CREATED,
+            actor_user_id=user.id,
+            invitation_id=invitation.id,
+            details={
+                "role": role.value,
+                "expires_at": f"{invitation.expires_at.isoformat()}Z",
+            },
+        )
+    )
+    session.commit()
+    session.refresh(invitation)
+    accept_url = f"{get_settings().public_origin()}/#invite={token}"
+    return WorkspaceInvitationCreated(
+        **_invitation_read(invitation).model_dump(),
+        token=token,
+        accept_url=accept_url,
+    )
+
+
+@router.get(
+    "/{workspace_id}/invitations",
+    response_model=list[WorkspaceInvitationRead],
+)
+def list_workspace_invitations(
+    workspace_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> list[WorkspaceInvitationRead]:
+    _require_owner_browser(session, user, workspace_id)
+    invitations = list(
+        session.exec(
+            select(WorkspaceInvitation)
+            .where(WorkspaceInvitation.workspace_id == workspace_id)
+            .order_by(WorkspaceInvitation.id.desc())
+        ).all()
+    )
+    return [_invitation_read(invitation) for invitation in invitations]
+
+
+@router.delete(
+    "/{workspace_id}/invitations/{invitation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def revoke_workspace_invitation(
+    workspace_id: int,
+    invitation_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> Response:
+    _require_owner_browser(
+        session,
+        user,
+        workspace_id,
+        lock=True,
+    )
+    invitation = session.exec(
+        select(WorkspaceInvitation)
+        .where(
+            WorkspaceInvitation.id == invitation_id,
+            WorkspaceInvitation.workspace_id == workspace_id,
+        )
+        .with_for_update()
+    ).first()
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+    if (
+        invitation.accepted_at is not None
+        or invitation.revoked_at is not None
+        or invitation.expires_at <= utcnow()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invitation is no longer active.",
+        )
+    invitation.revoked_at = utcnow()
+    session.add(invitation)
+    session.add(
+        WorkspaceMembershipEvent(
+            workspace_id=workspace_id,
+            action=WorkspaceMembershipAction.INVITATION_REVOKED,
+            actor_user_id=user.id,
+            invitation_id=invitation.id,
+            details={"role": WorkspaceRole(invitation.role).value},
+        )
+    )
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/invitations/accept",
+    response_model=WorkspaceRead,
+)
+def accept_workspace_invitation(
+    payload: WorkspaceInvitationAccept,
+    session: SessionDep,
+    user: CurrentUser,
+) -> WorkspaceRead:
+    _require_interactive_browser()
+    token_hash = _hash_invitation_token(payload.token)
+    invitation = session.exec(
+        select(WorkspaceInvitation).where(
+            WorkspaceInvitation.token_hash == token_hash
+        )
+    ).first()
+    if invitation is not None:
+        session.exec(
+            select(Workspace)
+            .where(Workspace.id == invitation.workspace_id)
+            .with_for_update()
+        ).first()
+        invitation = session.exec(
+            select(WorkspaceInvitation)
+            .where(WorkspaceInvitation.token_hash == token_hash)
+            .with_for_update()
+        ).first()
+    now = utcnow()
+    if (
+        invitation is None
+        or invitation.accepted_at is not None
+        or invitation.revoked_at is not None
+        or invitation.expires_at <= now
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation is not available for this account.",
+        )
+    if invitation.email != _normalize_email(user.email):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invitation is not available for this account.",
+        )
+
+    workspace = session.exec(
+        select(Workspace)
+        .where(
+            Workspace.id == invitation.workspace_id,
+            Workspace.deletion_requested_at.is_(None),
+        )
+        .with_for_update()
+    ).first()
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    existing = session.exec(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == invitation.workspace_id,
+            WorkspaceMembership.user_id == user.id,
+        )
+    ).first()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You are already a member of this workspace.",
+        )
+
+    membership = WorkspaceMembership(
+        workspace_id=invitation.workspace_id,
+        user_id=user.id,  # type: ignore[arg-type]
+        role=invitation.role,
+    )
+    invitation.accepted_at = now
+    invitation.accepted_by_user_id = user.id
+    session.add(membership)
+    session.add(invitation)
+    session.add(
+        WorkspaceMembershipEvent(
+            workspace_id=invitation.workspace_id,
+            action=WorkspaceMembershipAction.INVITATION_ACCEPTED,
+            actor_user_id=user.id,
+            subject_user_id=user.id,
+            invitation_id=invitation.id,
+            details={"role": WorkspaceRole(invitation.role).value},
+        )
+    )
+    session.commit()
+    session.refresh(workspace)
+    return WorkspaceRead(
+        id=workspace.id,  # type: ignore[arg-type]
+        name=workspace.name,
+        slug=workspace.slug,
+        role=membership.role,
+        created_at=workspace.created_at,
+        deletion_requested_at=workspace.deletion_requested_at,
+        purge_after=workspace.purge_after,
+        deletion_requested_by=workspace.deletion_requested_by,
+        deletion_export_sha256=workspace.deletion_export_sha256,
+    )
+
+
+@router.patch(
+    "/{workspace_id}/members/{member_user_id}",
+    response_model=WorkspaceMembershipMutationRead,
+)
+def update_workspace_member_role(
+    workspace_id: int,
+    member_user_id: int,
+    payload: WorkspaceMemberRoleUpdate,
+    session: SessionDep,
+    user: CurrentUser,
+) -> WorkspaceMembershipMutationRead:
+    _require_owner_browser(
+        session,
+        user,
+        workspace_id,
+        lock=True,
+    )
+    new_role = WorkspaceRole(payload.role)
+    if new_role not in _MANAGED_MEMBER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Use ownership transfer to assign the OWNER role.",
+        )
+    membership = session.exec(
+        select(WorkspaceMembership)
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == member_user_id,
+        )
+        .with_for_update()
+    ).first()
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Workspace member not found.")
+    old_role = WorkspaceRole(membership.role)
+    if old_role == WorkspaceRole.OWNER:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Use ownership transfer to change the owner.",
+        )
+    revoked_api_keys = 0
+    if new_role == WorkspaceRole.VIEWER and old_role != WorkspaceRole.VIEWER:
+        keys = list(
+            session.exec(
+                select(ApiKey).where(
+                    ApiKey.workspace_id == workspace_id,
+                    ApiKey.user_id == member_user_id,
+                    ApiKey.revoked.is_(False),
+                )
+            ).all()
+        )
+        for api_key in keys:
+            if "write" in api_key.scopes:
+                api_key.revoked = True
+                revoked_api_keys += 1
+                session.add(api_key)
+    membership.role = new_role
+    session.add(membership)
+    session.add(
+        WorkspaceMembershipEvent(
+            workspace_id=workspace_id,
+            action=WorkspaceMembershipAction.ROLE_CHANGED,
+            actor_user_id=user.id,
+            subject_user_id=member_user_id,
+            details={
+                "from_role": old_role.value,
+                "to_role": new_role.value,
+                "revoked_write_api_keys": revoked_api_keys,
+            },
+        )
+    )
+    session.commit()
+    return WorkspaceMembershipMutationRead(
+        workspace_id=workspace_id,
+        user_id=member_user_id,
+        role=new_role,
+        revoked_api_keys=revoked_api_keys,
+    )
+
+
+@router.delete(
+    "/{workspace_id}/members/{member_user_id}",
+    response_model=WorkspaceMembershipMutationRead,
+)
+def remove_workspace_member(
+    workspace_id: int,
+    member_user_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> WorkspaceMembershipMutationRead:
+    _require_owner_browser(
+        session,
+        user,
+        workspace_id,
+        lock=True,
+    )
+    membership = session.exec(
+        select(WorkspaceMembership)
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == member_user_id,
+        )
+        .with_for_update()
+    ).first()
+    if membership is None:
+        raise HTTPException(status_code=404, detail="Workspace member not found.")
+    old_role = WorkspaceRole(membership.role)
+    if old_role == WorkspaceRole.OWNER:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Transfer ownership before removing the owner.",
+        )
+
+    now = utcnow()
+    browser_sessions = list(
+        session.exec(
+            select(BrowserSession).where(
+                BrowserSession.user_id == member_user_id,
+                BrowserSession.revoked_at.is_(None),
+            )
+        ).all()
+    )
+    api_keys = list(
+        session.exec(
+            select(ApiKey).where(
+                ApiKey.workspace_id == workspace_id,
+                ApiKey.user_id == member_user_id,
+                ApiKey.revoked.is_(False),
+            )
+        ).all()
+    )
+    for browser_session in browser_sessions:
+        browser_session.revoked_at = now
+        session.add(browser_session)
+    for api_key in api_keys:
+        api_key.revoked = True
+        session.add(api_key)
+    session.delete(membership)
+    session.add(
+        WorkspaceMembershipEvent(
+            workspace_id=workspace_id,
+            action=WorkspaceMembershipAction.MEMBER_REMOVED,
+            actor_user_id=user.id,
+            subject_user_id=member_user_id,
+            details={
+                "prior_role": old_role.value,
+                "revoked_browser_sessions": len(browser_sessions),
+                "revoked_api_keys": len(api_keys),
+            },
+        )
+    )
+    session.commit()
+    return WorkspaceMembershipMutationRead(
+        workspace_id=workspace_id,
+        user_id=member_user_id,
+        revoked_browser_sessions=len(browser_sessions),
+        revoked_api_keys=len(api_keys),
+    )
+
+
+@router.post(
+    "/{workspace_id}/ownership-transfer",
+    response_model=WorkspaceMembershipMutationRead,
+)
+def transfer_workspace_ownership(
+    workspace_id: int,
+    payload: WorkspaceOwnershipTransfer,
+    session: SessionDep,
+    user: CurrentUser,
+) -> WorkspaceMembershipMutationRead:
+    workspace, owner_membership = _require_owner_browser(
+        session,
+        user,
+        workspace_id,
+        lock=True,
+    )
+    if payload.confirmation != workspace.slug:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Type the exact workspace slug to transfer ownership.",
+        )
+    if payload.user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Select another workspace member.",
+        )
+    target = session.exec(
+        select(WorkspaceMembership)
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == payload.user_id,
+        )
+        .with_for_update()
+    ).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="Workspace member not found.")
+    prior_target_role = WorkspaceRole(target.role)
+    if prior_target_role == WorkspaceRole.SERVICE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A service membership cannot own a workspace.",
+        )
+
+    owner_membership.role = WorkspaceRole.ADMIN
+    session.add(owner_membership)
+    session.flush()
+    target.role = WorkspaceRole.OWNER
+    session.add(target)
+    session.add(
+        WorkspaceMembershipEvent(
+            workspace_id=workspace_id,
+            action=WorkspaceMembershipAction.OWNERSHIP_TRANSFERRED,
+            actor_user_id=user.id,
+            subject_user_id=payload.user_id,
+            details={
+                "previous_owner_user_id": user.id,
+                "previous_target_role": prior_target_role.value,
+                "previous_owner_new_role": WorkspaceRole.ADMIN.value,
+            },
+        )
+    )
+    session.commit()
+    return WorkspaceMembershipMutationRead(
+        workspace_id=workspace_id,
+        user_id=payload.user_id,
+        role=WorkspaceRole.OWNER,
+    )
+
+
+@router.get(
+    "/{workspace_id}/membership-events",
+    response_model=list[WorkspaceMembershipEventRead],
+)
+def list_workspace_membership_events(
+    workspace_id: int,
+    session: SessionDep,
+    user: CurrentUser,
+) -> list[WorkspaceMembershipEvent]:
+    _require_owner_browser(
+        session,
+        user,
+        workspace_id,
+        include_deleted=True,
+    )
+    return list(
+        session.exec(
+            select(WorkspaceMembershipEvent)
+            .where(WorkspaceMembershipEvent.workspace_id == workspace_id)
+            .order_by(WorkspaceMembershipEvent.id)
+        ).all()
+    )
 
 
 @router.get("/{workspace_id}/export")
@@ -267,6 +833,30 @@ def schedule_workspace_deletion(
     for api_key in api_keys:
         api_key.revoked = True
         session.add(api_key)
+    pending_invitations = list(
+        session.exec(
+            select(WorkspaceInvitation).where(
+                WorkspaceInvitation.workspace_id == workspace_id,
+                WorkspaceInvitation.accepted_at.is_(None),
+                WorkspaceInvitation.revoked_at.is_(None),
+            )
+        ).all()
+    )
+    for invitation in pending_invitations:
+        invitation.revoked_at = now
+        session.add(invitation)
+        session.add(
+            WorkspaceMembershipEvent(
+                workspace_id=workspace_id,
+                action=WorkspaceMembershipAction.INVITATION_REVOKED,
+                actor_user_id=user.id,
+                invitation_id=invitation.id,
+                details={
+                    "role": WorkspaceRole(invitation.role).value,
+                    "reason": "workspace_deletion_scheduled",
+                },
+            )
+        )
 
     session.add(
         WorkspaceLifecycleEvent(
@@ -277,6 +867,7 @@ def schedule_workspace_deletion(
                 "export_sha256": payload.export_sha256,
                 "purge_after": f"{purge_after.isoformat()}Z",
                 "revoked_api_keys": len(api_keys),
+                "revoked_invitations": len(pending_invitations),
             },
         )
     )
@@ -287,6 +878,7 @@ def schedule_workspace_deletion(
         purge_after=purge_after,
         deletion_export_sha256=payload.export_sha256,
         revoked_api_keys=len(api_keys),
+        revoked_invitations=len(pending_invitations),
     )
 
 
@@ -378,7 +970,7 @@ def list_workspace_members(
     session: SessionDep,
     user: CurrentUser,
 ) -> list[WorkspaceMemberRead]:
-    require_workspace(session, user, workspace_id, admin=True)
+    _require_owner_browser(session, user, workspace_id)
     rows = session.exec(
         select(WorkspaceMembership, User)
         .join(User, WorkspaceMembership.user_id == User.id)  # type: ignore[arg-type]

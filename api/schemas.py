@@ -63,6 +63,7 @@ class WorkspaceDeletionRead(BaseModel):
     purge_after: datetime
     deletion_export_sha256: str
     revoked_api_keys: int = 0
+    revoked_invitations: int = 0
 
 
 class WorkspaceLifecycleEventRead(BaseModel):
@@ -82,6 +83,70 @@ class WorkspaceMemberRead(BaseModel):
     name: str
     role: WorkspaceRole
     created_at: datetime
+
+
+class WorkspaceInvitationCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    email: str = Field(
+        min_length=3,
+        max_length=320,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    )
+    role: WorkspaceRole = WorkspaceRole.MEMBER
+    expires_in_days: int = Field(default=7, ge=1, le=30)
+
+
+class WorkspaceInvitationRead(BaseModel):
+    id: int
+    workspace_id: int
+    email: str
+    role: WorkspaceRole
+    created_by_user_id: int
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    accepted_by_user_id: Optional[int] = None
+    revoked_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class WorkspaceInvitationCreated(WorkspaceInvitationRead):
+    token: str
+    accept_url: str
+
+
+class WorkspaceInvitationAccept(BaseModel):
+    token: str = Field(min_length=32, max_length=200)
+
+
+class WorkspaceMemberRoleUpdate(BaseModel):
+    role: WorkspaceRole
+
+
+class WorkspaceOwnershipTransfer(BaseModel):
+    user_id: int
+    confirmation: str = Field(min_length=1, max_length=80)
+
+
+class WorkspaceMembershipMutationRead(BaseModel):
+    workspace_id: int
+    user_id: int
+    role: Optional[WorkspaceRole] = None
+    revoked_browser_sessions: int = 0
+    revoked_api_keys: int = 0
+
+
+class WorkspaceMembershipEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workspace_id: int
+    action: str
+    actor_user_id: Optional[int] = None
+    subject_user_id: Optional[int] = None
+    invitation_id: Optional[int] = None
+    occurred_at: datetime
+    details: dict = Field(default_factory=dict)
 
 
 # ---- Project --------------------------------------------------------------

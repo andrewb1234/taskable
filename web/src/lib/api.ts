@@ -28,6 +28,10 @@ import type {
   ActorRole,
   BrowserSession,
   Workspace,
+  WorkspaceInvitation,
+  WorkspaceInvitationCreated,
+  WorkspaceMember,
+  WorkspaceMembershipMutation,
 } from "@/types";
 
 const API_BASE =
@@ -73,6 +77,80 @@ async function request<T>(
 
 export const listProjects = () => request<Project[]>("/projects");
 export const listWorkspaces = () => request<Workspace[]>("/workspaces");
+
+export const listWorkspaceMembers = (workspaceId: number) =>
+  request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`);
+
+export const listWorkspaceInvitations = (workspaceId: number) =>
+  request<WorkspaceInvitation[]>(
+    `/workspaces/${workspaceId}/invitations`,
+  );
+
+export const createWorkspaceInvitation = (
+  workspaceId: number,
+  payload: {
+    email: string;
+    role: "ADMIN" | "MEMBER" | "VIEWER";
+    expires_in_days: number;
+  },
+) =>
+  request<WorkspaceInvitationCreated>(
+    `/workspaces/${workspaceId}/invitations`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+
+export const revokeWorkspaceInvitation = (
+  workspaceId: number,
+  invitationId: number,
+) =>
+  request<void>(
+    `/workspaces/${workspaceId}/invitations/${invitationId}`,
+    { method: "DELETE" },
+  );
+
+export const acceptWorkspaceInvitation = (token: string) =>
+  request<Workspace>("/workspaces/invitations/accept", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+
+export const updateWorkspaceMemberRole = (
+  workspaceId: number,
+  userId: number,
+  role: "ADMIN" | "MEMBER" | "VIEWER",
+) =>
+  request<WorkspaceMembershipMutation>(
+    `/workspaces/${workspaceId}/members/${userId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    },
+  );
+
+export const removeWorkspaceMember = (
+  workspaceId: number,
+  userId: number,
+) =>
+  request<WorkspaceMembershipMutation>(
+    `/workspaces/${workspaceId}/members/${userId}`,
+    { method: "DELETE" },
+  );
+
+export const transferWorkspaceOwnership = (
+  workspaceId: number,
+  userId: number,
+  confirmation: string,
+) =>
+  request<WorkspaceMembershipMutation>(
+    `/workspaces/${workspaceId}/ownership-transfer`,
+    {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, confirmation }),
+    },
+  );
 
 export interface WorkspaceExportResult {
   filename: string;
@@ -128,6 +206,7 @@ export const scheduleWorkspaceDeletion = (
     purge_after: string;
     deletion_export_sha256: string;
     revoked_api_keys: number;
+    revoked_invitations: number;
   }>(`/workspaces/${workspaceId}/deletion`, {
     method: "POST",
     body: JSON.stringify(payload),

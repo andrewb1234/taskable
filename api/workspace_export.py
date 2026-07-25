@@ -22,8 +22,10 @@ from api.models.entities import (
     TicketDependency,
     User,
     Workspace,
+    WorkspaceInvitation,
     WorkspaceLifecycleEvent,
     WorkspaceMembership,
+    WorkspaceMembershipEvent,
 )
 from api.utils.time import utcnow
 
@@ -211,10 +213,31 @@ def build_workspace_export(
             .order_by(WorkspaceLifecycleEvent.id)
         ).all()
     )
+    invitations = list(
+        session.exec(
+            select(WorkspaceInvitation)
+            .where(WorkspaceInvitation.workspace_id == workspace_id)
+            .order_by(WorkspaceInvitation.id)
+        ).all()
+    )
+    membership_events = list(
+        session.exec(
+            select(WorkspaceMembershipEvent)
+            .where(WorkspaceMembershipEvent.workspace_id == workspace_id)
+            .order_by(WorkspaceMembershipEvent.id)
+        ).all()
+    )
 
     tables: dict[str, list[dict[str, Any]]] = {
         "users": _dump_rows(users),
         "workspace_memberships": _dump_rows(memberships),
+        # Invitation token hashes are bearer-credential material. Export the
+        # lifecycle and intended access without making invitations portable.
+        "workspace_invitations": _dump_rows(
+            invitations,
+            exclude={"token_hash"},
+        ),
+        "workspace_membership_events": _dump_rows(membership_events),
         "projects": _dump_rows(projects),
         "subprojects": _dump_rows(subprojects),
         "tickets": _dump_rows(tickets),
@@ -239,7 +262,7 @@ def build_workspace_export(
         "record_counts": counts,
         "tables": tables,
         "exclusions": [
-            "API key hashes and full API key values",
+            "API key and workspace invitation token hashes and full values",
             "browser sessions, which are account-scoped rather than workspace-scoped",
             "server configuration, OAuth secrets, database credentials, and backup keys",
         ],

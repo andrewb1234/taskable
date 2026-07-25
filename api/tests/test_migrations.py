@@ -12,6 +12,7 @@ from sqlmodel import Session, SQLModel
 import api.models.entities  # noqa: F401
 from api.migrations.runtime import (
     BASELINE_REVISION,
+    DATA_LIFECYCLE_REVISION,
     MigrationSafetyError,
     UnsupportedSchemaError,
     _prepare_backup,
@@ -107,6 +108,23 @@ def test_unversioned_head_schema_is_stamped_without_data_loss(tmp_path):
         preserved = session.get(Project, project_id)
         assert preserved is not None
         assert preserved.name == "Already migrated"
+    assert schema_diffs(engine) == []
+
+
+def test_unversioned_data_lifecycle_schema_adopts_at_0006(tmp_path):
+    engine = _sqlite_engine(tmp_path / "unversioned-0006.db")
+    upgrade_database(engine, DATA_LIFECYCLE_REVISION)
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE alembic_version"))
+
+    result = upgrade_database(engine)
+
+    assert result.adopted_state == "data_lifecycle"
+    assert result.current_revision == head_revision()
+    assert {
+        "workspaceinvitation",
+        "workspacemembershipevent",
+    }.issubset(inspect(engine).get_table_names())
     assert schema_diffs(engine) == []
 
 

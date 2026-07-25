@@ -21,6 +21,7 @@ from sqlmodel import SQLModel
 
 BASELINE_REVISION = "0001_pre_tenancy"
 TENANCY_REVISION = "0002_workspace_tenancy"
+DATA_LIFECYCLE_REVISION = "0006_workspace_data_lifecycle"
 
 _API_DIR = Path(__file__).resolve().parents[1]
 _ALEMBIC_INI = _API_DIR / "alembic.ini"
@@ -120,7 +121,7 @@ _TENANCY_COLUMNS: dict[str, set[str]] = {
         "created_at",
     },
 }
-_HEAD_COLUMNS: dict[str, set[str]] = {
+_DATA_LIFECYCLE_COLUMNS: dict[str, set[str]] = {
     **_TENANCY_COLUMNS,
     "workspace": _TENANCY_COLUMNS["workspace"]
     | {
@@ -148,9 +149,41 @@ _HEAD_COLUMNS: dict[str, set[str]] = {
         "details",
     },
 }
+_HEAD_COLUMNS: dict[str, set[str]] = {
+    **_DATA_LIFECYCLE_COLUMNS,
+    "workspaceinvitation": {
+        "id",
+        "workspace_id",
+        "email",
+        "role",
+        "token_hash",
+        "created_by_user_id",
+        "expires_at",
+        "accepted_at",
+        "accepted_by_user_id",
+        "revoked_at",
+        "created_at",
+    },
+    "workspacemembershipevent": {
+        "id",
+        "workspace_id",
+        "action",
+        "actor_user_id",
+        "subject_user_id",
+        "invitation_id",
+        "occurred_at",
+        "details",
+    },
+}
 _KNOWN_APPLICATION_TABLES = set(_HEAD_COLUMNS)
 
-SchemaState = Literal["empty", "pre_tenancy", "tenancy", "head"]
+SchemaState = Literal[
+    "empty",
+    "pre_tenancy",
+    "tenancy",
+    "data_lifecycle",
+    "head",
+]
 
 
 class UnsupportedSchemaError(RuntimeError):
@@ -252,6 +285,12 @@ def classify_unversioned_schema(connection: Connection) -> SchemaState:
         head_missing = _missing_schema_parts(connection, _HEAD_COLUMNS)
         if not head_missing:
             return "head"
+        data_lifecycle_missing = _missing_schema_parts(
+            connection,
+            _DATA_LIFECYCLE_COLUMNS,
+        )
+        if not data_lifecycle_missing:
+            return "data_lifecycle"
         tenancy_missing = _missing_schema_parts(
             connection,
             _TENANCY_COLUMNS,
@@ -373,6 +412,8 @@ def upgrade_database(
             # Unversioned tenancy databases may still carry compatibility
             # artifacts normalized by later revisions.
             command.stamp(config, TENANCY_REVISION)
+        elif adopted_state == "data_lifecycle":
+            command.stamp(config, DATA_LIFECYCLE_REVISION)
         elif adopted_state == "head":
             command.stamp(config, head_revision())
 

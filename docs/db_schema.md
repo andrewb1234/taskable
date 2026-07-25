@@ -17,7 +17,7 @@ clock helper.
 * `purge_after`: DateTime, Optional, Indexed
 * `deletion_requested_by`: Integer, Optional
 * `deletion_export_sha256`: String, Optional
-* Relationships: owns `projects` and cascades `memberships`.
+* Relationships: owns `projects` and cascades `memberships` and invitations.
 
 ### WorkspaceLifecycleEvent (Retained Ledger)
 * `id`: Integer, Primary Key
@@ -36,7 +36,21 @@ clock helper.
 * `user_id`: Integer, ForeignKey(`user.id`)
 * `role`: Enum (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`, `SERVICE`)
 * `created_at`: DateTime
-* Constraint: unique (`workspace_id`, `user_id`).
+* Constraints: unique (`workspace_id`, `user_id`) and a partial unique
+  workspace index permitting at most one `OWNER`.
+
+### WorkspaceInvitation
+* Email-bound invitation with a SHA-256 token hash; the 32-byte random bearer
+  token is returned once and never stored.
+* Roles are limited by the API to `ADMIN`, `MEMBER`, or `VIEWER`.
+* Tracks inviter, creation/expiry, acceptance principal/time, and revocation
+  time. Acceptance and revocation are mutually exclusive terminal states.
+
+### WorkspaceMembershipEvent (Retained Ledger)
+* Content-free immutable ledger for invitation creation/revocation/acceptance,
+  role changes, member removal, and ownership transfer.
+* Stores actor/subject/invitation identifiers, timestamps, roles, and
+  credential-revocation counts; never email addresses or tokens.
 
 ### Project
 * `id`: Integer, Primary Key

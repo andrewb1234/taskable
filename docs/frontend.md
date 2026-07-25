@@ -29,6 +29,12 @@
   * `ProfilePage`: Identity and owner controls.
     * Creates scoped, expiring workspace API keys and lists revoked keys.
     * Lists and revokes browser sessions.
+    * `WorkspaceMembersSection` lets owners create copy-once invitation links,
+      list and revoke pending invitations, change human roles, remove members,
+      and perform a typed-confirmation ownership transfer.
+    * Invitation tokens travel in the URL fragment, are moved immediately to
+      same-origin session storage across OAuth, and are posted in the accept
+      request body rather than sent in URL/query logs.
     * `Data & Recovery` downloads hashed owner exports, enables deletion only
       after a fresh export, requires the exact workspace slug, lists pending
       purge deadlines, and restores workspaces during the recovery window.

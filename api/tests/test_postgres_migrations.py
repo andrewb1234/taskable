@@ -5,23 +5,28 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from api.migrations.runtime import (
-    assert_database_current,
-    assert_schema_matches_metadata,
-    upgrade_database,
-)
+from api.authorization import require_project, require_workspace
 from api.backup import (
     create_backup,
     reset_restore_drill_target,
     restore_backup,
 )
 from api.config import get_settings
+from api.migrations.runtime import (
+    assert_database_current,
+    assert_schema_matches_metadata,
+    upgrade_database,
+)
 from api.events import Event, EventBroadcaster
 from api.models.entities import (
     AuditLog,
@@ -39,6 +44,8 @@ from api.models.enums import (
     WorkspaceRole,
 )
 from api.routes.tickets import _claim_ticket_atomic
+from api.routes.workspaces import create_workspace_invitation
+from api.schemas import WorkspaceInvitationCreate
 from api.utils.time import utcnow
 
 
@@ -168,6 +175,355 @@ def test_legacy_audit_enum_is_repaired_before_claim_audit(
         session.refresh(ticket)
         assert ticket.claimed_by == "postgres-worker"
         assert ticket.status.value == "IN_PROGRESS"
+
+
+def test_postgres_membership_migration_enforces_single_owner(
+    postgres_engine,
+) -> None:
+    upgrade_database(postgres_engine)
+    assert_database_current(postgres_engine)
+    assert_schema_matches_metadata(postgres_engine)
+
+    with Session(postgres_engine) as session:
+        first = User(
+            google_id="postgres-owner-one",
+            email="postgres-owner-one@example.com",
+            name="Owner One",
+        )
+        second = User(
+            google_id="postgres-owner-two",
+            email="postgres-owner-two@example.com",
+            name="Owner Two",
+        )
+        workspace = Workspace(
+            name="Single owner",
+            slug="postgres-single-owner",
+        )
+        session.add_all([first, second, workspace])
+        session.flush()
+        session.add(
+            WorkspaceMembership(
+                workspace_id=workspace.id,
+                user_id=first.id,
+                role=WorkspaceRole.OWNER,
+            )
+        )
+        session.commit()
+        session.add(
+            WorkspaceMembership(
+                workspace_id=workspace.id,
+                user_id=second.id,
+                role=WorkspaceRole.OWNER,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_cross_tenant_authorization_fails_before_workspace_lock(
+    postgres_engine,
+) -> None:
+    upgrade_database(postgres_engine)
+    with Session(postgres_engine) as session:
+        owner = User(
+            google_id="lock-preflight-owner",
+            email="lock-preflight-owner@example.com",
+            name="Lock Preflight Owner",
+        )
+        outsider = User(
+            google_id="lock-preflight-outsider",
+            email="lock-preflight-outsider@example.com",
+            name="Lock Preflight Outsider",
+        )
+        workspace = Workspace(
+            name="Lock preflight",
+            slug="lock-preflight",
+        )
+        session.add_all([owner, outsider, workspace])
+        session.flush()
+        session.add(
+            WorkspaceMembership(
+                workspace_id=workspace.id,
+                user_id=owner.id,
+                role=WorkspaceRole.OWNER,
+            )
+        )
+        project = Project(
+            workspace_id=workspace.id,
+            name="Lock preflight project",
+        )
+        session.add(project)
+        session.commit()
+        workspace_id = workspace.id
+        project_id = project.id
+        outsider_id = outsider.id
+
+    raw_url = make_url(os.environ["POSTGRES_TEST_URL"])
+    child_engine = create_engine(
+        raw_url.update_query_dict(
+            {
+                "application_name": "cross-tenant-lock-preflight",
+                "options": "-c statement_timeout=500",
+            }
+        )
+    )
+    try:
+        with Session(postgres_engine) as blocker:
+            blocker.exec(
+                select(Workspace)
+                .where(Workspace.id == workspace_id)
+                .with_for_update()
+            ).one()
+            with Session(child_engine) as child_session:
+                child_user = child_session.get(User, outsider_id)
+                assert child_user is not None
+                with pytest.raises(HTTPException) as workspace_error:
+                    require_workspace(
+                        child_session,
+                        child_user,
+                        workspace_id,  # type: ignore[arg-type]
+                        write=True,
+                    )
+                assert workspace_error.value.status_code == 404
+
+                with pytest.raises(HTTPException) as project_error:
+                    require_project(
+                        child_session,
+                        child_user,
+                        project_id,  # type: ignore[arg-type]
+                        write=True,
+                    )
+                assert project_error.value.status_code == 404
+    finally:
+        child_engine.dispose()
+
+
+def test_owner_authorization_is_rechecked_after_workspace_lock(
+    postgres_engine,
+) -> None:
+    upgrade_database(postgres_engine)
+    with Session(postgres_engine) as session:
+        old_owner = User(
+            google_id="queued-old-owner",
+            email="queued-old-owner@example.com",
+            name="Queued Old Owner",
+        )
+        new_owner = User(
+            google_id="queued-new-owner",
+            email="queued-new-owner@example.com",
+            name="Queued New Owner",
+        )
+        workspace = Workspace(
+            name="Queued authorization",
+            slug="queued-authorization",
+        )
+        session.add_all([old_owner, new_owner, workspace])
+        session.flush()
+        session.add_all(
+            [
+                WorkspaceMembership(
+                    workspace_id=workspace.id,
+                    user_id=old_owner.id,
+                    role=WorkspaceRole.OWNER,
+                ),
+                WorkspaceMembership(
+                    workspace_id=workspace.id,
+                    user_id=new_owner.id,
+                    role=WorkspaceRole.ADMIN,
+                ),
+            ]
+        )
+        session.commit()
+        old_owner_id = old_owner.id
+        new_owner_id = new_owner.id
+        workspace_id = workspace.id
+
+    raw_url = make_url(os.environ["POSTGRES_TEST_URL"])
+    child_engine = create_engine(
+        raw_url.update_query_dict(
+            {"application_name": "membership-lock-regression"}
+        )
+    )
+
+    def queued_invitation() -> int:
+        with Session(child_engine) as child_session:
+            child_user = child_session.get(User, old_owner_id)
+            assert child_user is not None
+            try:
+                create_workspace_invitation(
+                    workspace_id,  # type: ignore[arg-type]
+                    WorkspaceInvitationCreate(
+                        email="queued@example.com",
+                        role=WorkspaceRole.MEMBER,
+                    ),
+                    child_session,
+                    child_user,
+                )
+            except HTTPException as exc:
+                return exc.status_code
+            return 201
+
+    try:
+        with Session(postgres_engine) as blocker:
+            locked_workspace = blocker.exec(
+                select(Workspace)
+                .where(Workspace.id == workspace_id)
+                .with_for_update()
+            ).one()
+            assert locked_workspace.id == workspace_id
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(queued_invitation)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    with postgres_engine.connect() as connection:
+                        wait_event = connection.execute(
+                            text(
+                                "SELECT wait_event_type FROM pg_stat_activity "
+                                "WHERE application_name = "
+                                "'membership-lock-regression' "
+                                "AND state = 'active'"
+                            )
+                        ).scalar_one_or_none()
+                    if wait_event == "Lock":
+                        break
+                    time.sleep(0.05)
+                else:
+                    pytest.fail(
+                        "Queued owner request did not reach the workspace lock."
+                    )
+
+                old_membership = blocker.exec(
+                    select(WorkspaceMembership).where(
+                        WorkspaceMembership.workspace_id == workspace_id,
+                        WorkspaceMembership.user_id == old_owner_id,
+                    )
+                ).one()
+                new_membership = blocker.exec(
+                    select(WorkspaceMembership).where(
+                        WorkspaceMembership.workspace_id == workspace_id,
+                        WorkspaceMembership.user_id == new_owner_id,
+                    )
+                ).one()
+                old_membership.role = WorkspaceRole.ADMIN
+                blocker.add(old_membership)
+                blocker.flush()
+                new_membership.role = WorkspaceRole.OWNER
+                blocker.add(new_membership)
+                blocker.commit()
+
+                assert future.result(timeout=5) == 404
+    finally:
+        child_engine.dispose()
+
+
+def test_project_write_role_is_rechecked_after_workspace_lock(
+    postgres_engine,
+) -> None:
+    upgrade_database(postgres_engine)
+    with Session(postgres_engine) as session:
+        owner = User(
+            google_id="project-lock-owner",
+            email="project-lock-owner@example.com",
+            name="Project Lock Owner",
+        )
+        writer = User(
+            google_id="project-lock-writer",
+            email="project-lock-writer@example.com",
+            name="Project Lock Writer",
+        )
+        workspace = Workspace(
+            name="Project lock",
+            slug="project-lock",
+        )
+        session.add_all([owner, writer, workspace])
+        session.flush()
+        session.add_all(
+            [
+                WorkspaceMembership(
+                    workspace_id=workspace.id,
+                    user_id=owner.id,
+                    role=WorkspaceRole.OWNER,
+                ),
+                WorkspaceMembership(
+                    workspace_id=workspace.id,
+                    user_id=writer.id,
+                    role=WorkspaceRole.MEMBER,
+                ),
+            ]
+        )
+        project = Project(
+            workspace_id=workspace.id,
+            name="Queued project write",
+        )
+        session.add(project)
+        session.commit()
+        workspace_id = workspace.id
+        writer_id = writer.id
+        project_id = project.id
+
+    raw_url = make_url(os.environ["POSTGRES_TEST_URL"])
+    child_engine = create_engine(
+        raw_url.update_query_dict(
+            {"application_name": "project-lock-regression"}
+        )
+    )
+
+    def queued_project_write() -> int:
+        with Session(child_engine) as child_session:
+            child_user = child_session.get(User, writer_id)
+            assert child_user is not None
+            try:
+                require_project(
+                    child_session,
+                    child_user,
+                    project_id,  # type: ignore[arg-type]
+                    write=True,
+                )
+            except HTTPException as exc:
+                return exc.status_code
+            return 200
+
+    try:
+        with Session(postgres_engine) as blocker:
+            blocker.exec(
+                select(Workspace)
+                .where(Workspace.id == workspace_id)
+                .with_for_update()
+            ).one()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(queued_project_write)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    with postgres_engine.connect() as connection:
+                        wait_event = connection.execute(
+                            text(
+                                "SELECT wait_event_type FROM pg_stat_activity "
+                                "WHERE application_name = "
+                                "'project-lock-regression' "
+                                "AND state = 'active'"
+                            )
+                        ).scalar_one_or_none()
+                    if wait_event == "Lock":
+                        break
+                    time.sleep(0.05)
+                else:
+                    pytest.fail(
+                        "Queued project write did not reach the workspace lock."
+                    )
+
+                membership = blocker.exec(
+                    select(WorkspaceMembership).where(
+                        WorkspaceMembership.workspace_id == workspace_id,
+                        WorkspaceMembership.user_id == writer_id,
+                    )
+                ).one()
+                membership.role = WorkspaceRole.VIEWER
+                blocker.add(membership)
+                blocker.commit()
+
+                assert future.result(timeout=5) == 404
+    finally:
+        child_engine.dispose()
 
 
 def test_postgres_encrypted_backup_restores_into_fresh_database(
