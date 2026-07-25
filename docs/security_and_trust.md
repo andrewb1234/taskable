@@ -13,8 +13,8 @@ membership before returning or mutating an object.
 
 It is **still not safe to describe as a production-ready public SaaS**.
 Browser-session revocation, CSRF enforcement, rate limits, multi-instance
-realtime delivery, restore automation, monitoring, and a protected
-software-delivery process remain open release gates.
+realtime delivery, restore automation, monitoring, artifact provenance, and
+runtime-image hardening remain open release gates.
 
 This document deliberately separates verified controls from target controls.
 Security guarantees must be limited to what the code, tests, and operational
@@ -66,14 +66,21 @@ evidence support.
 
 ### Verification
 
-- 88 backend tests pass.
+- 92 backend tests pass.
 - The suite includes concurrent claim, expiry, dependency, cascade, state,
   knowledge, cross-workspace read/write/delete isolation, role enforcement,
   tenant-filtered events, safe legacy adoption, OAuth hardening, and MCP
   subprocess coverage. Alembic upgrades and exact ORM parity were also
   exercised against ephemeral PostgreSQL 17.
-- The frontend TypeScript and production build pass.
-- A browser-level realtime specification exists.
+- The frontend TypeScript and production build pass on the upgraded Vite 8
+  toolchain.
+- Two authenticated browser-level realtime scenarios pass against an isolated
+  migration-built database.
+- GitHub workflows cover the test/build path on Python 3.12 and 3.14,
+  dependency review, Python and npm vulnerability audits, complete-history
+  secret scanning, and CodeQL for Python and JavaScript/TypeScript.
+- Workflow actions are pinned to full commit SHAs and Dependabot covers the
+  Actions, Python, MCP, and npm manifests.
 
 ## Explicit non-guarantees
 
@@ -88,7 +95,7 @@ Mouvadah does not currently guarantee:
 - multi-instance realtime delivery;
 - encrypted application-layer fields or customer-managed keys;
 - migration rollback, point-in-time recovery, or tested disaster recovery;
-- vulnerability scanning, signed builds, SBOMs, or provenance attestations;
+- signed builds, SBOMs, provenance attestations, or container scanning;
 - a response-time SLA, RPO, or RTO;
 - SOC 2, ISO 27001, HIPAA, FedRAMP, or other certification;
 - independent penetration testing; or
@@ -247,21 +254,26 @@ Required outcome:
 - connection and timeout limits;
 - backpressure and explicit 429 behavior.
 
-### Medium: software supply-chain and delivery controls are absent
+### Partially resolved medium: software supply-chain and delivery controls
 
-No repository CI workflow, dependency scanning, secret scanning, SAST, SBOM,
-artifact signing, or automated image scan is present. Docker images run with
-the image default user and install the combined production and test dependency
-set.
+Repository workflows now provide stable aggregate test, security, and CodeQL
+checks. They exercise backend tests on Python 3.12 and 3.14, frontend
+type/build, an authenticated Chromium realtime flow, dependency review, Python
+and npm audits, and complete-history secret scanning. Actions are pinned by
+full SHA and Dependabot covers every supported package ecosystem.
 
-Required outcome:
+The dependency baselines were moved to fixed FastAPI/Starlette, pytest, Vite,
+PostCSS, and related versions, with clean local Python and npm audits.
 
-- protected CI for tests and builds;
-- dependency, secret, static, and container scanning;
-- lock or compile reproducible dependency sets;
-- non-root minimal runtime images;
-- SBOM and build provenance for releases;
-- documented patch severity targets.
+Residual risk:
+
+- required-check enforcement, Actions policy, and secret-scanning settings are
+  GitHub control-plane configuration and need periodic evidence;
+- Python dependencies are constrained but not fully hash-locked;
+- no container scan, SBOM, build signing, or provenance attestation exists;
+- Docker images run with the image default user and install production plus
+  test dependencies; and
+- release artifacts are not yet independently reproducible.
 
 ### Medium: recovery and deletion are immature
 
@@ -452,13 +464,13 @@ tenant isolation, restore testing, or secure authorization.
 
 ## Immediate verification backlog
 
-1. Add protected CI and software supply-chain gates.
-2. Add cookie-write Origin/CSRF enforcement and security headers.
-3. Add revocable browser sessions and scoped API keys.
-4. Automate managed PostgreSQL backup/restore and measure recovery.
-5. Build tenant export, deletion, and verified purge workflows.
-6. Replace process-local SSE with tested shared fan-out for hosted deployments.
-7. Add rate limits, abuse controls, monitoring, and operator alerting.
+1. Add cookie-write Origin/CSRF enforcement and security headers.
+2. Add revocable browser sessions and scoped API keys.
+3. Automate managed PostgreSQL backup/restore and measure recovery.
+4. Build tenant export, deletion, and verified purge workflows.
+5. Replace process-local SSE with tested shared fan-out for hosted deployments.
+6. Add rate limits, abuse controls, monitoring, and operator alerting.
+7. Add dependency locks, container scanning, SBOMs, signing, and provenance.
 8. Create a threat model for GitHub/Linear integrations before implementation.
 
 ## Standards and primary references

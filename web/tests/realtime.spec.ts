@@ -1,4 +1,8 @@
-import { test, expect, request } from "@playwright/test";
+import { test, expect, request, type Page } from "@playwright/test";
+import {
+  createSessionToken,
+  E2E_API_KEY,
+} from "./authFixture";
 
 /**
  * Ghost Agent SSE Realtime Spec.
@@ -23,11 +27,33 @@ import { test, expect, request } from "@playwright/test";
 const API_URL = "http://127.0.0.1:8000/api/v1/";
 const PROJECT_NAME = `Realtime Test ${Date.now()}`;
 
+async function authenticateBrowser(page: Page) {
+  await page.context().addCookies([
+    {
+      name: "session",
+      value: createSessionToken(),
+      url: "http://127.0.0.1:5173",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+}
+
+function authenticatedApi() {
+  return request.newContext({
+    baseURL: API_URL,
+    extraHTTPHeaders: {
+      Authorization: `Bearer ${E2E_API_KEY}`,
+    },
+  });
+}
+
 test.describe("SSE realtime contract", () => {
   test("ticket status PATCHed via API appears in the UI within 1s", async ({
     page,
   }) => {
-    const api = await request.newContext({ baseURL: API_URL });
+    await authenticateBrowser(page);
+    const api = await authenticatedApi();
 
     const projectResp = await api.post("projects", {
       data: { name: PROJECT_NAME, description: "Playwright realtime test" },
@@ -119,7 +145,8 @@ test.describe("SSE realtime contract", () => {
   test("handles a fast burst of agent updates without dropping events", async ({
     page,
   }) => {
-    const api = await request.newContext({ baseURL: API_URL });
+    await authenticateBrowser(page);
+    const api = await authenticatedApi();
 
     const project = await (
       await api.post("projects", {
