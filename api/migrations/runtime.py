@@ -107,7 +107,7 @@ _BASELINE_COLUMNS: dict[str, set[str]] = {
         "created_at",
     },
 }
-_HEAD_COLUMNS: dict[str, set[str]] = {
+_TENANCY_COLUMNS: dict[str, set[str]] = {
     **_BASELINE_COLUMNS,
     "project": _BASELINE_COLUMNS["project"] | {"workspace_id"},
     "workspace": {"id", "name", "slug", "created_at"},
@@ -119,9 +119,22 @@ _HEAD_COLUMNS: dict[str, set[str]] = {
         "created_at",
     },
 }
+_HEAD_COLUMNS: dict[str, set[str]] = {
+    **_TENANCY_COLUMNS,
+    "apikey": _TENANCY_COLUMNS["apikey"] | {"workspace_id", "scopes"},
+    "apikeyproject": {"api_key_id", "project_id"},
+    "browsersession": {
+        "id",
+        "user_id",
+        "expires_at",
+        "revoked_at",
+        "created_at",
+        "last_seen_at",
+    },
+}
 _KNOWN_APPLICATION_TABLES = set(_HEAD_COLUMNS)
 
-SchemaState = Literal["empty", "pre_tenancy", "head"]
+SchemaState = Literal["empty", "pre_tenancy", "tenancy", "head"]
 
 
 class UnsupportedSchemaError(RuntimeError):
@@ -220,13 +233,19 @@ def classify_unversioned_schema(connection: Connection) -> SchemaState:
     has_workspace_column = "workspace_id" in project_columns
 
     if workspace_markers or has_workspace_column:
-        missing = _missing_schema_parts(connection, _HEAD_COLUMNS)
-        if missing:
-            raise UnsupportedSchemaError(
-                "Database has a partial workspace migration and will not be "
-                "modified automatically. Missing: " + ", ".join(missing)
-            )
-        return "head"
+        head_missing = _missing_schema_parts(connection, _HEAD_COLUMNS)
+        if not head_missing:
+            return "head"
+        tenancy_missing = _missing_schema_parts(
+            connection,
+            _TENANCY_COLUMNS,
+        )
+        if not tenancy_missing:
+            return "tenancy"
+        raise UnsupportedSchemaError(
+            "Database has a partial workspace migration and will not be "
+            "modified automatically. Missing: " + ", ".join(tenancy_missing)
+        )
 
     missing = _missing_schema_parts(connection, _BASELINE_COLUMNS)
     if missing:
@@ -334,10 +353,12 @@ def upgrade_database(
         config = alembic_config(connection)
         if adopted_state == "pre_tenancy":
             command.stamp(config, BASELINE_REVISION)
-        elif adopted_state == "head":
+        elif adopted_state == "tenancy":
             # Unversioned tenancy databases may still carry compatibility
             # artifacts normalized by later revisions.
             command.stamp(config, TENANCY_REVISION)
+        elif adopted_state == "head":
+            command.stamp(config, head_revision())
 
         command.upgrade(config, resolved_target)
 

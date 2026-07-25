@@ -49,11 +49,11 @@ The current repository is a functional alpha, not a concept demo.
 - Atomic ticket claims, worker identity, leases, heartbeat, and expired-work
   recovery.
 - Local stdio MCP server with 22 tools.
-- Google authentication, per-user revocable API keys, workspace ownership,
-  membership roles, and object-level authorization.
+- Google authentication, revocable browser sessions, workspace-bound scoped
+  API keys, workspace ownership, membership roles, and object authorization.
 - SQLite for local use and a nominal PostgreSQL configuration path.
-- Docker packaging, 88 passing backend tests, an MCP subprocess simulation, a
-  production frontend build, and a Playwright realtime test.
+- Docker packaging, 133 passing backend/MCP tests, MCP subprocess simulation,
+  a production frontend build, and three Playwright browser tests.
 
 ### Current product maturity
 
@@ -64,7 +64,7 @@ The current repository is a functional alpha, not a concept demo.
 | Durable context | Strong alpha | Trees, trails, proposals, sessions, provenance |
 | Human governance | Early alpha | Proposal review and audit actions exist |
 | Collaboration | Early alpha | Tenant-scoped workspaces and basic roles; no invite or role-management UI |
-| Hosted SaaS | Unsafe alpha | Tenancy and migrations exist; sessions/CSRF, billing, and operations remain |
+| Hosted SaaS | Security-gated alpha | Tenancy, migrations, sessions, CSRF/origin, scoped keys, and headers exist; recovery and operations remain |
 | Local/self-host | Usable alpha | SQLite, Docker, stdio MCP |
 | Enterprise | Not available | No RBAC, SSO/SCIM, policy, compliance, or SLA |
 
@@ -404,7 +404,8 @@ messages and ticket creation are not value metrics.
 
 - **Delivered:** workspace/tenant model, membership, project ownership, and
   centralized object-level authorization across application and MCP routes.
-- **Delivered:** tenant-scoped SSE and authenticated audit identity.
+- **Delivered:** tenant-scoped SSE and baseline authenticated actor
+  classification.
 - **Delivered:** trusted OAuth callback origin and production secret
   validation.
 - **Delivered:** ordered Alembic migrations, safe adoption of recognized
@@ -413,8 +414,9 @@ messages and ticket creation are not value metrics.
 - **Delivered:** CI for the Python 3.12/3.14 backend, frontend type/build, and
   authenticated realtime path; dependency, secret, and CodeQL scanning;
   SHA-pinned Actions; and Dependabot coverage.
-- Complete CSRF defense, browser-session revocation, rate limits, and security
-  headers.
+- **Delivered:** exact-Origin cookie-write defense, server-revocable browser
+  sessions, workspace/project-scoped API keys, baseline per-process limits,
+  and security headers.
 - Automate managed PostgreSQL backup/restore and run production-like recovery
   exercises with measured RPO/RTO.
 - Add hash-locked Python dependencies, container scanning, SBOMs, artifact
@@ -425,7 +427,7 @@ messages and ticket creation are not value metrics.
 ### P1: complete team beta
 
 - Hosted remote MCP using the current HTTP authorization specification.
-- Workspace onboarding, invitations, roles, and API-key scopes.
+- Workspace onboarding, invitations, and role-management workflows.
 - GitHub App with repository/PR linkage and webhook-driven state.
 - Idempotent ticket creation and command deduplication.
 - Durable multi-instance events and jobs.

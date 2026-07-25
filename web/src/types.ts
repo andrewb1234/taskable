@@ -51,6 +51,7 @@ export type BlockedByCategory =
 
 export interface Project {
   id: number;
+  workspace_id: number;
   name: string;
   description?: string | null;
   created_at: string;
@@ -248,8 +249,11 @@ export const BLOCKED_BY_COLORS: Record<BlockedByCategory, string> = {
 
 export interface ApiKey {
   id: number;
+  workspace_id: number | null;
   name: string;
   key_prefix: string;
+  scopes: Array<"read" | "write">;
+  project_ids: number[];
   expires_at: string | null;
   last_used_at: string | null;
   created_at: string;
@@ -258,4 +262,22 @@ export interface ApiKey {
 
 export interface ApiKeyCreated extends ApiKey {
   key: string;
+}
+
+export interface BrowserSession {
+  id: string;
+  current: boolean;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+}
+
+export type WorkspaceRole = "OWNER" | "ADMIN" | "MEMBER" | "VIEWER" | "SERVICE";
+
+export interface Workspace {
+  id: number;
+  name: string;
+  slug: string;
+  role: WorkspaceRole;
+  created_at: string;
 }

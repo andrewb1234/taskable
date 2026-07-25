@@ -33,10 +33,11 @@ Real-time updates flow back to the UI through Server-Sent Events.
 
 ## Agent authentication
 
-The current authenticated flow uses a per-user Mouvadah API key:
+The current authenticated flow uses a workspace-bound Mouvadah API key:
 
 1. Sign in through the web application.
-2. Open the profile page and create an API key.
+2. Open the profile page and choose its workspace, read/read-write scope,
+   optional project restrictions, and expiry.
 3. Put the returned one-time value in the MCP process as
    `TASKABLE_API_KEY`, or put it in the owner-only credentials file selected
    by `TASKABLE_CREDENTIALS_FILE`.
@@ -279,8 +280,10 @@ paths, URLs) render as muted monospace chips.
   boundary, and centralized authorization checks the caller's membership.
   Ambiguous legacy projects fail closed until an owner is configured.
 - **Alpha boundary:** Do not expose the current build as a production public
-  SaaS. Browser-session revocation, complete CSRF defense, rate limiting,
-  shared realtime, recovery automation, and protected delivery remain open.
+  SaaS. Browser sessions are server-revocable, unsafe cookie writes require
+  the exact trusted Origin, API keys are scoped, and baseline rate/security
+  headers are active. Shared realtime, distributed abuse controls, recovery
+  automation, and operational monitoring remain open.
   See `docs/security_and_trust.md`.
 
 ## Working directory layout

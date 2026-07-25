@@ -26,6 +26,7 @@ from api.models.entities import (
     WorkspaceMembership,
 )
 from api.models.enums import WorkspaceRole
+from api.security import get_api_key_authorization
 
 _WRITE_ROLES = {
     WorkspaceRole.OWNER,
@@ -82,6 +83,9 @@ def require_workspace(
     write: bool = False,
     admin: bool = False,
 ) -> tuple[Workspace, WorkspaceMembership]:
+    api_key = get_api_key_authorization()
+    if api_key is not None and api_key.workspace_id != workspace_id:
+        raise _not_found("Workspace")
     workspace = session.get(Workspace, workspace_id)
     membership = get_membership(session, user, workspace_id)
     _check_role(membership, write=write, admin=admin, label="Workspace")
@@ -174,6 +178,12 @@ def require_project(
         raise _not_found("Project")
     project, membership = row
     _check_role(membership, write=write, admin=admin, label="Project")
+    api_key = get_api_key_authorization()
+    if api_key is not None:
+        if api_key.workspace_id != project.workspace_id:
+            raise _not_found("Project")
+        if api_key.project_ids and project.id not in api_key.project_ids:
+            raise _not_found("Project")
     return project
 
 

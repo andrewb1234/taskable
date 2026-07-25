@@ -157,3 +157,67 @@ def test_existing_non_sqlite_database_requires_backup_confirmation():
         )
         is None
     )
+
+
+def test_api_key_migration_backfills_only_unambiguous_workspace_ownership(
+    tmp_path,
+):
+    engine = _sqlite_engine(tmp_path / "api-key-scope.db")
+    upgrade_database(engine, "0003_dependency_unique")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO user "
+                "(id, google_id, email, name, created_at) VALUES "
+                "(1, 'g-1', 'one@example.com', 'One', '2026-07-25'), "
+                "(2, 'g-2', 'two@example.com', 'Two', '2026-07-25')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO workspace (id, name, slug, created_at) VALUES "
+                "(10, 'One', 'one', '2026-07-25'), "
+                "(20, 'Two A', 'two-a', '2026-07-25'), "
+                "(21, 'Two B', 'two-b', '2026-07-25')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO workspacemembership "
+                "(workspace_id, user_id, role, created_at) VALUES "
+                "(10, 1, 'OWNER', '2026-07-25'), "
+                "(20, 2, 'OWNER', '2026-07-25'), "
+                "(21, 2, 'MEMBER', '2026-07-25')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO apikey "
+                "(id, user_id, name, key_prefix, key_hash, revoked, created_at) "
+                "VALUES "
+                "(100, 1, 'one', 'one', 'hash-one', 0, '2026-07-25'), "
+                "(200, 2, 'two', 'two', 'hash-two', 0, '2026-07-25')"
+            )
+        )
+
+    result = upgrade_database(engine)
+
+    assert result.current_revision == "0004_session_key_security"
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT id, workspace_id, scopes, revoked "
+                "FROM apikey ORDER BY id"
+            )
+        ).all()
+    assert rows[0].id == 100
+    assert rows[0].workspace_id == 10
+    assert "read" in rows[0].scopes and "write" in rows[0].scopes
+    assert rows[0].revoked == 0
+    assert rows[1].id == 200
+    assert rows[1].workspace_id is None
+    assert rows[1].revoked == 1
+    assert {"browsersession", "apikeyproject"}.issubset(
+        inspect(engine).get_table_names()
+    )
+    assert schema_diffs(engine) == []

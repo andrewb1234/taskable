@@ -9,14 +9,25 @@ import {
   Terminal,
   AlertCircle,
   Loader2,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import {
   listApiKeys,
   createApiKey,
   revokeApiKey,
+  listProjects,
+  listWorkspaces,
+  listBrowserSessions,
+  revokeBrowserSession,
 } from "@/lib/api";
-import type { ApiKey, ApiKeyCreated } from "@/types";
+import type {
+  ApiKey,
+  ApiKeyCreated,
+  BrowserSession,
+  Project,
+  Workspace,
+} from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { McpSetupModal } from "@/components/McpSetupModal";
@@ -32,6 +43,14 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
   const [error, setError] = useState<string | null>(null);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyExpiry, setNewKeyExpiry] = useState("");
+  const [newKeyWorkspaceId, setNewKeyWorkspaceId] = useState("");
+  const [newKeyAccess, setNewKeyAccess] = useState<"read" | "read-write">(
+    "read-write",
+  );
+  const [newKeyProjectIds, setNewKeyProjectIds] = useState<number[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [browserSessions, setBrowserSessions] = useState<BrowserSession[]>([]);
   const [creating, setCreating] = useState(false);
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<ApiKeyCreated | null>(null);
   const [copied, setCopied] = useState(false);
@@ -52,14 +71,42 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
     fetchKeys();
   }, [fetchKeys]);
 
+  useEffect(() => {
+    Promise.all([listWorkspaces(), listProjects(), listBrowserSessions()])
+      .then(([workspaceRows, projectRows, sessionRows]) => {
+        setWorkspaces(workspaceRows);
+        setProjects(projectRows);
+        setBrowserSessions(sessionRows);
+        setNewKeyWorkspaceId((current) =>
+          current || (workspaceRows[0] ? String(workspaceRows[0].id) : ""),
+        );
+      })
+      .catch((err) => {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load workspace access options",
+        );
+      });
+  }, []);
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!newKeyName.trim()) return;
+    if (!newKeyName.trim() || !newKeyWorkspaceId) return;
     setCreating(true);
     setError(null);
     try {
-      const payload: { name: string; expires_in_days?: number } = {
+      const payload: {
+        name: string;
+        workspace_id: number;
+        scopes: Array<"read" | "write">;
+        project_ids: number[];
+        expires_in_days?: number;
+      } = {
         name: newKeyName.trim(),
+        workspace_id: Number(newKeyWorkspaceId),
+        scopes: newKeyAccess === "read" ? ["read"] : ["read", "write"],
+        project_ids: newKeyProjectIds,
       };
       if (newKeyExpiry) {
         const days = parseInt(newKeyExpiry, 10);
@@ -71,6 +118,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
       setNewlyCreatedKey(created);
       setNewKeyName("");
       setNewKeyExpiry("");
+      setNewKeyProjectIds([]);
       fetchKeys();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create API key");
@@ -88,6 +136,27 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
       fetchKeys();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to revoke key");
+    }
+  }
+
+  async function handleRevokeSession(id: string, current: boolean) {
+    const message = current
+      ? "Sign out this browser session now?"
+      : "Revoke this browser session?";
+    if (!window.confirm(message)) return;
+    try {
+      await revokeBrowserSession(id);
+      if (current) {
+        window.location.assign("/");
+        return;
+      }
+      setBrowserSessions((sessions) =>
+        sessions.filter((session) => session.id !== id),
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to revoke browser session",
+      );
     }
   }
 
@@ -109,6 +178,12 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
 
   const activeKeys = keys.filter((k) => !k.revoked);
   const revokedKeys = keys.filter((k) => k.revoked);
+  const selectedWorkspaceProjects = projects.filter(
+    (project) => project.workspace_id === Number(newKeyWorkspaceId),
+  );
+  const workspaceName = (workspaceId: number | null) =>
+    workspaces.find((workspace) => workspace.id === workspaceId)?.name ??
+    "Unknown workspace";
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background">
@@ -180,9 +255,9 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
             {/* New key form */}
             <form
               onSubmit={handleCreate}
-              className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-card p-4"
+              className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2"
             >
-              <div className="flex-1 min-w-[180px]">
+              <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   Key name
                 </label>
@@ -194,26 +269,100 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                   className="h-8 text-sm"
                 />
               </div>
-              <div className="w-32">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Workspace
+                </label>
+                <select
+                  value={newKeyWorkspaceId}
+                  onChange={(event) => {
+                    setNewKeyWorkspaceId(event.target.value);
+                    setNewKeyProjectIds([]);
+                  }}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  {workspaces.map((workspace) => (
+                    <option key={workspace.id} value={workspace.id}>
+                      {workspace.name} · {workspace.role}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Access
+                </label>
+                <select
+                  value={newKeyAccess}
+                  onChange={(event) =>
+                    setNewKeyAccess(event.target.value as "read" | "read-write")
+                  }
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="read-write">Read and write</option>
+                  <option value="read">Read only</option>
+                </select>
+              </div>
+              <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   Expires (days)
                 </label>
                 <Input
                   type="number"
+                  min="1"
+                  max="365"
                   placeholder="Never"
                   value={newKeyExpiry}
                   onChange={(e) => setNewKeyExpiry(e.target.value)}
                   className="h-8 text-sm"
                 />
               </div>
-              <Button type="submit" size="sm" disabled={creating || !newKeyName.trim()}>
+              {selectedWorkspaceProjects.length > 0 && (
+                <fieldset className="space-y-2 sm:col-span-2">
+                  <legend className="text-xs font-medium text-muted-foreground">
+                    Project restriction (optional)
+                  </legend>
+                  <p className="text-[11px] text-muted-foreground">
+                    No selection grants the key access to every project in this
+                    workspace.
+                  </p>
+                  <div className="grid max-h-32 gap-1 overflow-auto rounded-md border border-border p-2 sm:grid-cols-2">
+                    {selectedWorkspaceProjects.map((project) => (
+                      <label
+                        key={project.id}
+                        className="flex items-center gap-2 text-xs"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={newKeyProjectIds.includes(project.id)}
+                          onChange={(event) =>
+                            setNewKeyProjectIds((current) =>
+                              event.target.checked
+                                ? [...current, project.id]
+                                : current.filter((id) => id !== project.id),
+                            )
+                          }
+                        />
+                        <span className="truncate">{project.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              <div className="sm:col-span-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={creating || !newKeyName.trim() || !newKeyWorkspaceId}
+                >
                 {creating ? (
                   <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <Plus className="mr-1 h-3.5 w-3.5" />
                 )}
                 Create Key
-              </Button>
+                </Button>
+              </div>
             </form>
 
             {/* Newly created key banner */}
@@ -300,6 +449,12 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         <code>{key.key_prefix}…</code>
+                        {" · "}{workspaceName(key.workspace_id)}
+                        {" · "}{key.scopes.includes("write") ? "Read/write" : "Read only"}
+                        {" · "}
+                        {key.project_ids.length
+                          ? `${key.project_ids.length} project${key.project_ids.length === 1 ? "" : "s"}`
+                          : "All projects"}
                         {" · "}Created {formatDate(key.created_at)}
                         {" · "}Last used {formatDate(key.last_used_at)}
                       </p>
@@ -348,6 +503,51 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                 )}
               </div>
             )}
+          </section>
+
+          {/* Browser sessions */}
+          <section className="space-y-4">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <ShieldCheck className="h-4 w-4" />
+                Browser Sessions
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Revoke sessions you no longer recognize. Revocation takes effect
+                immediately.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {browserSessions.map((browserSession) => (
+                <div
+                  key={browserSession.id}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card p-3"
+                >
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {browserSession.current ? "This browser" : "Browser session"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Last active {formatDate(browserSession.last_seen_at)}
+                      {" · "}Expires {formatDate(browserSession.expires_at)}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      handleRevokeSession(
+                        browserSession.id,
+                        browserSession.current,
+                      )
+                    }
+                  >
+                    {browserSession.current ? "Sign out" : "Revoke"}
+                  </Button>
+                </div>
+              ))}
+            </div>
           </section>
 
           {/* Sign out */}

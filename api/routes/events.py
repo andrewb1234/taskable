@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from sse_starlette.sse import EventSourceResponse
 from sqlmodel import select
 
@@ -18,6 +18,7 @@ from api.auth import CurrentUser
 from api.dependencies import SessionDep
 from api.events import get_broadcaster
 from api.models.entities import WorkspaceMembership
+from api.security import get_api_key_authorization
 
 router = APIRouter(tags=["events"])
 
@@ -27,6 +28,9 @@ _HEARTBEAT_SECONDS = 15.0
 def can_receive_event(session, user, event) -> bool:
     """Return whether a caller currently belongs to an event's workspace."""
     if event.workspace_id is None:
+        return False
+    api_key = get_api_key_authorization()
+    if api_key is not None and api_key.workspace_id != event.workspace_id:
         return False
     return (
         session.exec(
@@ -47,6 +51,16 @@ async def stream_events(
 ) -> EventSourceResponse:
     """Stream SSE events. Emits a heartbeat comment every 15s to keep the
     connection alive through proxies/load-balancers."""
+
+    api_key = get_api_key_authorization()
+    if api_key is not None and api_key.project_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Project-restricted API keys cannot subscribe to the "
+                "workspace-wide event stream."
+            ),
+        )
 
     broadcaster = get_broadcaster()
 

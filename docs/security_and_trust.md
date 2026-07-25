@@ -12,9 +12,11 @@ inherit that boundary, and every application route resolves the caller's
 membership before returning or mutating an object.
 
 It is **still not safe to describe as a production-ready public SaaS**.
-Browser-session revocation, CSRF enforcement, rate limits, multi-instance
-realtime delivery, restore automation, monitoring, artifact provenance, and
-runtime-image hardening remain open release gates.
+Revocable sessions, exact-Origin cookie-write enforcement, scoped API keys,
+baseline per-process rate limits, and browser security headers are now
+verified. Multi-instance realtime and distributed abuse controls, restore
+automation, monitoring, artifact provenance, and runtime-image hardening
+remain open release gates.
 
 This document deliberately separates verified controls from target controls.
 Security guarantees must be limited to what the code, tests, and operational
@@ -26,11 +28,22 @@ evidence support.
 
 - Google authorization-code sign-in uses a random state value bound to an
   HttpOnly cookie.
-- Application sessions are HS256 JWTs in an HttpOnly, SameSite=Lax cookie.
+- Application sessions are HS256 JWTs in an HttpOnly, SameSite=Lax cookie and
+  must resolve to an active server-side session record.
 - The cookie is marked Secure when the configured frontend URL uses HTTPS.
 - Agent API keys contain 32 bytes of random entropy, are returned only at
   creation, and are stored as SHA-256 hashes.
-- API keys can expire and be revoked.
+- API keys bind to one workspace, carry explicit read/write scopes, may limit
+  access to selected projects, can expire, and can be revoked.
+- Users can inspect active browser sessions and immediately revoke any one;
+  logout revokes the server-side record before clearing the cookie.
+- Unsafe cookie-authenticated API requests require the exact configured
+  application Origin. Explicit bearer credentials never fall back to ambient
+  cookies, and restricted keys cannot be exchanged for full browser sessions.
+- Login/callback and unsafe-action sliding-window limits return explicit 429
+  and Retry-After responses in the current single-instance stage.
+- CSP, frame-ancestors/X-Frame-Options, nosniff, referrer, permissions, and
+  production HSTS headers are applied across API and frontend responses.
 - Authenticated requests resolve an actual user record.
 - Loopback local mode provisions a real owner, personal workspace, and
   revocable per-user key instead of disabling auth or sharing a backend bypass
@@ -53,8 +66,8 @@ evidence support.
   knowledge, proposal, session, and agent routes.
 - Inaccessible object IDs return 404, including cross-workspace dependency,
   knowledge-parent, and session-node references.
-- API keys act as their owning user and cannot escape that user's workspace
-  memberships.
+- API keys act as their owning user but are additionally constrained to their
+  bound workspace, read/write scopes, and optional project allow-list.
 - Every emitted application event carries a workspace ID; the SSE stream
   re-checks current membership before delivery.
 - Legacy projects are adopted only by an explicitly configured owner or by the
@@ -74,7 +87,7 @@ evidence support.
 
 ### Verification
 
-- 114 backend and MCP integration tests pass.
+- 133 backend and MCP integration tests pass.
 - The suite includes concurrent claim, expiry, dependency, cascade, state,
   knowledge, cross-workspace read/write/delete isolation, role enforcement,
   tenant-filtered events, safe legacy adoption, OAuth hardening, and MCP
@@ -96,11 +109,10 @@ evidence support.
 Mouvadah does not currently guarantee:
 
 - database-enforced tenant isolation or PostgreSQL row-level security;
-- granular custom roles or per-action API-key scopes;
+- granular custom roles or scopes beyond the verified read/write boundary;
 - independently assessed confidentiality controls;
-- CSRF protection beyond SameSite cookies and OAuth state;
-- rate limiting, abuse prevention, or denial-of-service resistance;
-- revocable browser sessions;
+- distributed rate limiting, workspace quotas, or denial-of-service
+  resistance;
 - multi-instance realtime delivery;
 - encrypted application-layer fields or customer-managed keys;
 - migration rollback, point-in-time recovery, or tested disaster recovery;
@@ -158,8 +170,8 @@ Residual risk:
 - no independent penetration test has been performed;
 - membership administration currently exposes listing, not invitation,
   role-change, removal, or ownership-transfer workflows; and
-- API keys inherit all permissions of their user instead of carrying explicit
-  workspace, project, and action scopes.
+- API-key permissions intentionally expose only read/write scopes rather than
+  custom per-action policy.
 
 ### Resolved high: trusted OAuth callback origin
 
@@ -180,8 +192,6 @@ idempotent; key rotation is explicit and revokes the prior bootstrap key.
 
 Residual risk:
 
-- local API keys currently inherit their owning user's permissions until
-  scoped credentials ship in ticket #83;
 - the credentials file is intentionally decryptable by its owner and depends
   on host account/filesystem security; and
 - Windows permission semantics are not part of the verified macOS/Linux
@@ -225,35 +235,26 @@ Required outcome:
 - use a durable or shared fan-out mechanism for multi-instance deployment;
 - test disconnect, replay policy, and cross-tenant silence.
 
-### Medium: browser mutation CSRF defense is incomplete
+### Resolved medium: browser mutation and session revocation
 
-SameSite=Lax is useful defense in depth but is not a complete general CSRF
-control, especially across same-site subdomains. State-changing routes rely on
-the session cookie and accept JSON requests without a separate CSRF mechanism
-or explicit Origin enforcement.
+Unsafe cookie-authenticated writes now require an exact match to the trusted
+configured Origin, including rejection of same-site sibling origins and
+missing Origin. SameSite=Lax remains defense in depth. Explicit bearer traffic
+stays outside the cookie flow and invalid bearer credentials never fall back
+to ambient cookies.
 
-Required outcome:
+Browser JWTs now carry a random session ID backed by a database row recording
+issue, last use, expiry, and revocation. Profile APIs and UI list active
+sessions; logout and targeted revocation invalidate the row immediately.
 
-- reject unsafe cookie-authenticated requests with an untrusted Origin;
-- add a synchronizer or signed double-submit token if deployment topology
-  requires cross-origin browser writes;
-- use Fetch Metadata as an additional signal, not the sole control;
-- keep API-key requests outside the cookie CSRF flow;
-- test cross-site and same-site sibling-origin attempts.
+Residual risk:
 
-### Medium: sessions are long-lived and not revocable
-
-Browser JWTs last 30 days and have no server-side session identifier, rotation,
-or revocation list. Password or OAuth-account events cannot immediately revoke
-an issued token.
-
-Required outcome:
-
-- use a server-side session record or short-lived access token plus rotating
-  refresh session;
-- record issued, last-used, expires, revoked, and authentication assurance;
-- revoke all sessions from the user profile and operator tooling;
-- rotate signing keys with a documented procedure.
+- if a future deployment permits a cross-origin frontend, reassess whether a
+  synchronizer/double-submit token is required rather than weakening exact
+  Origin policy;
+- signing-key rotation and operator-wide emergency revocation need a runbook;
+  and
+- authentication-assurance level and device metadata are not yet recorded.
 
 ### Medium: authorization and audit identity are too coarse
 
@@ -268,16 +269,18 @@ Required outcome:
 - never log raw session, OAuth, API, or integration credentials;
 - append-only export and defined retention.
 
-### Medium: no rate or resource limits
+### Partially resolved medium: rate and resource limits
 
-Authentication, API-key verification, search, large text bodies, SSE
-connections, and write routes have no visible rate, concurrency, or payload
-limits.
+Login/callback paths and unsafe actions now have process-local sliding-window
+limits with explicit 429 and Retry-After behavior. This matches the current
+single-instance deployment stage but is not a distributed abuse-control
+system.
 
 Required outcome:
 
-- per-IP limits for login/callback failures;
-- per-user, API-key, and workspace quotas;
+- replace the process-local limiter with a trusted shared edge/application
+  limiter before scaling out;
+- add per-user, API-key, and workspace quotas;
 - maximum content, source-ref, query, and dependency counts;
 - connection and timeout limits;
 - backpressure and explicit 429 behavior.
@@ -492,14 +495,12 @@ tenant isolation, restore testing, or secure authorization.
 
 ## Immediate verification backlog
 
-1. Add cookie-write Origin/CSRF enforcement and security headers.
-2. Add revocable browser sessions and scoped API keys.
-3. Automate managed PostgreSQL backup/restore and measure recovery.
-4. Build tenant export, deletion, and verified purge workflows.
-5. Replace process-local SSE with tested shared fan-out for hosted deployments.
-6. Add rate limits, abuse controls, monitoring, and operator alerting.
-7. Add dependency locks, container scanning, SBOMs, signing, and provenance.
-8. Create a threat model for GitHub/Linear integrations before implementation.
+1. Automate managed PostgreSQL backup/restore and measure recovery.
+2. Build tenant export, deletion, and verified purge workflows.
+3. Replace process-local SSE with tested shared fan-out for hosted deployments.
+4. Add distributed abuse controls, monitoring, and operator alerting.
+5. Add dependency locks, container scanning, SBOMs, signing, and provenance.
+6. Create a threat model for GitHub/Linear integrations before implementation.
 
 ## Standards and primary references
 

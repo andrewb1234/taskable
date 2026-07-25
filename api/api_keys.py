@@ -12,9 +12,21 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlmodel import Session
+from collections.abc import Iterable
 
-from api.models.entities import ApiKey
+from sqlmodel import Session, select
+
+from api.models.entities import (
+    ApiKey,
+    ApiKeyProject,
+    Project,
+    WorkspaceMembership,
+)
+from api.security import (
+    READ_SCOPE,
+    VALID_API_KEY_SCOPES,
+    WRITE_SCOPE,
+)
 
 KEY_PREFIX = "taskable_"
 KEY_RANDOM_LENGTH = 32  # bytes of entropy -> ~43 URL-safe base64 characters
@@ -34,10 +46,42 @@ def issue_api_key(
     session: Session,
     *,
     user_id: int,
+    workspace_id: int,
     name: str,
+    scopes: Iterable[str] = (READ_SCOPE, WRITE_SCOPE),
+    project_ids: Iterable[int] = (),
     expires_in_days: int | None = None,
 ) -> tuple[ApiKey, str]:
     """Create an API-key record and return ``(record, full_key_once)``."""
+    normalized_scopes = sorted(set(scopes))
+    normalized_project_ids = sorted(set(project_ids))
+    if (
+        not normalized_scopes
+        or not set(normalized_scopes).issubset(VALID_API_KEY_SCOPES)
+    ):
+        raise ValueError("At least one supported API-key scope is required.")
+    membership = session.exec(
+        select(WorkspaceMembership.id).where(
+            WorkspaceMembership.user_id == user_id,
+            WorkspaceMembership.workspace_id == workspace_id,
+        )
+    ).first()
+    if membership is None:
+        raise ValueError("API-key owner must belong to the selected workspace.")
+    if normalized_project_ids:
+        matching_project_ids = set(
+            session.exec(
+                select(Project.id).where(
+                    Project.id.in_(normalized_project_ids),  # type: ignore[union-attr]
+                    Project.workspace_id == workspace_id,
+                )
+            ).all()
+        )
+        if matching_project_ids != set(normalized_project_ids):
+            raise ValueError(
+                "Every API-key project must belong to the selected workspace."
+            )
+
     raw_key = generate_api_key()
     expires_at = None
     if expires_in_days is not None:
@@ -45,12 +89,22 @@ def issue_api_key(
 
     api_key = ApiKey(
         user_id=user_id,
+        workspace_id=workspace_id,
         name=name,
         key_prefix=raw_key[:12],
         key_hash=hash_api_key(raw_key),
+        scopes=normalized_scopes,
         expires_at=expires_at,
     )
     session.add(api_key)
+    session.flush()
+    for project_id in normalized_project_ids:
+        session.add(
+            ApiKeyProject(
+                api_key_id=api_key.id,  # type: ignore[arg-type]
+                project_id=project_id,
+            )
+        )
     session.commit()
     session.refresh(api_key)
     return api_key, raw_key

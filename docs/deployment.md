@@ -42,6 +42,10 @@ Required for hosted operation:
 Optional:
 
 - `CORS_ORIGINS`: explicit trusted origins.
+- `AUTH_RATE_LIMIT` / `AUTH_RATE_WINDOW_SECONDS`: per-process login/callback
+  sliding-window limit (defaults to 10 requests per 300 seconds per client).
+- `ACTION_RATE_LIMIT` / `ACTION_RATE_WINDOW_SECONDS`: per-process unsafe-action
+  limit (defaults to 180 requests per 60 seconds per client and credential).
 - `GITHUB_PAT`: temporary legacy credential for MR-link lookup.
 - `LEGACY_OWNER_EMAIL`: explicit owner for safe adoption of pre-tenancy
   projects.
@@ -52,6 +56,13 @@ Optional:
 
 Never put credentials in container images, repository files, logs, migration
 configuration, or frontend build variables.
+
+The application emits CSP, frame-denial, MIME-sniffing, referrer, and
+permissions headers on every response; HTTPS deployments also emit one-year
+HSTS. Unsafe cookie-authenticated API requests require the exact configured
+`FRONTEND_URL` Origin. The built-in limiter is intentionally process-local for
+the current single-instance stage; configure a shared edge/application limiter
+before adding replicas or claiming denial-of-service resistance.
 
 ## Containers
 

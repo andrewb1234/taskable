@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from sqlmodel import select
 
 from api.auth import CurrentUser
@@ -13,8 +13,16 @@ from api.authorization import (
 )
 from api.dependencies import SessionDep
 from api.events import Event, get_broadcaster
-from api.models.entities import Project, Subproject, Ticket, WorkspaceMembership
+from api.models.entities import (
+    ApiKey,
+    ApiKeyProject,
+    Project,
+    Subproject,
+    Ticket,
+    WorkspaceMembership,
+)
 from api.models.enums import SSEAction
+from api.security import get_api_key_authorization
 from api.schemas import (
     ProjectCreate,
     ProjectRead,
@@ -32,16 +40,22 @@ def list_projects(
     session: SessionDep,
     user: CurrentUser,
 ) -> list[Project]:
+    query = (
+        select(Project)
+        .join(
+            WorkspaceMembership,
+            WorkspaceMembership.workspace_id == Project.workspace_id,  # type: ignore[arg-type]
+        )
+        .where(WorkspaceMembership.user_id == user.id)
+        .order_by(Project.created_at)
+    )
+    api_key = get_api_key_authorization()
+    if api_key is not None:
+        query = query.where(Project.workspace_id == api_key.workspace_id)
+        if api_key.project_ids:
+            query = query.where(Project.id.in_(api_key.project_ids))  # type: ignore[union-attr]
     return list(
-        session.exec(
-            select(Project)
-            .join(
-                WorkspaceMembership,
-                WorkspaceMembership.workspace_id == Project.workspace_id,  # type: ignore[arg-type]
-            )
-            .where(WorkspaceMembership.user_id == user.id)
-            .order_by(Project.created_at)
-        ).all()
+        session.exec(query).all()
     )
 
 
@@ -55,7 +69,27 @@ async def create_project(
     session: SessionDep,
     user: CurrentUser,
 ) -> Project:
-    if payload.workspace_id is None:
+    api_key = get_api_key_authorization()
+    if api_key is not None:
+        if api_key.project_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Project-restricted API keys cannot create projects.",
+            )
+        if payload.workspace_id not in {None, api_key.workspace_id}:
+            require_workspace(
+                session,
+                user,
+                payload.workspace_id,
+                write=True,
+            )
+        workspace, _ = require_workspace(
+            session,
+            user,
+            api_key.workspace_id,
+            write=True,
+        )
+    elif payload.workspace_id is None:
         workspace = ensure_personal_workspace(session, user)
     else:
         workspace, _ = require_workspace(
@@ -138,6 +172,29 @@ async def delete_project(
         ).all()
     )
     delete_ticket_dependencies(session, ticket_ids)
+
+    # An empty ApiKeyProject set means unrestricted workspace access. If this
+    # was the last allowed project for a restricted key, revoke the key instead
+    # of accidentally broadening it when the project disappears.
+    restrictions = session.exec(
+        select(ApiKeyProject).where(ApiKeyProject.project_id == project_id)
+    ).all()
+    for restriction in restrictions:
+        another_project = session.exec(
+            select(ApiKeyProject.project_id).where(
+                ApiKeyProject.api_key_id == restriction.api_key_id,
+                ApiKeyProject.project_id != project_id,
+            )
+        ).first()
+        if another_project is None:
+            api_key = session.get(ApiKey, restriction.api_key_id)
+            if api_key is not None:
+                api_key.revoked = True
+                session.add(api_key)
+        session.delete(restriction)
+    if restrictions:
+        session.flush()
+
     session.delete(project)
     session.commit()
 

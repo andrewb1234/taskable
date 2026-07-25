@@ -17,10 +17,12 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from api import database, events
+from api.authorization import ensure_personal_workspace
 from api.auth import get_current_user, hash_api_key
 from api.dependencies import get_session
 from api.main import app
 from api.models.entities import ApiKey, User
+from api.security import rate_limiter
 
 TEST_AGENT_API_KEY = "test-agent-key"
 
@@ -34,6 +36,7 @@ def _set_test_env(monkeypatch) -> None:
     from api.config import get_settings
 
     get_settings.cache_clear()
+    rate_limiter.reset()
 
 
 @pytest.fixture
@@ -162,11 +165,14 @@ def multi_user_client(engine) -> Iterator[tuple[TestClient, dict[str, User]]]:
 def agent_headers(engine, test_user) -> dict[str, str]:
     """Create a real API key in the DB and return bearer headers for it."""
     with Session(engine) as sess:
+        workspace = ensure_personal_workspace(sess, test_user)
         api_key = ApiKey(
             user_id=test_user.id,
+            workspace_id=workspace.id,
             name="test-key",
             key_prefix=TEST_AGENT_API_KEY[:12],
             key_hash=hash_api_key(TEST_AGENT_API_KEY),
+            scopes=["read", "write"],
         )
         sess.add(api_key)
         sess.commit()
