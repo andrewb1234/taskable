@@ -39,6 +39,7 @@ from api.routes import (
     tickets,
     workspaces,
 )
+from api.security import SecurityMiddleware
 from api.version import __version__, git_sha
 
 
@@ -71,6 +72,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Added after CORS so it wraps every API/static response, including CORS
+    # rejections and mounted sub-application routes.
+    app.add_middleware(SecurityMiddleware)
 
     # --- API v1 ---
     api_v1 = FastAPI(title="Taskable API v1", version=__version__)

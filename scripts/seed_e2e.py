@@ -85,9 +85,11 @@ def main() -> None:
             ApiKey(
                 id=1,
                 user_id=E2E_USER_ID,
+                workspace_id=E2E_WORKSPACE_ID,
                 name="Playwright",
                 key_prefix=raw_api_key[:12],
                 key_hash=hash_api_key(raw_api_key),
+                scopes=["read", "write"],
             )
         )
         session.commit()

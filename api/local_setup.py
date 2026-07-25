@@ -66,11 +66,17 @@ def _active_key_for_user(
     *,
     raw_key: str,
     user_id: int,
+    workspace_id: int,
 ) -> ApiKey | None:
     record = session.exec(
         select(ApiKey).where(ApiKey.key_hash == hash_api_key(raw_key))
     ).first()
-    if record is None or record.user_id != user_id or record.revoked:
+    if (
+        record is None
+        or record.user_id != user_id
+        or record.workspace_id != workspace_id
+        or record.revoked
+    ):
         return None
     if record.expires_at is not None and record.expires_at < utcnow():
         return None
@@ -104,13 +110,14 @@ def provision_local_owner(
         session.commit()
         session.refresh(user)
 
-    ensure_personal_workspace(session, user)
+    workspace = ensure_personal_workspace(session, user)
 
     if existing_key and not rotate_key:
         existing_record = _active_key_for_user(
             session,
             raw_key=existing_key,
             user_id=user.id,
+            workspace_id=workspace.id,  # type: ignore[arg-type]
         )
         if existing_record is None:
             raise ValueError(
@@ -142,6 +149,7 @@ def provision_local_owner(
     api_key, raw_key = issue_api_key(
         session,
         user_id=user.id,
+        workspace_id=workspace.id,  # type: ignore[arg-type]
         name=LOCAL_KEY_NAME,
         expires_in_days=expires_in_days,
     )

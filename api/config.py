@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     local_auth_enabled: bool = False
     jwt_secret: str = "dev-jwt-secret-change-me"
     frontend_url: str = "http://localhost:5173"
+    auth_rate_limit: int = 10
+    auth_rate_window_seconds: int = 300
+    action_rate_limit: int = 180
+    action_rate_window_seconds: int = 60
     # Required to adopt pre-tenancy projects in a production database. Local
     # development may safely adopt them when exactly one user exists.
     legacy_owner_email: str | None = None
@@ -65,6 +69,20 @@ class Settings(BaseSettings):
     def validate_production(self) -> None:
         """Raise if security-sensitive defaults are still set in production."""
         parsed = urlsplit(self.public_origin())
+        rate_values = {
+            "AUTH_RATE_LIMIT": self.auth_rate_limit,
+            "AUTH_RATE_WINDOW_SECONDS": self.auth_rate_window_seconds,
+            "ACTION_RATE_LIMIT": self.action_rate_limit,
+            "ACTION_RATE_WINDOW_SECONDS": self.action_rate_window_seconds,
+        }
+        invalid_rate_values = [
+            name for name, value in rate_values.items() if value <= 0
+        ]
+        if invalid_rate_values:
+            raise RuntimeError(
+                "Rate-limit settings must be positive: "
+                + ", ".join(invalid_rate_values)
+            )
         if self.local_auth_enabled and parsed.hostname not in {
             "localhost",
             "127.0.0.1",

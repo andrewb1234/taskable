@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from sqlmodel import select
 
 from api.auth import CurrentUser
@@ -13,6 +13,7 @@ from api.dependencies import SessionDep
 from api.models.entities import User, Workspace, WorkspaceMembership
 from api.models.enums import WorkspaceRole
 from api.schemas import WorkspaceCreate, WorkspaceMemberRead, WorkspaceRead
+from api.security import get_api_key_authorization
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -36,7 +37,7 @@ def list_workspaces(
     session: SessionDep,
     user: CurrentUser,
 ) -> list[WorkspaceRead]:
-    rows = session.exec(
+    query = (
         select(Workspace, WorkspaceMembership)
         .join(
             WorkspaceMembership,
@@ -44,7 +45,11 @@ def list_workspaces(
         )
         .where(WorkspaceMembership.user_id == user.id)
         .order_by(Workspace.id)
-    ).all()
+    )
+    api_key = get_api_key_authorization()
+    if api_key is not None:
+        query = query.where(Workspace.id == api_key.workspace_id)
+    rows = session.exec(query).all()
     return [
         WorkspaceRead(
             id=workspace.id,  # type: ignore[arg-type]
@@ -67,6 +72,11 @@ def create_workspace(
     session: SessionDep,
     user: CurrentUser,
 ) -> WorkspaceRead:
+    if get_api_key_authorization() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workspace-bound API keys cannot create workspaces.",
+        )
     requested_slug = payload.slug or _slugify(payload.name)
     workspace = Workspace(
         name=payload.name,

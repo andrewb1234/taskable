@@ -1,8 +1,5 @@
 import { test, expect, request, type Page } from "@playwright/test";
-import {
-  createSessionToken,
-  E2E_API_KEY,
-} from "./authFixture";
+import { E2E_API_KEY } from "./authFixture";
 
 /**
  * Ghost Agent SSE Realtime Spec.
@@ -28,15 +25,17 @@ const API_URL = "http://127.0.0.1:8000/api/v1/";
 const PROJECT_NAME = `Realtime Test ${Date.now()}`;
 
 async function authenticateBrowser(page: Page) {
-  await page.context().addCookies([
-    {
-      name: "session",
-      value: createSessionToken(),
-      url: "http://127.0.0.1:5173",
-      httpOnly: true,
-      sameSite: "Lax",
+  const response = await page.request.post("/api/v1/auth/local-session", {
+    data: { api_key: E2E_API_KEY },
+    headers: {
+      Origin: "http://127.0.0.1:5173",
     },
-  ]);
+  });
+  if (!response.ok()) {
+    throw new Error(
+      `local session exchange failed: ${response.status()} ${await response.text()}`,
+    );
+  }
 }
 
 function authenticatedApi() {

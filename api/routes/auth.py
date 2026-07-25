@@ -14,6 +14,7 @@ Flow:
 from __future__ import annotations
 
 import secrets
+from datetime import datetime
 from urllib.parse import urlencode
 
 import httpx
@@ -24,14 +25,16 @@ from sqlmodel import select
 
 from api.auth import (
     COOKIE_NAME,
-    create_jwt,
+    create_browser_session,
     get_current_user,
+    revoke_browser_session,
     verify_api_key,
 )
 from api.authorization import ensure_personal_workspace
 from api.config import Settings
 from api.dependencies import SessionDep, SettingsDep
-from api.models.entities import User
+from api.models.entities import BrowserSession, User
+from api.utils.time import utcnow
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -52,6 +55,22 @@ class AuthProviders(BaseModel):
 
 class LocalSessionRequest(BaseModel):
     api_key: SecretStr
+
+
+class BrowserSessionOut(BaseModel):
+    id: str
+    current: bool
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+
+
+def _require_browser_auth(request: Request) -> None:
+    if getattr(request.state, "auth_method", None) != "cookie":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Browser-session management requires a browser session.",
+        )
 
 
 def _redirect_uri(request: Request, settings: Settings) -> str:
@@ -114,10 +133,14 @@ async def local_session(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired API key.",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+    )
 
     ensure_personal_workspace(session, user)
-    jwt_token = create_jwt(user.id, user.email, settings.jwt_secret)
+    _, jwt_token = create_browser_session(
+        session,
+        user=user,
+        secret=settings.jwt_secret,
+    )
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.set_cookie(
         COOKIE_NAME,
@@ -256,8 +279,12 @@ async def auth_callback(
 
     ensure_personal_workspace(session, user)
 
-    # Issue JWT and set session cookie.
-    jwt_token = create_jwt(user.id, user.email, settings.jwt_secret)
+    # Issue a signed token backed by a revocable server-side session.
+    _, jwt_token = create_browser_session(
+        session,
+        user=user,
+        secret=settings.jwt_secret,
+    )
     response = RedirectResponse(
         url=settings.frontend_url,
         status_code=status.HTTP_302_FOUND,
@@ -282,12 +309,76 @@ async def auth_me(current_user: User = Depends(get_current_user)) -> dict:
     }
 
 
+@router.get("/sessions")
+async def list_browser_sessions(
+    request: Request,
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> list[BrowserSessionOut]:
+    """List active browser sessions so another session can revoke them."""
+    _require_browser_auth(request)
+    now = utcnow()
+    rows = session.exec(
+        select(BrowserSession)
+        .where(
+            BrowserSession.user_id == current_user.id,
+            BrowserSession.revoked_at.is_(None),
+            BrowserSession.expires_at >= now,
+        )
+        .order_by(BrowserSession.created_at.desc())
+    ).all()
+    current_id = getattr(request.state, "browser_session_id", None)
+    return [
+        BrowserSessionOut(
+            id=row.id,
+            current=row.id == current_id,
+            created_at=row.created_at,
+            last_seen_at=row.last_seen_at,
+            expires_at=row.expires_at,
+        )
+        for row in rows
+    ]
+
+
+@router.delete(
+    "/sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revoke_session(
+    session_id: str,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Revoke one browser session owned by the current user."""
+    _require_browser_auth(request)
+    row = session.get(BrowserSession, session_id)
+    if row is None or row.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Browser session not found.",
+        )
+    revoke_browser_session(session, session_id)
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    if getattr(request.state, "browser_session_id", None) == session_id:
+        response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings))
+    return response
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def auth_logout(
     request: Request,
+    session: SessionDep,
     settings: SettingsDep,
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    """Clear the session cookie."""
+    """Revoke the current browser session and clear its cookie."""
+    del current_user
+    _require_browser_auth(request)
+    session_id = getattr(request.state, "browser_session_id", None)
+    if session_id:
+        revoke_browser_session(session, session_id)
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie(COOKIE_NAME, **_cookie_kwargs(settings))
     return response

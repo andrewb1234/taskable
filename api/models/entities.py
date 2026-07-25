@@ -266,25 +266,67 @@ class User(SQLModel, table=True):
     memberships: List[WorkspaceMembership] = Relationship(back_populates="user")
 
 
+class BrowserSession(SQLModel, table=True):
+    """Revocable server-side record backing a signed browser-session cookie."""
+
+    id: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    expires_at: datetime = Field(index=True)
+    revoked_at: Optional[datetime] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+    last_seen_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    user: Optional[User] = Relationship()
+
+
 class ApiKey(SQLModel, table=True):
-    """Per-user API key for agent/MCP authentication.
+    """Workspace-bound, scoped API key for agent/MCP authentication.
 
     The full key is shown once on creation and never stored. We persist only:
     - ``key_prefix`` (first 12 chars) for display/identification
     - ``key_hash`` (SHA-256 of the full key) for lookup/verification
+
+    ``workspace_id`` is nullable only for migrated ambiguous legacy keys, which
+    authentication rejects. New keys always bind to one workspace. An empty
+    ``ApiKeyProject`` set means every project in that workspace is allowed.
     """
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
+    workspace_id: Optional[int] = Field(
+        default=None,
+        foreign_key="workspace.id",
+        index=True,
+    )
     name: str = Field(default="Default")
     key_prefix: str = Field(index=True)
     key_hash: str = Field(unique=True, index=True)
+    scopes: List[str] = Field(
+        default_factory=lambda: ["read", "write"],
+        sa_column=Column(JSON, nullable=False, default=lambda: ["read", "write"]),
+    )
     expires_at: Optional[datetime] = Field(default=None)
     last_used_at: Optional[datetime] = Field(default=None)
     revoked: bool = Field(default=False)
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
 
     user: Optional[User] = Relationship()
+    workspace: Optional[Workspace] = Relationship()
+
+
+class ApiKeyProject(SQLModel, table=True):
+    """Optional per-project allow-list for a workspace-bound API key."""
+
+    api_key_id: int = Field(
+        foreign_key="apikey.id",
+        primary_key=True,
+        index=True,
+    )
+    project_id: int = Field(
+        foreign_key="project.id",
+        primary_key=True,
+        index=True,
+    )
 
 
 class KnowledgeProposal(SQLModel, table=True):

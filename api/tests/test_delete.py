@@ -6,7 +6,11 @@ SSE events that get published for each deletion.
 
 from __future__ import annotations
 
+from sqlmodel import select
+
+from api.api_keys import issue_api_key
 from api.events import get_broadcaster
+from api.models.entities import ApiKeyProject, Project
 
 
 def _seed(client) -> dict:
@@ -72,6 +76,60 @@ def test_delete_project_cascades_entire_tree(client):
     assert client.get(f"/api/v1/tickets/{ids['ticket_id']}").status_code == 404
     # Knowledge nodes cascaded too.
     assert client.get(f"/api/v1/knowledge/{ids['node_id']}").status_code == 404
+
+
+def test_delete_project_revokes_key_that_would_become_unrestricted(
+    client,
+    session,
+    test_user,
+):
+    ids = _seed(client)
+    project = session.get(Project, ids["project_id"])
+    api_key, _ = issue_api_key(
+        session,
+        user_id=test_user.id,
+        workspace_id=project.workspace_id,
+        name="single-project key",
+        project_ids=[project.id],
+    )
+
+    response = client.delete(f"/api/v1/projects/{project.id}")
+
+    assert response.status_code == 204
+    session.refresh(api_key)
+    assert api_key.revoked is True
+    assert session.exec(
+        select(ApiKeyProject).where(ApiKeyProject.api_key_id == api_key.id)
+    ).all() == []
+
+
+def test_delete_project_preserves_key_with_another_allowed_project(
+    client,
+    session,
+    test_user,
+):
+    first = client.post("/api/v1/projects", json={"name": "First"}).json()
+    second = client.post("/api/v1/projects", json={"name": "Second"}).json()
+    first_project = session.get(Project, first["id"])
+    api_key, _ = issue_api_key(
+        session,
+        user_id=test_user.id,
+        workspace_id=first_project.workspace_id,
+        name="two-project key",
+        project_ids=[first["id"], second["id"]],
+    )
+
+    response = client.delete(f"/api/v1/projects/{first['id']}")
+
+    assert response.status_code == 204
+    session.refresh(api_key)
+    assert api_key.revoked is False
+    remaining = session.exec(
+        select(ApiKeyProject.project_id).where(
+            ApiKeyProject.api_key_id == api_key.id
+        )
+    ).all()
+    assert remaining == [second["id"]]
 
 
 def test_delete_nonexistent_returns_404(client):

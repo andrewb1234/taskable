@@ -211,11 +211,22 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
         "INSERT INTO user (google_id, email, name, avatar_url, created_at) "
         "VALUES ('test-google', 'test@example.com', 'Test', NULL, datetime('now'))"
     )
+    conn.execute(
+        "INSERT INTO workspace (id, name, slug, created_at) "
+        "VALUES (1, 'Test workspace', 'test-workspace', datetime('now'))"
+    )
+    conn.execute(
+        "INSERT INTO workspacemembership "
+        "(workspace_id, user_id, role, created_at) "
+        "VALUES (1, 1, 'OWNER', datetime('now'))"
+    )
     key_hash = hashlib.sha256(TEST_AGENT_KEY.encode()).hexdigest()
     conn.execute(
-        "INSERT INTO apikey (user_id, name, key_prefix, key_hash, expires_at, "
-        "last_used_at, revoked, created_at) "
-        "VALUES (1, 'test-key', ?, ?, NULL, NULL, 0, datetime('now'))",
+        "INSERT INTO apikey "
+        "(user_id, workspace_id, name, key_prefix, key_hash, scopes, "
+        "expires_at, last_used_at, revoked, created_at) "
+        "VALUES (1, 1, 'test-key', ?, ?, '[\"read\", \"write\"]', "
+        "NULL, NULL, 0, datetime('now'))",
         (TEST_AGENT_KEY[:12], key_hash),
     )
     conn.commit()

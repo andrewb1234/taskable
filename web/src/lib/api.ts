@@ -1,9 +1,9 @@
 /**
  * Thin typed fetch wrapper for the mouvadah API.
  *
- * The UI runs unauthenticated on localhost per the architecture decision
- * logged in `learnings.md`. All mutations go through these helpers so we have
- * a single seam for retry/logging/auth tweaks later.
+ * The UI authenticates with an HttpOnly, server-revocable browser session.
+ * All mutations go through these helpers so cookie and error behavior has one
+ * typed seam.
  */
 
 import type {
@@ -26,6 +26,8 @@ import type {
   TicketRef,
   TicketStatus,
   ActorRole,
+  BrowserSession,
+  Workspace,
 } from "@/types";
 
 const API_BASE =
@@ -70,6 +72,7 @@ async function request<T>(
 // ---- Projects -----------------------------------------------------------
 
 export const listProjects = () => request<Project[]>("/projects");
+export const listWorkspaces = () => request<Workspace[]>("/workspaces");
 export const getProject = (id: number) => request<Project>(`/projects/${id}`);
 export const listProjectTickets = (projectId: number) =>
   request<TicketRef[]>(`/projects/${projectId}/tickets`);
@@ -332,6 +335,14 @@ export const createLocalSession = (apiKey: string) =>
 export const logout = () =>
   request<void>("/auth/logout", { method: "POST" });
 
+export const listBrowserSessions = () =>
+  request<BrowserSession[]>("/auth/sessions");
+
+export const revokeBrowserSession = (id: string) =>
+  request<void>(`/auth/sessions/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
 export const getLoginUrl = () => `${API_BASE}/auth/login`;
 
 // ---- API Keys ------------------------------------------------------------
@@ -340,6 +351,9 @@ export const listApiKeys = () => request<ApiKey[]>("/apikeys");
 
 export const createApiKey = (payload: {
   name: string;
+  workspace_id?: number;
+  scopes?: Array<"read" | "write">;
+  project_ids?: number[];
   expires_in_days?: number;
 }) =>
   request<ApiKeyCreated>("/apikeys", {

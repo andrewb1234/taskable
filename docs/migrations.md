@@ -82,6 +82,15 @@ The `--backup-confirmed` flag is mandatory when an existing non-SQLite
 database needs an upgrade. It is evidence supplied by the operator, not a
 backup implementation.
 
+### Revision 0004 operational note
+
+Revision `0004_session_key_security` creates the browser-session ledger and
+adds API-key workspace, scope, and project restrictions. Existing API keys
+owned by a user with exactly one workspace are bound to that workspace with
+read/write scope; keys with zero or multiple possible workspaces are revoked
+and must be reissued. Existing browser cookies do not contain a server-side
+session ID, so users must sign in once after this release.
+
 ## Failure and rollback policy
 
 If migration or parity verification fails:
