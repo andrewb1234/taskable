@@ -53,10 +53,10 @@ interface ProfilePageProps {
 
 const profileSections = [
   ["identity", "Identity"],
-  ["workspace-access", "Workspace access"],
   ["agent-credentials", "Agent credentials"],
-  ["browser-sessions", "Browser sessions"],
+  ["workspace-access", "Workspace access"],
   ["data-recovery", "Data & recovery"],
+  ["browser-sessions", "Browser sessions"],
 ] as const;
 
 function jumpToProfileSection(id: string) {
