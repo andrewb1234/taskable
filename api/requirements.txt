@@ -13,6 +13,6 @@ psycopg2-binary>=2.9,<3
 cryptography>=48.0.1,<49
 
 # Dev / test
-pytest>=9.0.3,<10
+pytest>=9.1.1,<10
 pytest-asyncio>=1.4,<2
 anyio>=4.14.2,<5
