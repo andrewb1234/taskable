@@ -280,4 +280,8 @@ export interface Workspace {
   slug: string;
   role: WorkspaceRole;
   created_at: string;
+  deletion_requested_at: string | null;
+  purge_after: string | null;
+  deletion_requested_by: number | null;
+  deletion_export_sha256: string | null;
 }

@@ -122,6 +122,13 @@ _TENANCY_COLUMNS: dict[str, set[str]] = {
 }
 _HEAD_COLUMNS: dict[str, set[str]] = {
     **_TENANCY_COLUMNS,
+    "workspace": _TENANCY_COLUMNS["workspace"]
+    | {
+        "deletion_requested_at",
+        "purge_after",
+        "deletion_requested_by",
+        "deletion_export_sha256",
+    },
     "apikey": _TENANCY_COLUMNS["apikey"] | {"workspace_id", "scopes"},
     "apikeyproject": {"api_key_id", "project_id"},
     "browsersession": {
@@ -131,6 +138,14 @@ _HEAD_COLUMNS: dict[str, set[str]] = {
         "revoked_at",
         "created_at",
         "last_seen_at",
+    },
+    "workspacelifecycleevent": {
+        "id",
+        "workspace_id",
+        "action",
+        "actor_user_id",
+        "occurred_at",
+        "details",
     },
 }
 _KNOWN_APPLICATION_TABLES = set(_HEAD_COLUMNS)

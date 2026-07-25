@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     auth_rate_window_seconds: int = 300
     action_rate_limit: int = 180
     action_rate_window_seconds: int = 60
+    deletion_recovery_days: int = 30
     # Required to adopt pre-tenancy projects in a production database. Local
     # development may safely adopt them when exactly one user exists.
     legacy_owner_email: str | None = None
@@ -82,6 +83,10 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "Rate-limit settings must be positive: "
                 + ", ".join(invalid_rate_values)
+            )
+        if not 7 <= self.deletion_recovery_days <= 90:
+            raise RuntimeError(
+                "DELETION_RECOVERY_DAYS must be between 7 and 90."
             )
         if self.local_auth_enabled and parsed.hostname not in {
             "localhost",

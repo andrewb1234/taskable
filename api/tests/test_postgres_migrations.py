@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+import base64
 import os
 
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from api.migrations.runtime import (
     assert_database_current,
     assert_schema_matches_metadata,
     upgrade_database,
 )
-from api.models.entities import AuditLog, Project, Subproject, Ticket
-from api.models.enums import ActorRole, AuditAction
+from api.backup import create_backup, restore_backup
+from api.models.entities import (
+    AuditLog,
+    Project,
+    Subproject,
+    Ticket,
+    User,
+    Workspace,
+    WorkspaceMembership,
+)
+from api.models.enums import ActorRole, AuditAction, WorkspaceRole
 from api.routes.tickets import _claim_ticket_atomic
 from api.utils.time import utcnow
 
@@ -146,3 +156,98 @@ def test_legacy_audit_enum_is_repaired_before_claim_audit(
         session.refresh(ticket)
         assert ticket.claimed_by == "postgres-worker"
         assert ticket.status.value == "IN_PROGRESS"
+
+
+def test_postgres_encrypted_backup_restores_into_fresh_database(
+    postgres_engine,
+    tmp_path,
+) -> None:
+    raw_url = os.environ["POSTGRES_TEST_URL"]
+    parsed = make_url(raw_url)
+    restore_database = "taskable_restore_test"
+    restore_url = parsed.set(database=restore_database).render_as_string(
+        hide_password=False
+    )
+    admin_url = parsed.set(database="postgres").render_as_string(
+        hide_password=False
+    )
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    with admin_engine.connect() as connection:
+        connection.execute(
+            text(
+                "DROP DATABASE IF EXISTS taskable_restore_test WITH (FORCE)"
+            )
+        )
+        connection.execute(text("CREATE DATABASE taskable_restore_test"))
+
+    upgrade_database(postgres_engine)
+    with Session(postgres_engine) as session:
+        user = User(
+            google_id="postgres-recovery-user",
+            email="postgres-recovery@example.com",
+            name="PostgreSQL Recovery",
+        )
+        workspace = Workspace(
+            name="PostgreSQL recovery",
+            slug="postgresql-recovery",
+        )
+        session.add_all([user, workspace])
+        session.flush()
+        session.add(
+            WorkspaceMembership(
+                workspace_id=workspace.id,
+                user_id=user.id,
+                role=WorkspaceRole.OWNER,
+            )
+        )
+        session.add(
+            Project(
+                workspace_id=workspace.id,
+                name="Restored PostgreSQL project",
+            )
+        )
+        session.commit()
+
+    backup_path = tmp_path / "postgres.mouvadah-backup"
+    encryption_key = base64.b64encode(b"p" * 32).decode("ascii")
+    host_override = os.environ.get("POSTGRES_TOOL_HOST_OVERRIDE")
+    try:
+        manifest = create_backup(
+            raw_url,
+            backup_path,
+            encryption_key=encryption_key,
+            postgres_host_override=host_override,
+        )
+        assert manifest["authenticated"]["archive_format"] == (
+            "postgresql-custom"
+        )
+
+        restore_backup(
+            backup_path,
+            restore_url,
+            confirm_database=restore_database,
+            encryption_key=encryption_key,
+            postgres_host_override=host_override,
+        )
+        restored_engine = create_engine(restore_url)
+        try:
+            assert_database_current(restored_engine)
+            assert_schema_matches_metadata(restored_engine)
+            with Session(restored_engine) as session:
+                names = list(
+                    session.exec(
+                        select(Project.name).order_by(Project.id)
+                    ).all()
+                )
+            assert names == ["Restored PostgreSQL project"]
+        finally:
+            restored_engine.dispose()
+    finally:
+        with admin_engine.connect() as connection:
+            connection.execute(
+                text(
+                    "DROP DATABASE IF EXISTS taskable_restore_test "
+                    "WITH (FORCE)"
+                )
+            )
+        admin_engine.dispose()

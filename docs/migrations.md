@@ -102,6 +102,15 @@ the legacy enum, applies the migration, checks the actual `pg_enum` members,
 and commits claim/requeue audit records. SQLite needs no repair because it
 stores these enum values as strings.
 
+### Revision 0006 operational note
+
+Revision `0006_workspace_data_lifecycle` adds workspace deletion-request and
+purge-deadline fields plus a retained lifecycle-event ledger. The ledger's
+workspace and actor identifiers intentionally are not foreign keys: the
+content-free export/deletion/restore/purge evidence must survive verified
+tenant purge. Apply the revision before enabling the Data & Recovery UI,
+backup Cron Job, or purge runner.
+
 ## Failure and rollback policy
 
 If migration or parity verification fails:
@@ -118,6 +127,9 @@ Revision downgrade functions exist for development verification, but production
 rollback is an application-and-data decision. Never assume a database
 downgrade is lossless. Restore from the verified snapshot when a revision
 removes or transforms data.
+
+The complete encrypted backup and isolated restore procedure is in
+`recovery.md`.
 
 ## Authoring schema changes
 

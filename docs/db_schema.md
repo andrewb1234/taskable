@@ -1,7 +1,10 @@
 # Database Schema Specification
 
 ## ORM Context
-Target framework: `SQLModel` (FastAPI). Engine: `SQLite`. All datetime fields should default to `datetime.utcnow`.
+Target framework: `SQLModel` (FastAPI). Supported engines: SQLite for
+Community/local and PostgreSQL for hosted operation. Ordered Alembic revisions
+are the release schema source of truth. Datetimes use the application's UTC
+clock helper.
 
 ## Entities & Attributes
 
@@ -10,7 +13,22 @@ Target framework: `SQLModel` (FastAPI). Engine: `SQLite`. All datetime fields sh
 * `name`: String
 * `slug`: String, Unique
 * `created_at`: DateTime
+* `deletion_requested_at`: DateTime, Optional, Indexed
+* `purge_after`: DateTime, Optional, Indexed
+* `deletion_requested_by`: Integer, Optional
+* `deletion_export_sha256`: String, Optional
 * Relationships: owns `projects` and cascades `memberships`.
+
+### WorkspaceLifecycleEvent (Retained Ledger)
+* `id`: Integer, Primary Key
+* `workspace_id`: Integer, Indexed, intentionally not a foreign key
+* `action`: Enum (`EXPORTED`, `DELETION_SCHEDULED`,
+  `DELETION_RESTORED`, `PURGED`)
+* `actor_user_id`: Integer, Optional, intentionally not a foreign key
+* `occurred_at`: DateTime
+* `details`: JSON containing hashes, timestamps, counts, and backup evidence;
+  never tenant content or credentials
+* Lifecycle: retained after verified workspace purge.
 
 ### WorkspaceMembership
 * `id`: Integer, Primary Key

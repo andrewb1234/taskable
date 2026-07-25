@@ -1,0 +1,20 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-mouvadah-encrypted-database-backups",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "mouvadah/database/"
+      },
+      "Expiration": {
+        "Days": 35
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 7
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    }
+  ]
+}

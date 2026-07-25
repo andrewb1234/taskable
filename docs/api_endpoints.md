@@ -9,6 +9,16 @@
 ## Real-Time Synchronization
 * `GET /events` : Server-Sent Events (SSE) stream broadcasting `{action, entity, entity_id, parent_id}`.
 
+## Workspaces and Data Lifecycle
+
+* `GET /workspaces` : List the caller's workspace memberships, including pending-deletion recovery metadata.
+* `POST /workspaces` : Create a workspace owned by the interactive caller.
+* `GET /workspaces/{id}/members` : List members; admin role required.
+* `GET /workspaces/{id}/export` : Owner-only interactive export with a SHA-256 response header; API keys are rejected.
+* `POST /workspaces/{id}/deletion` : Owner-only deletion schedule requiring exact slug and a matching export from the preceding 24 hours.
+* `POST /workspaces/{id}/restore` : Restore during the recovery window; revoked API keys remain revoked.
+* `GET /workspaces/{id}/lifecycle-events` : Owner-only export/deletion/restore/purge ledger.
+
 ## Projects
 * `GET /projects` : Retrieve all projects.
 * `POST /projects` : Create new project `(name, description)`.

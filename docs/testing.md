@@ -18,7 +18,17 @@ realtime path, and dependency supply chain.
 * `api/tests/test_postgres_migrations.py` runs only with a dedicated loopback
   database named `taskable_test`. It destroys and recreates that database's
   `public` schema, reproduces legacy native-enum drift, applies the repair
-  migration, and commits real claim/requeue audit actions.
+  migration, commits real claim/requeue audit actions, creates an encrypted
+  PostgreSQL custom archive, and restores it into the dedicated
+  `taskable_restore_test` database. The test requires migration head, ORM
+  parity, and restored tenant data before it passes.
+* `api/tests/test_data_lifecycle.py` proves export hashing and exclusions,
+  cross-tenant silence, owner/API-key boundaries, deletion confirmation,
+  immediate API-key revocation, in-window restoration, expiry, verified
+  tenant purge, and retained non-content lifecycle evidence.
+* `api/tests/test_backup.py` proves SQLite authenticated encryption, wrong-key
+  and tamper rejection, configured-target safety, full restore, and schema
+  parity without needing external services.
 * Playwright uses only `web/tests/.e2e-taskable.db`. Its seed helper validates
   that exact resolved SQLite path before deleting or writing anything and
   refuses every other database or dialect.
@@ -52,8 +62,8 @@ the dedicated loopback `taskable_test` database.
 Pull requests and merge-queue candidates run:
 
 - `Required CI`: backend tests on Python 3.12 and 3.14, frontend type/build,
-  a PostgreSQL 17 migration/claim regression, and authenticated Chromium
-  realtime tests;
+  a PostgreSQL 17 migration/claim/encrypted-restore regression, and
+  authenticated Chromium realtime tests;
 - `Required security`: dependency review, Python and npm vulnerability audits,
   and complete-history secret scanning; and
 - `Required CodeQL`: Python and JavaScript/TypeScript static analysis.

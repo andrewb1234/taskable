@@ -73,6 +73,71 @@ async function request<T>(
 
 export const listProjects = () => request<Project[]>("/projects");
 export const listWorkspaces = () => request<Workspace[]>("/workspaces");
+
+export interface WorkspaceExportResult {
+  filename: string;
+  sha256: string;
+}
+
+export async function exportWorkspace(
+  workspaceId: number,
+): Promise<WorkspaceExportResult> {
+  const response = await fetch(`${API_BASE}/workspaces/${workspaceId}/export`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    let message = response.statusText;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body?.detail) message = body.detail;
+    } catch {
+      /* ignore parse failure */
+    }
+    throw new ApiError(response.status, message);
+  }
+
+  const sha256 = response.headers.get("X-Mouvadah-Export-SHA256");
+  if (!sha256) {
+    throw new Error("The export response did not include its integrity hash.");
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/i);
+  const filename = match?.[1] ?? `mouvadah-workspace-${workspaceId}.json`;
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+  return { filename, sha256 };
+}
+
+export const scheduleWorkspaceDeletion = (
+  workspaceId: number,
+  payload: { confirmation: string; export_sha256: string },
+) =>
+  request<{
+    workspace_id: number;
+    deletion_requested_at: string;
+    purge_after: string;
+    deletion_export_sha256: string;
+    revoked_api_keys: number;
+  }>(`/workspaces/${workspaceId}/deletion`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const restoreWorkspace = (workspaceId: number) =>
+  request<Workspace>(`/workspaces/${workspaceId}/restore`, {
+    method: "POST",
+  });
+
 export const getProject = (id: number) => request<Project>(`/projects/${id}`);
 export const listProjectTickets = (projectId: number) =>
   request<TicketRef[]>(`/projects/${projectId}/tickets`);

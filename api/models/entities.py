@@ -13,7 +13,7 @@ rather than stringified PEP 563 forms.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Column, JSON, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, JSON, String, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 from api.models.enums import (
@@ -25,6 +25,7 @@ from api.models.enums import (
     SubprojectStatus,
     TicketAssignee,
     TicketStatus,
+    WorkspaceLifecycleAction,
     WorkspaceRole,
 )
 from api.utils.time import utcnow
@@ -50,15 +51,80 @@ class AgentSession(SQLModel, table=True):
 class Workspace(SQLModel, table=True):
     """Tenant boundary that owns projects and memberships."""
 
+    __table_args__ = (
+        CheckConstraint(
+            "("
+            "deletion_requested_at IS NULL "
+            "AND purge_after IS NULL "
+            "AND deletion_requested_by IS NULL "
+            "AND deletion_export_sha256 IS NULL"
+            ") OR ("
+            "deletion_requested_at IS NOT NULL "
+            "AND purge_after IS NOT NULL "
+            "AND deletion_requested_by IS NOT NULL "
+            "AND deletion_export_sha256 IS NOT NULL"
+            ")",
+            name="ck_workspace_deletion_state_complete",
+        ),
+        CheckConstraint(
+            "purge_after IS NULL OR purge_after > deletion_requested_at",
+            name="ck_workspace_purge_after_request",
+        ),
+        CheckConstraint(
+            "deletion_export_sha256 IS NULL "
+            "OR length(deletion_export_sha256) = 64",
+            name="ck_workspace_deletion_export_sha256",
+        ),
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     slug: str = Field(unique=True, index=True)
     created_at: datetime = Field(default_factory=utcnow, nullable=False)
+    deletion_requested_at: Optional[datetime] = Field(default=None, index=True)
+    purge_after: Optional[datetime] = Field(default=None, index=True)
+    deletion_requested_by: Optional[int] = Field(default=None)
+    deletion_export_sha256: Optional[str] = Field(default=None)
 
     projects: List["Project"] = Relationship(back_populates="workspace")
     memberships: List["WorkspaceMembership"] = Relationship(
         back_populates="workspace",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+class WorkspaceLifecycleEvent(SQLModel, table=True):
+    """Durable non-content ledger retained after a workspace purge.
+
+    ``workspace_id`` and ``actor_user_id`` intentionally are not foreign keys:
+    a verified purge removes the tenant and may later remove the account, while
+    operators still need evidence of when export, deletion, restore, and purge
+    actions happened. ``details`` must contain identifiers, hashes, counts, and
+    timestamps only—never exported tenant content or credentials.
+    """
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ("
+            "'EXPORTED', "
+            "'DELETION_SCHEDULED', "
+            "'DELETION_RESTORED', "
+            "'PURGED'"
+            ")",
+            name="ck_workspace_lifecycle_action",
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(index=True)
+    action: WorkspaceLifecycleAction = Field(
+        sa_column=Column(String, nullable=False, index=True)
+    )
+    actor_user_id: Optional[int] = Field(default=None, index=True)
+    occurred_at: datetime = Field(default_factory=utcnow, nullable=False)
+    details: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, default=dict),
     )
 
 

@@ -15,8 +15,8 @@ It is **still not safe to describe as a production-ready public SaaS**.
 Revocable sessions, exact-Origin cookie-write enforcement, scoped API keys,
 baseline per-process rate limits, and browser security headers are now
 verified. Multi-instance realtime and distributed abuse controls, restore
-automation, monitoring, artifact provenance, and runtime-image hardening
-remain open release gates.
+operations in the production control plane, monitoring, artifact provenance,
+and runtime-image hardening remain open release gates.
 
 This document deliberately separates verified controls from target controls.
 Security guarantees must be limited to what the code, tests, and operational
@@ -84,15 +84,22 @@ evidence support.
 - Ticket state changes and selected actions create audit records.
 - Destructive project, subproject, ticket, and knowledge actions have explicit
   routes and tests.
+- Workspace owners can create hashed tenant exports, schedule a 30-day
+  recoverable deletion that immediately revokes API keys, restore before
+  expiry, and permanently purge only after verified backup evidence.
+- Database archives are encrypted with AES-256-GCM before object storage;
+  wrong keys, ciphertext modification, schema drift, unsafe targets, and
+  incomplete PostgreSQL restores fail closed.
 
 ### Verification
 
-- 133 backend/MCP tests pass in the normal suite and one additional
-  PostgreSQL-only migration/claim regression passes against PostgreSQL 17.
+- The backend/MCP suite passes with separate PostgreSQL-only migration/claim
+  and encrypted backup/restore regressions against PostgreSQL 17.
 - The suite includes concurrent claim, expiry, dependency, cascade, state,
   knowledge, cross-workspace read/write/delete isolation, role enforcement,
-  tenant-filtered events, safe legacy adoption, OAuth hardening, and MCP
-  subprocess coverage. Alembic upgrades and exact ORM parity were also
+  tenant-filtered events, safe legacy adoption, OAuth hardening, tenant export
+  and purge, backup tamper rejection, and MCP subprocess coverage. Alembic
+  upgrades, encrypted restore, restored tenant data, and exact ORM parity are
   exercised against ephemeral PostgreSQL 17.
 - The frontend TypeScript and production build pass on the upgraded Vite 8
   toolchain.
@@ -100,8 +107,8 @@ evidence support.
   migration-built database: local-key-to-HttpOnly-session exchange plus two
   realtime/SSE behaviors.
 - GitHub workflows cover the test/build path on Python 3.12 and 3.14,
-  a PostgreSQL 17 migration/claim path, dependency review, Python and npm
-  vulnerability audits, complete-history secret scanning, and CodeQL for
+  a PostgreSQL 17 migration/claim/restore path, dependency review, Python and
+  npm vulnerability audits, complete-history secret scanning, and CodeQL for
   Python and JavaScript/TypeScript.
 - Workflow actions are pinned to full commit SHAs and Dependabot covers the
   Actions, Python, MCP, and npm manifests.
@@ -117,7 +124,8 @@ Mouvadah does not currently guarantee:
   resistance;
 - multi-instance realtime delivery;
 - encrypted application-layer fields or customer-managed keys;
-- migration rollback, point-in-time recovery, or tested disaster recovery;
+- migration rollback, configured provider point-in-time recovery, or tested
+  production disaster recovery;
 - signed builds, SBOMs, provenance attestations, or container scanning;
 - a response-time SLA, RPO, or RTO;
 - SOC 2, ISO 27001, HIPAA, FedRAMP, or other certification;
@@ -224,7 +232,9 @@ Verified behavior:
 
 Residual risk:
 
-- managed PostgreSQL backup and restore automation remains ticket #84;
+- the independent encrypted backup job exists in the repository, but its
+  production bucket, secrets, provider snapshot schedule, alerting, and
+  recurring restore evidence are not yet verified;
 - no historical schema older than the documented 0.1.0 baseline is guessed at
   or silently repaired; and
 - production restore exercises have not yet established an RPO or RTO.
@@ -311,19 +321,24 @@ Residual risk:
   test dependencies; and
 - release artifacts are not yet independently reproducible.
 
-### Medium: recovery and deletion are immature
+### Partially resolved medium: recovery and deletion
 
-SQLite is easy to copy, but there is no verified scheduled backup, restore
-exercise, retention policy, soft-delete/recovery window, or tenant export.
-Destructive MCP tools hard-delete immediately.
+The repository now supplies authenticated application-layer encryption for
+SQLite and PostgreSQL archives, download-and-verify S3 automation, 35-day
+retention and least-privilege IAM templates, restore-target guards, a real
+PostgreSQL 17 restore regression, owner tenant export, a configurable 30-day
+workspace recovery window, immediate workspace-key revocation, and
+backup-evidence-gated purge with a retained non-content ledger.
 
-Required outcome:
+Residual risk:
 
-- automated encrypted backups with restore tests;
-- recoverable deletion window for hosted offerings;
-- explicit confirmation or policy approval for high-impact agent deletion;
-- tenant export and verified purge workflow;
-- measured RPO/RTO before publishing targets.
+- production S3 and database-provider recovery controls have not been
+  configured and evidenced;
+- recurring production-environment restore drills have not measured RPO/RTO;
+- the backup job needs failure alerting and operator ownership;
+- account-wide deletion is not implemented; and
+- destructive MCP tools for individual projects, subprojects, tickets, and
+  knowledge nodes still hard-delete immediately without an approval policy.
 
 ### Low: operational visibility is minimal
 
@@ -500,12 +515,12 @@ tenant isolation, restore testing, or secure authorization.
 
 ## Immediate verification backlog
 
-1. Automate managed PostgreSQL backup/restore and measure recovery.
-2. Build tenant export, deletion, and verified purge workflows.
-3. Replace process-local SSE with tested shared fan-out for hosted deployments.
-4. Add distributed abuse controls, monitoring, and operator alerting.
-5. Add dependency locks, container scanning, SBOMs, signing, and provenance.
-6. Create a threat model for GitHub/Linear integrations before implementation.
+1. Configure provider snapshots and the independent production backup job,
+   then run and record an isolated production-environment restore drill.
+2. Replace process-local SSE with tested shared fan-out for hosted deployments.
+3. Add distributed abuse controls, monitoring, and operator alerting.
+4. Add dependency locks, container scanning, SBOMs, signing, and provenance.
+5. Create a threat model for GitHub/Linear integrations before implementation.
 
 ## Standards and primary references
 

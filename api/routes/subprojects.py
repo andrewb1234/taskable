@@ -116,7 +116,13 @@ async def delete_subproject(
     user: CurrentUser,
 ) -> None:
     """Delete a subproject and cascade its tickets, comments, and audit logs."""
-    subproject = require_subproject(session, user, subproject_id, admin=True)
+    subproject = require_subproject(
+        session,
+        user,
+        subproject_id,
+        admin=True,
+        write=True,
+    )
     project_id = subproject.project_id
     workspace_id = workspace_id_for_project(session, project_id)
     ticket_ids = list(

@@ -22,6 +22,14 @@
       * `TicketEditor`: Editable description.
       * `MetadataPane`: Assignee, Status, and MR link management.
       * `CommentThread`: Chat interface for Human/Agent discussion.
+  * `ProfilePage`: Identity and owner controls.
+    * Creates scoped, expiring workspace API keys and lists revoked keys.
+    * Lists and revokes browser sessions.
+    * `Data & Recovery` downloads hashed owner exports, enables deletion only
+      after a fresh export, requires the exact workspace slug, lists pending
+      purge deadlines, and restores workspaces during the recovery window.
+    * Deleted workspaces never appear in API-key creation options, and the UI
+      states that restoration does not reactivate revoked keys.
 
 ## Styling Guidelines
 * Utilize `shadcn/ui` for complex interactives (Dialog, Select, Dropdown).
