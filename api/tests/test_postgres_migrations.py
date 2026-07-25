@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 
@@ -16,6 +17,7 @@ from api.migrations.runtime import (
     upgrade_database,
 )
 from api.backup import create_backup, restore_backup
+from api.events import Event, EventBroadcaster
 from api.models.entities import (
     AuditLog,
     Project,
@@ -25,7 +27,12 @@ from api.models.entities import (
     Workspace,
     WorkspaceMembership,
 )
-from api.models.enums import ActorRole, AuditAction, WorkspaceRole
+from api.models.enums import (
+    ActorRole,
+    AuditAction,
+    SSEAction,
+    WorkspaceRole,
+)
 from api.routes.tickets import _claim_ticket_atomic
 from api.utils.time import utcnow
 
@@ -251,3 +258,31 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
                 )
             )
         admin_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_postgres_realtime_fans_out_across_process_boundaries(
+    postgres_engine,
+) -> None:
+    raw_url = os.environ["POSTGRES_TEST_URL"]
+    first = EventBroadcaster()
+    second = EventBroadcaster()
+    event = Event(
+        action=SSEAction.TICKET_UPDATED,
+        entity="ticket",
+        entity_id=73,
+        parent_id=11,
+        workspace_id=5,
+    )
+    await first.start(raw_url)
+    await second.start(raw_url)
+    try:
+        async with second.subscribe() as queue:
+            await first.publish(event)
+            received = await asyncio.wait_for(queue.get(), timeout=3.0)
+        assert received == event
+        assert first.status() == "healthy"
+        assert second.status() == "healthy"
+    finally:
+        await first.stop()
+        await second.stop()

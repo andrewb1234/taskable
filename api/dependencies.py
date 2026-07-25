@@ -12,4 +12,8 @@ from api.database import get_session
 
 
 SessionDep = Annotated[Session, Depends(get_session)]
+FunctionSessionDep = Annotated[
+    Session,
+    Depends(get_session, scope="function"),
+]
 SettingsDep = Annotated[Settings, Depends(get_settings)]

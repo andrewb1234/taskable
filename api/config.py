@@ -8,6 +8,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 # Default SQLite location: a hidden folder in the user's home directory so the
 # DB survives `git clean`, is trivial to back up / inspect with desktop tools,
@@ -24,6 +25,7 @@ class Settings(BaseSettings):
 
     github_pat: str | None = None
     database_url: str = _DEFAULT_DATABASE_URL
+    realtime_database_url: str | None = None
     migration_mode: Literal["upgrade", "check"] = "upgrade"
     cors_origins: list[str] = [
         "http://localhost:3000",
@@ -67,9 +69,52 @@ class Settings(BaseSettings):
             raise RuntimeError("FRONTEND_URL must not contain credentials.")
         return f"{parsed.scheme}://{parsed.netloc}"
 
+    def effective_realtime_database_url(self) -> str:
+        """Return the direct database URL used by PostgreSQL LISTEN/NOTIFY.
+
+        Neon uses ``-pooler`` hostnames for transaction-pooled connections,
+        where session-level LISTEN state is unsupported. When no explicit
+        override is supplied, convert that documented Neon hostname shape to
+        its direct endpoint while retaining the same credential and database.
+        Other providers can set ``REALTIME_DATABASE_URL`` explicitly.
+        """
+        application = make_url(self.database_url)
+        if application.get_backend_name() != "postgresql":
+            if self.realtime_database_url:
+                raise RuntimeError(
+                    "REALTIME_DATABASE_URL is only valid with PostgreSQL."
+                )
+            return self.database_url
+
+        realtime = make_url(
+            self.realtime_database_url or self.database_url
+        )
+        if realtime.get_backend_name() != "postgresql":
+            raise RuntimeError(
+                "REALTIME_DATABASE_URL must use PostgreSQL."
+            )
+        if realtime.database != application.database:
+            raise RuntimeError(
+                "REALTIME_DATABASE_URL must target the application database."
+            )
+        if realtime.username != application.username:
+            raise RuntimeError(
+                "REALTIME_DATABASE_URL must use the application database user."
+            )
+        if (
+            self.realtime_database_url is None
+            and realtime.host
+            and "-pooler." in realtime.host
+        ):
+            realtime = realtime.set(
+                host=realtime.host.replace("-pooler.", ".", 1)
+            )
+        return realtime.render_as_string(hide_password=False)
+
     def validate_production(self) -> None:
         """Raise if security-sensitive defaults are still set in production."""
         parsed = urlsplit(self.public_origin())
+        self.effective_realtime_database_url()
         rate_values = {
             "AUTH_RATE_LIMIT": self.auth_rate_limit,
             "AUTH_RATE_WINDOW_SECONDS": self.auth_rate_window_seconds,

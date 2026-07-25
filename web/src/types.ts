@@ -19,6 +19,7 @@ export type ActorRole = "HUMAN" | "AGENT";
 export type AuditAction = "STATUS_UPDATE" | "CONTENT_UPDATE" | "MR_LINKED" | "TICKET_CLAIMED" | "TICKET_REQUEUED";
 
 export type SSEAction =
+  | "SYNC_REQUIRED"
   | "PROJECT_CREATED"
   | "PROJECT_DELETED"
   | "SUBPROJECT_CREATED"
@@ -114,6 +115,7 @@ export interface SSEPayload {
   entity: string;
   entity_id: number;
   parent_id: number | null;
+  workspace_id: number | null;
 }
 
 export const TICKET_STATUSES: TicketStatus[] = [

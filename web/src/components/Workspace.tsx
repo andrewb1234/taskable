@@ -32,6 +32,7 @@ export function Workspace({ lastEvent }: Props) {
   useEffect(() => {
     if (!lastEvent || activeSubprojectId == null) return;
     if (
+      lastEvent.action === "SYNC_REQUIRED" ||
       (lastEvent.entity === "ticket" &&
         lastEvent.parent_id === activeSubprojectId) ||
       (lastEvent.entity === "subproject" &&

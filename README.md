@@ -4,7 +4,9 @@ A local-first control and memory plane for **human-agent software delivery**.
 Humans work in the React UI, agents work through MCP, and both use the same
 FastAPI state machine for durable project context, dependency-safe execution,
 reviewable knowledge, and handoffs across short-lived agent sessions.
-Real-time updates flow back to the UI through Server-Sent Events.
+Real-time invalidations flow back to the UI through Server-Sent Events.
+PostgreSQL deployments share them across API processes through direct
+LISTEN/NOTIFY; SQLite deployments retain the lightweight local broadcaster.
 
 > Full specifications live in [`docs/`](./docs). Architectural decisions and frictions are logged in [`learnings.md`](./learnings.md).
 > The current company direction, offerings, competitive position, and release
@@ -301,8 +303,9 @@ paths, URLs) render as muted monospace chips.
   headers are active. Encrypted recovery automation and owner workspace
   lifecycle controls are implemented and tested, but the production backup
   bucket/provider schedule and recurring restore evidence are not yet
-  configured. Shared realtime, distributed abuse controls, and operational
-  monitoring remain open.
+  configured. Shared PostgreSQL realtime is implemented and tested, but hosted
+  failover evidence, distributed abuse controls, and operational monitoring
+  remain open.
   See `docs/security_and_trust.md`.
 
 ## Working directory layout

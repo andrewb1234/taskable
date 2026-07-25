@@ -1,22 +1,18 @@
-"""Server-Sent Events stream.
-
-Every connected UI client holds an open GET /events connection; the
-``EventBroadcaster`` singleton fans out state-change notifications so the
-Kanban board can re-fetch the affected entity in the background.
-"""
+"""Authenticated, workspace-filtered Server-Sent Events stream."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Request, status
 from sse_starlette.sse import EventSourceResponse
-from sqlmodel import select
+from sqlmodel import Session, select
 
-from api.auth import CurrentUser
-from api.dependencies import SessionDep
-from api.events import get_broadcaster
+from api import database
+from api.auth import StreamCurrentUser
+from api.events import Event, ResyncSignal, get_broadcaster
 from api.models.entities import WorkspaceMembership
 from api.security import get_api_key_authorization
 
@@ -25,33 +21,58 @@ router = APIRouter(tags=["events"])
 _HEARTBEAT_SECONDS = 15.0
 
 
-def can_receive_event(session, user, event) -> bool:
+@dataclass(frozen=True)
+class StreamAuthorization:
+    """Immutable authorization captured before the streaming response starts."""
+
+    user_id: int
+    api_key_workspace_id: int | None
+
+
+def can_receive_event(
+    session: Session,
+    authorization: StreamAuthorization,
+    event: Event,
+) -> bool:
     """Return whether a caller currently belongs to an event's workspace."""
     if event.workspace_id is None:
         return False
-    api_key = get_api_key_authorization()
-    if api_key is not None and api_key.workspace_id != event.workspace_id:
+    if (
+        authorization.api_key_workspace_id is not None
+        and authorization.api_key_workspace_id != event.workspace_id
+    ):
         return False
     return (
         session.exec(
             select(WorkspaceMembership.id).where(
                 WorkspaceMembership.workspace_id == event.workspace_id,
-                WorkspaceMembership.user_id == user.id,
+                WorkspaceMembership.user_id == authorization.user_id,
             )
         ).first()
         is not None
     )
 
 
+def _can_receive_with_short_session(
+    authorization: StreamAuthorization,
+    event: Event,
+) -> bool:
+    with Session(database.engine) as session:
+        return can_receive_event(session, authorization, event)
+
+
 @router.get("/events")
 async def stream_events(
     request: Request,
-    session: SessionDep,
-    user: CurrentUser,
+    user: StreamCurrentUser,
 ) -> EventSourceResponse:
-    """Stream SSE events. Emits a heartbeat comment every 15s to keep the
-    connection alive through proxies/load-balancers."""
-
+    """Stream content-free invalidations and explicit resync instructions."""
+    user_id = user.id
+    if user_id is None:  # pragma: no cover - persisted auth invariant
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
     api_key = get_api_key_authorization()
     if api_key is not None and api_key.project_ids:
         raise HTTPException(
@@ -61,26 +82,47 @@ async def stream_events(
                 "workspace-wide event stream."
             ),
         )
-
+    authorization = StreamAuthorization(
+        user_id=user_id,
+        api_key_workspace_id=(
+            api_key.workspace_id if api_key is not None else None
+        ),
+    )
     broadcaster = get_broadcaster()
 
     async def event_generator() -> AsyncIterator[dict]:
         async with broadcaster.subscribe() as queue:
-            # Prime the stream so the client knows we're live.
-            yield {"event": "ready", "data": "ok"}
+            # Notifications are invalidation hints, not a replayable log.
+            # Every initial connection and automatic EventSource reconnect
+            # therefore instructs the UI to refetch all authorized live state.
+            yield {
+                "event": "ready",
+                "data": ResyncSignal(reason="connected").to_json(),
+            }
             while True:
                 if await request.is_disconnected():
                     break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_SECONDS)
+                    item = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=_HEARTBEAT_SECONDS,
+                    )
                 except asyncio.TimeoutError:
-                    # SSE "comment" line → keeps the connection warm.
                     yield {"comment": "heartbeat"}
                     continue
-                # Re-check membership for every event so a revoked user does
-                # not retain realtime access through an already-open stream.
-                if not can_receive_event(session, user, event):
+                if isinstance(item, ResyncSignal):
+                    yield {"event": "resync", "data": item.to_json()}
                     continue
-                yield {"event": "message", "data": event.to_json()}
+                # The request authentication session has already closed.
+                # Re-check membership with a short transaction for every event
+                # so revocation affects an already-open stream.
+                allowed = await asyncio.to_thread(
+                    _can_receive_with_short_session,
+                    authorization,
+                    item,
+                )
+                if not allowed:
+                    continue
+                yield {"event": "message", "data": item.to_json()}
 
     return EventSourceResponse(event_generator())

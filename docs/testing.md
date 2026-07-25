@@ -21,7 +21,9 @@ realtime path, and dependency supply chain.
   migration, commits real claim/requeue audit actions, creates an encrypted
   PostgreSQL custom archive, and restores it into the dedicated
   `taskable_restore_test` database. The test requires migration head, ORM
-  parity, and restored tenant data before it passes.
+  parity, and restored tenant data, then starts two independent broadcaster
+  instances and proves PostgreSQL LISTEN/NOTIFY delivers a workspace-tagged
+  event across the process boundary.
 * `api/tests/test_data_lifecycle.py` proves export hashing and exclusions,
   cross-tenant silence, owner/API-key boundaries, deletion confirmation,
   immediate API-key revocation, in-window restoration, expiry, verified
@@ -37,7 +39,9 @@ realtime path, and dependency supply chain.
 1. **CRUD Validation:** Verify project creation, subproject assignment, and ticket generation.
 2. **State Transitions:** Test the `PATCH /tickets/{id}` endpoint. Ensure invalid status updates return appropriate `400 Bad Request` HTTP errors.
 3. **Agent Capabilities:** Mock the `GITHUB_PAT` and test the MR linking logic. Verify the `GET /agent/context/{id}` payload correctly flattens the subproject context into an LLM-readable string.
-4. **SSE Broadcasting:** Intercept the internal event broadcaster to ensure state mutations (like ticket updates) successfully trigger internal event payloads.
+4. **SSE Broadcasting:** Verify mutation invalidations, bounded-queue overflow
+   resync, event validation, SQLite local mode, reconnect policy, workspace
+   authorization, and real cross-process PostgreSQL delivery.
 
 ## Local execution
 
@@ -62,7 +66,7 @@ the dedicated loopback `taskable_test` database.
 Pull requests and merge-queue candidates run:
 
 - `Required CI`: backend tests on Python 3.12 and 3.14, frontend type/build,
-  a PostgreSQL 17 migration/claim/encrypted-restore regression, and
+  a PostgreSQL 17 migration/claim/encrypted-restore/realtime regression, and
   authenticated Chromium realtime tests;
 - `Required security`: dependency review, Python and npm vulnerability audits,
   and complete-history secret scanning; and

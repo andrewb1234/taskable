@@ -19,7 +19,7 @@ export function useSSE(onEvent: (payload: SSEPayload) => void): void {
       withCredentials: true,
     });
 
-    source.onmessage = (event: MessageEvent<string>) => {
+    const dispatch = (event: MessageEvent<string>) => {
       try {
         const payload = JSON.parse(event.data) as SSEPayload;
         handlerRef.current(payload);
@@ -27,12 +27,19 @@ export function useSSE(onEvent: (payload: SSEPayload) => void): void {
         console.error("SSE payload parse failed", err, event.data);
       }
     };
+    source.onmessage = dispatch;
+    source.addEventListener("ready", dispatch as EventListener);
+    source.addEventListener("resync", dispatch as EventListener);
 
     source.onerror = (event) => {
       // EventSource auto-reconnects; surface transient errors for debugging.
       console.warn("SSE connection hiccup", event);
     };
 
-    return () => source.close();
+    return () => {
+      source.removeEventListener("ready", dispatch as EventListener);
+      source.removeEventListener("resync", dispatch as EventListener);
+      source.close();
+    };
   }, []);
 }

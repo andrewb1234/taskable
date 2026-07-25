@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy.engine import make_url
 from sqlmodel import select
 from starlette.requests import Request
 
@@ -139,6 +140,49 @@ def test_recovery_window_rejects_unsafe_bounds(days: int):
 @pytest.mark.parametrize("days", [7, 30, 90])
 def test_recovery_window_accepts_supported_bounds(days: int):
     _production_settings(deletion_recovery_days=days).validate_production()
+
+
+def test_neon_pooler_url_uses_documented_direct_realtime_host():
+    settings = Settings(
+        _env_file=None,
+        database_url=(
+            "postgresql://app:secret@"
+            "ep-example-pooler.us-east-2.aws.neon.tech/mouvadah"
+            "?sslmode=require"
+        ),
+    )
+
+    realtime = make_url(settings.effective_realtime_database_url())
+
+    assert realtime.host == "ep-example.us-east-2.aws.neon.tech"
+    assert realtime.database == "mouvadah"
+    assert realtime.password == "secret"
+
+
+def test_realtime_override_must_target_application_database():
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql://app:secret@pooled.example/mouvadah",
+        realtime_database_url=(
+            "postgresql://app:secret@direct.example/other"
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="application database"):
+        settings.effective_realtime_database_url()
+
+
+def test_realtime_override_must_use_application_database_user():
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql://app:secret@pooled.example/mouvadah",
+        realtime_database_url=(
+            "postgresql://other:secret@direct.example/mouvadah"
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="application database user"):
+        settings.effective_realtime_database_url()
 
 
 @pytest.mark.parametrize(

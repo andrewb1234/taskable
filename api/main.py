@@ -25,6 +25,7 @@ from starlette.responses import FileResponse
 from api.auth import get_current_user
 from api.config import get_settings
 from api.database import init_db
+from api.events import get_broadcaster
 from api.routes import (
     agent,
     apikeys,
@@ -46,7 +47,14 @@ from api.version import __version__, git_sha
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    yield
+    broadcaster = get_broadcaster()
+    await broadcaster.start(
+        get_settings().effective_realtime_database_url()
+    )
+    try:
+        yield
+    finally:
+        await broadcaster.stop()
 
 
 def create_app() -> FastAPI:
@@ -95,7 +103,9 @@ def create_app() -> FastAPI:
     api_v1.include_router(knowledge.router, dependencies=ui_auth)
     api_v1.include_router(proposals.router, dependencies=ui_auth)
     api_v1.include_router(sessions.router, dependencies=ui_auth)
-    api_v1.include_router(events.router, dependencies=ui_auth)
+    # The stream performs its own function-scoped authentication so a
+    # request-scoped SQLAlchemy session is not retained for the connection.
+    api_v1.include_router(events.router)
     api_v1.include_router(apikeys.router, dependencies=ui_auth)
     api_v1.include_router(workspaces.router, dependencies=ui_auth)
 
@@ -112,6 +122,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "version": __version__,
             "git_sha": git_sha(),
+            "realtime": get_broadcaster().status(),
         }
 
     # --- Serve built frontend (production) ---

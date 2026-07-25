@@ -8,7 +8,11 @@
 ## State Management & Real-time
 * **Global State:** Minimal. Use React Context for active `project_id` and `subproject_id`.
 * **Data Fetching:** Standard `fetch` (or a lightweight library like `SWR`) with targeted cache invalidation.
-* **Real-time Sync:** Implement a global `useSSE` hook listening to `GET /api/v1/events`. Upon receiving an event payload (e.g., `{"action": "TICKET_UPDATED", "entity_id": 42}`), invalidate the local cache for that entity and trigger a silent background refetch to update the UI.
+* **Real-time Sync:** The global `useSSE` hook listens to
+  `GET /api/v1/events`. Entity invalidations trigger targeted background
+  refetches. `SYNC_REQUIRED` on connect, reconnect, transport recovery, or
+  subscriber overflow refreshes every mounted data surface and clears stale
+  project/subproject selections.
 
 ## Component Tree Structure
 * `AppLayout`: Main screen wrapper.

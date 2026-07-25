@@ -46,6 +46,7 @@ export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
   useEffect(() => {
     if (!lastEvent) return;
     if (
+      lastEvent.action === "SYNC_REQUIRED" ||
       lastEvent.action === "PROJECT_CREATED" ||
       lastEvent.action === "PROJECT_DELETED"
     ) {
@@ -60,6 +61,16 @@ export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
+
+  useEffect(() => {
+    if (
+      activeProjectId != null &&
+      projects.data &&
+      !projects.data.some((project) => project.id === activeProjectId)
+    ) {
+      setActiveProjectId(null);
+    }
+  }, [activeProjectId, projects.data, setActiveProjectId]);
 
   async function handleDeleteProject(project: Project) {
     if (
@@ -232,6 +243,7 @@ function SubprojectList({
   useEffect(() => {
     if (!lastEvent) return;
     if (
+      lastEvent.action === "SYNC_REQUIRED" ||
       lastEvent.action === "SUBPROJECT_CREATED" ||
       lastEvent.action === "SUBPROJECT_UPDATED" ||
       lastEvent.action === "SUBPROJECT_DELETED"
@@ -246,6 +258,18 @@ function SubprojectList({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
+
+  useEffect(() => {
+    if (
+      activeSubprojectId != null &&
+      subprojects.data &&
+      !subprojects.data.some(
+        (subproject) => subproject.id === activeSubprojectId,
+      )
+    ) {
+      onSelect(null);
+    }
+  }, [activeSubprojectId, subprojects.data, onSelect]);
 
   useEffect(() => {
     if (

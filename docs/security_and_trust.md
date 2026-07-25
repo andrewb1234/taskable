@@ -14,9 +14,11 @@ membership before returning or mutating an object.
 It is **still not safe to describe as a production-ready public SaaS**.
 Revocable sessions, exact-Origin cookie-write enforcement, scoped API keys,
 baseline per-process rate limits, and browser security headers are now
-verified. Multi-instance realtime and distributed abuse controls, restore
-operations in the production control plane, monitoring, artifact provenance,
-and runtime-image hardening remain open release gates.
+verified. Shared PostgreSQL realtime is implemented and tested, but production
+multi-instance operation and listener failover still lack hosted evidence.
+Production backup control-plane configuration, distributed abuse controls,
+monitoring, artifact provenance, and runtime-image hardening remain open
+release gates.
 
 This document deliberately separates verified controls from target controls.
 Security guarantees must be limited to what the code, tests, and operational
@@ -69,7 +71,12 @@ evidence support.
 - API keys act as their owning user but are additionally constrained to their
   bound workspace, read/write scopes, and optional project allow-list.
 - Every emitted application event carries a workspace ID; the SSE stream
-  re-checks current membership before delivery.
+  captures its API-key workspace boundary before streaming, closes the
+  authentication session, and re-checks current membership in a short
+  transaction before every delivery.
+- PostgreSQL processes share content-free invalidations through direct
+  LISTEN/NOTIFY. SQLite remains local. Connect, reconnect, listener recovery,
+  and bounded-queue overflow trigger an explicit authorized-state resync.
 - Legacy projects are adopted only by an explicitly configured owner or by the
   sole user of a local-development database. Ambiguous legacy projects remain
   inaccessible.
@@ -93,13 +100,15 @@ evidence support.
 
 ### Verification
 
-- The backend/MCP suite passes with separate PostgreSQL-only migration/claim
-  and encrypted backup/restore regressions against PostgreSQL 17.
+- The backend/MCP suite passes with separate PostgreSQL-only migration/claim,
+  encrypted backup/restore, and cross-process realtime regressions against
+  PostgreSQL 17.
 - The suite includes concurrent claim, expiry, dependency, cascade, state,
   knowledge, cross-workspace read/write/delete isolation, role enforcement,
   tenant-filtered events, safe legacy adoption, OAuth hardening, tenant export
-  and purge, backup tamper rejection, and MCP subprocess coverage. Alembic
-  upgrades, encrypted restore, restored tenant data, and exact ORM parity are
+  and purge, backup tamper rejection, reconnect/overflow resync, and MCP
+  subprocess coverage. Alembic upgrades, encrypted restore, restored tenant
+  data, exact ORM parity, and two independent realtime broadcasters are
   exercised against ephemeral PostgreSQL 17.
 - The frontend TypeScript and production build pass on the upgraded Vite 8
   toolchain.
@@ -122,7 +131,7 @@ Mouvadah does not currently guarantee:
 - independently assessed confidentiality controls;
 - distributed rate limiting, workspace quotas, or denial-of-service
   resistance;
-- multi-instance realtime delivery;
+- production multi-instance availability or a durable/replayable event log;
 - encrypted application-layer fields or customer-managed keys;
 - migration rollback, configured provider point-in-time recovery, or tested
   production disaster recovery;
@@ -239,16 +248,30 @@ Residual risk:
   or silently repaired; and
 - production restore exercises have not yet established an RPO or RTO.
 
-### High: process-local realtime fan-out
+### Resolved high: process-local realtime fan-out
 
-The SSE stream is authenticated and tenant-filtered, including a membership
-check immediately before each event is delivered. The broadcaster remains
-process-local, so multiple API processes would deliver inconsistent updates.
+PostgreSQL deployments now publish content-free, workspace-tagged
+invalidations over LISTEN/NOTIFY while delivering locally without echo
+duplicates. A direct listener reconnects with bounded backoff and instructs
+all local clients to resync after recovery. Two independent broadcaster
+instances are exercised against PostgreSQL 17.
 
-Required outcome:
+The stream captures immutable user/API-key workspace authorization before the
+streaming response begins. Its authentication session uses function scope, and
+each event gets a new short membership transaction, avoiding one checked-out
+connection and idle transaction per browser stream.
 
-- use a durable or shared fan-out mechanism for multi-instance deployment;
-- test disconnect, replay policy, and cross-tenant silence.
+Replay policy is explicit: invalidations are not a business-event log.
+Connect/reconnect and subscriber overflow emit `SYNC_REQUIRED`, causing each UI
+surface to refetch currently authorized state.
+
+Residual risk:
+
+- production still runs one instance and has not evidenced failover under
+  real load;
+- shared transport health needs metrics and paging in the observability
+  release; and
+- PostgreSQL notifications are not durable or exactly once, by design.
 
 ### Resolved medium: browser mutation and session revocation
 
@@ -517,7 +540,7 @@ tenant isolation, restore testing, or secure authorization.
 
 1. Configure provider snapshots and the independent production backup job,
    then run and record an isolated production-environment restore drill.
-2. Replace process-local SSE with tested shared fan-out for hosted deployments.
+2. Exercise PostgreSQL listener failure/recovery in the hosted environment.
 3. Add distributed abuse controls, monitoring, and operator alerting.
 4. Add dependency locks, container scanning, SBOMs, signing, and provenance.
 5. Create a threat model for GitHub/Linear integrations before implementation.

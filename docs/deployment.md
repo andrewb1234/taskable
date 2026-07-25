@@ -23,8 +23,8 @@
   `MIGRATION_MODE=check`.
 - Run one migration job before application replicas.
 - Do not use application-startup upgrades across multiple replicas.
-- Realtime remains process-local and is not ready for multiple API instances
-  until the shared-fanout roadmap item ships.
+- PostgreSQL realtime fan-out uses a direct LISTEN/NOTIFY connection and is
+  tested across independent broadcaster instances.
 
 The complete database procedure is in `migrations.md`.
 
@@ -41,9 +41,30 @@ Required for hosted operation:
 - `DELETION_RECOVERY_DAYS=30` unless an explicitly reviewed 7-90 day policy
   is used.
 
+### Realtime database connection
+
+PostgreSQL deployments use LISTEN/NOTIFY to fan out content-free invalidations
+across API processes. LISTEN is session-scoped, so the listener must use a
+direct connection rather than a transaction pooler. Set
+`REALTIME_DATABASE_URL` to the same application database through a direct
+endpoint when needed; startup rejects a different database name or user.
+
+Neon documents that its pooled endpoints use PgBouncer transaction mode, where
+LISTEN is unsupported. When `DATABASE_URL` uses Neon's documented `-pooler`
+hostname form and no override is provided, Mouvadah derives the corresponding
+direct hostname automatically. See
+[Neon connection pooling](https://neon.com/docs/connect/connection-pooling).
+
+The application fails startup when the initial listener cannot connect.
+Runtime listener failures reconnect with bounded exponential backoff; clients
+receive a full-resync instruction after recovery. `/healthz` reports
+`realtime=healthy|degraded` for PostgreSQL and `local` for SQLite.
+
 Optional:
 
 - `CORS_ORIGINS`: explicit trusted origins.
+- `REALTIME_DATABASE_URL`: direct PostgreSQL URL for the same database when
+  `DATABASE_URL` goes through a transaction pooler.
 - `AUTH_RATE_LIMIT` / `AUTH_RATE_WINDOW_SECONDS`: per-process login/callback
   sliding-window limit (defaults to 10 requests per 300 seconds per client).
 - `ACTION_RATE_LIMIT` / `ACTION_RATE_WINDOW_SECONDS`: per-process unsafe-action
@@ -142,8 +163,8 @@ verify and record the managed backup before deploying.
 The repository supplies protected-CI workflow definitions, dependency update
 automation, and stable required-check names. The hosting platform, GitHub
 ruleset, and repository action policy remain operational configuration and
-must be checked during release. The independent backup job and retention
-templates exist, but their production secrets, bucket controls, provider
-snapshot schedule, and recurring restore evidence remain control-plane work.
-Shared realtime fanout and broader managed infrastructure-as-code remain
-absent.
+must be checked during release. Shared realtime is implemented and
+integration-tested but still needs hosted failover evidence. The independent
+backup job and retention templates exist, but their production secrets, bucket
+controls, provider snapshot schedule, and recurring restore evidence remain
+control-plane work. Broader managed infrastructure-as-code remains absent.

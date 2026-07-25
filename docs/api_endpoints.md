@@ -7,7 +7,11 @@
 * **Format:** `application/json`
 
 ## Real-Time Synchronization
-* `GET /events` : Server-Sent Events (SSE) stream broadcasting `{action, entity, entity_id, parent_id}`.
+* `GET /events` : Authenticated SSE stream broadcasting
+  `{action, entity, entity_id, parent_id, workspace_id}` invalidations.
+  Initial connection, automatic reconnect, listener recovery, and subscriber
+  overflow emit `SYNC_REQUIRED`; clients refetch authorized live state.
+  Project-restricted API keys cannot subscribe to the workspace-wide stream.
 
 ## Workspaces and Data Lifecycle
 

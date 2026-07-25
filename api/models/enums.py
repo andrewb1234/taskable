@@ -94,6 +94,7 @@ class KnowledgeNodeStatus(str, Enum):
 class SSEAction(str, Enum):
     """Vocabulary of events broadcast over ``GET /api/v1/events``."""
 
+    SYNC_REQUIRED = "SYNC_REQUIRED"
     PROJECT_CREATED = "PROJECT_CREATED"
     PROJECT_DELETED = "PROJECT_DELETED"
     SUBPROJECT_CREATED = "SUBPROJECT_CREATED"
