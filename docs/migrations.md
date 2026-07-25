@@ -91,6 +91,17 @@ read/write scope; keys with zero or multiple possible workspaces are revoked
 and must be reissued. Existing browser cookies do not contain a server-side
 session ID, so users must sign in once after this release.
 
+### Revision 0005 operational note
+
+Revision `0005_audit_action_enum_values` repairs pre-Alembic PostgreSQL
+databases whose native `auditaction` type predates `TICKET_CLAIMED` and
+`TICKET_REQUEUED`. Previously, Alembic column/type comparison did not compare
+native enum members, so the ORM parity gate did not expose this drift. The
+release gate now compares PostgreSQL enum labels explicitly. CI also reproduces
+the legacy enum, applies the migration, checks the actual `pg_enum` members,
+and commits claim/requeue audit records. SQLite needs no repair because it
+stores these enum values as strings.
+
 ## Failure and rollback policy
 
 If migration or parity verification fails:

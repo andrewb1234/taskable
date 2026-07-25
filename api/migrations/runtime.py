@@ -14,6 +14,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script.revision import ResolutionError
 from alembic.script import ScriptDirectory
+from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy import inspect
 from sqlalchemy.engine import Connection, Engine
 from sqlmodel import SQLModel
@@ -400,7 +401,34 @@ def schema_diffs(target_engine: Engine) -> list:
                 "render_as_batch": True,
             },
         )
-        return compare_metadata(context, SQLModel.metadata)
+        diffs = list(compare_metadata(context, SQLModel.metadata))
+        if connection.dialect.name == "postgresql":
+            expected_enums: dict[str, tuple[str, ...]] = {}
+            for table in SQLModel.metadata.tables.values():
+                for column in table.columns:
+                    if (
+                        isinstance(column.type, SQLAlchemyEnum)
+                        and column.type.name
+                    ):
+                        expected_enums[column.type.name] = tuple(
+                            column.type.enums
+                        )
+            actual_enums = {
+                enum["name"]: tuple(enum["labels"])
+                for enum in inspect(connection).get_enums()
+            }
+            for name, expected_labels in sorted(expected_enums.items()):
+                actual_labels = actual_enums.get(name)
+                if actual_labels != expected_labels:
+                    diffs.append(
+                        (
+                            "modify_postgresql_enum",
+                            name,
+                            actual_labels,
+                            expected_labels,
+                        )
+                    )
+        return diffs
 
 
 def assert_schema_matches_metadata(target_engine: Engine) -> None:
