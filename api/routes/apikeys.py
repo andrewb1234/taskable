@@ -22,6 +22,7 @@ from api.models.entities import (
     ApiKey,
     ApiKeyProject,
     Project,
+    Workspace,
     WorkspaceMembership,
 )
 from api.security import READ_SCOPE, VALID_API_KEY_SCOPES, WRITE_SCOPE
@@ -131,7 +132,12 @@ async def create_api_key(
     if workspace_id is None:
         workspace_id = session.exec(
             select(WorkspaceMembership.workspace_id)
+            .join(
+                Workspace,
+                Workspace.id == WorkspaceMembership.workspace_id,  # type: ignore[arg-type]
+            )
             .where(WorkspaceMembership.user_id == user.id)
+            .where(Workspace.deletion_requested_at.is_(None))
             .order_by(WorkspaceMembership.id)
         ).first()
     if workspace_id is None:
@@ -144,6 +150,7 @@ async def create_api_key(
         user,
         workspace_id,
         write=WRITE_SCOPE in payload.scopes,
+        lock=True,
     )
 
     if payload.project_ids:
@@ -192,6 +199,14 @@ async def revoke_api_key(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="API key not found",
         )
+    if api_key.workspace_id is not None:
+        # Serialize key metadata changes with tenant export, deletion, and
+        # purge without changing the existing owner-only revocation boundary.
+        session.exec(
+            select(Workspace)
+            .where(Workspace.id == api_key.workspace_id)
+            .with_for_update()
+        ).first()
     api_key.revoked = True
     session.add(api_key)
     session.commit()

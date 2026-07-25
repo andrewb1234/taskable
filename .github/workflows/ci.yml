@@ -71,7 +71,7 @@ jobs:
         run: npm run build
 
   postgres:
-    name: PostgreSQL migration and claim
+    name: PostgreSQL migration, claim, and recovery
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
@@ -102,10 +102,17 @@ jobs:
         run: >-
           python -m pip install --disable-pip-version-check
           -r api/requirements.txt
-      - name: Exercise legacy enum repair and claim audit
+      - name: Exercise migrations, claim audit, and encrypted restore
         env:
           POSTGRES_TEST_URL: >-
             postgresql://postgres:postgres@127.0.0.1:5432/taskable_test
+          POSTGRES_TOOL_HOST_OVERRIDE: 127.0.0.1
+          PG_DUMP_COMMAND: >-
+            docker run --rm -i --network host -e PGPASSWORD
+            postgres:17-alpine pg_dump
+          PG_RESTORE_COMMAND: >-
+            docker run --rm -i --network host -e PGPASSWORD
+            postgres:17-alpine pg_restore
         run: >-
           python -m pytest -q
           api/tests/test_postgres_migrations.py

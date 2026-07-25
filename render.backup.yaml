@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: cron
+    name: mouvadah-encrypted-postgres-backup
+    runtime: docker
+    plan: starter
+    region: oregon
+    schedule: "0 3 * * *"
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./docker/Dockerfile.backup
+    dockerContext: .
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: BACKUP_ENCRYPTION_KEY
+        sync: false
+      - key: BACKUP_KEY_ID
+        value: primary
+      - key: BACKUP_S3_BUCKET
+        sync: false
+      - key: BACKUP_S3_PREFIX
+        value: mouvadah/database
+      - key: BACKUP_S3_KMS_KEY_ID
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-west-2

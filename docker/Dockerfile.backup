@@ -1,0 +1,26 @@
+FROM postgres:17-alpine
+
+RUN apk add --no-cache \
+    aws-cli \
+    python3 \
+    py3-pip
+
+WORKDIR /app
+
+COPY api/requirements.txt /app/api/requirements.txt
+RUN python3 -m pip install \
+    --break-system-packages \
+    --disable-pip-version-check \
+    --no-cache-dir \
+    -r /app/api/requirements.txt
+
+COPY api /app/api
+COPY scripts/backup_to_s3.sh /app/scripts/backup_to_s3.sh
+
+RUN chmod 0755 /app/scripts/backup_to_s3.sh
+
+ENV PYTHONUNBUFFERED=1
+
+USER postgres
+
+ENTRYPOINT ["/app/scripts/backup_to_s3.sh"]

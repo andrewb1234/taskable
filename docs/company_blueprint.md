@@ -52,9 +52,9 @@ The current repository is a functional alpha, not a concept demo.
 - Google authentication, revocable browser sessions, workspace-bound scoped
   API keys, workspace ownership, membership roles, and object authorization.
 - SQLite for local use and a nominal PostgreSQL configuration path.
-- Docker packaging, 133 passing backend/MCP tests plus a PostgreSQL-only
-  migration/claim regression, MCP subprocess simulation, a production
-  frontend build, and three Playwright browser tests.
+- Docker packaging, 149 passing backend/MCP tests plus PostgreSQL-only
+  migration/claim/encrypted-restore regressions, MCP subprocess simulation, a
+  production frontend build, and three Playwright browser tests.
 
 ### Current product maturity
 
@@ -65,15 +65,15 @@ The current repository is a functional alpha, not a concept demo.
 | Durable context | Strong alpha | Trees, trails, proposals, sessions, provenance |
 | Human governance | Early alpha | Proposal review and audit actions exist |
 | Collaboration | Early alpha | Tenant-scoped workspaces and basic roles; no invite or role-management UI |
-| Hosted SaaS | Security-gated alpha | Tenancy, migrations, sessions, CSRF/origin, scoped keys, and headers exist; recovery and operations remain |
+| Hosted SaaS | Security-gated alpha | Tenancy, migrations, sessions, CSRF/origin, scoped keys, headers, and recovery code exist; production recovery controls and operations remain |
 | Local/self-host | Usable alpha | SQLite, Docker, stdio MCP |
 | Enterprise | Not available | No RBAC, SSO/SCIM, policy, compliance, or SLA |
 
 The most important conclusion is that Mouvadah has a differentiated core and a
 working application-layer tenant boundary, but the sign-in screen must not
 create a false impression of SaaS readiness. Authorization is only one release
-gate; browser-session security, delivery controls, recovery, and
-operations remain unfinished.
+gate; production recovery configuration, delivery controls, and operations
+remain unfinished.
 
 ## Customer and problem
 
@@ -418,11 +418,15 @@ messages and ticket creation are not value metrics.
 - **Delivered:** exact-Origin cookie-write defense, server-revocable browser
   sessions, workspace/project-scoped API keys, baseline per-process limits,
   and security headers.
-- Automate managed PostgreSQL backup/restore and run production-like recovery
-  exercises with measured RPO/RTO.
+- **Delivered:** application-encrypted PostgreSQL/SQLite backups, independent
+  S3 job and retention templates, PostgreSQL 17 restore regression, tenant
+  export, 30-day recoverable workspace deletion, immediate key revocation,
+  and backup-gated verified purge.
+- Configure the production provider snapshot schedule and independent backup
+  job, then run recurring production-environment restore exercises before
+  publishing RPO/RTO.
 - Add hash-locked Python dependencies, container scanning, SBOMs, artifact
   signing, and build provenance.
-- Tenant export, verified deletion, and recovery-window controls.
 - License, privacy policy, terms, and a security contact.
 
 ### P1: complete team beta

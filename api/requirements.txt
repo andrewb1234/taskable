@@ -10,6 +10,7 @@ httpx>=0.27,<0.29
 sse-starlette>=3.4,<4
 PyJWT>=2.8,<3
 psycopg2-binary>=2.9,<3
+cryptography>=48.0.1,<49
 
 # Dev / test
 pytest>=9.0.3,<10

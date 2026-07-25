@@ -3,8 +3,10 @@ import {
   ArrowLeft,
   Copy,
   Check,
+  Download,
   KeyRound,
   Plus,
+  RotateCcw,
   Trash2,
   Terminal,
   AlertCircle,
@@ -20,6 +22,9 @@ import {
   listWorkspaces,
   listBrowserSessions,
   revokeBrowserSession,
+  exportWorkspace,
+  restoreWorkspace,
+  scheduleWorkspaceDeletion,
 } from "@/lib/api";
 import type {
   ApiKey,
@@ -55,6 +60,11 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
   const [newlyCreatedKey, setNewlyCreatedKey] = useState<ApiKeyCreated | null>(null);
   const [copied, setCopied] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [workspaceActionId, setWorkspaceActionId] = useState<number | null>(
+    null,
+  );
+  const [exportHashes, setExportHashes] = useState<Record<number, string>>({});
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
 
   const fetchKeys = useCallback(async () => {
     try {
@@ -71,24 +81,40 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
     fetchKeys();
   }, [fetchKeys]);
 
-  useEffect(() => {
-    Promise.all([listWorkspaces(), listProjects(), listBrowserSessions()])
-      .then(([workspaceRows, projectRows, sessionRows]) => {
-        setWorkspaces(workspaceRows);
-        setProjects(projectRows);
-        setBrowserSessions(sessionRows);
-        setNewKeyWorkspaceId((current) =>
-          current || (workspaceRows[0] ? String(workspaceRows[0].id) : ""),
-        );
-      })
-      .catch((err) => {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load workspace access options",
-        );
-      });
+  const fetchAccessData = useCallback(async () => {
+    const [workspaceRows, projectRows, sessionRows] = await Promise.all([
+      listWorkspaces(),
+      listProjects(),
+      listBrowserSessions(),
+    ]);
+    const activeWorkspaceRows = workspaceRows.filter(
+      (workspace) => !workspace.deletion_requested_at,
+    );
+    setWorkspaces(workspaceRows);
+    setProjects(projectRows);
+    setBrowserSessions(sessionRows);
+    setNewKeyWorkspaceId((current) => {
+      if (
+        current &&
+        activeWorkspaceRows.some(
+          (workspace) => workspace.id === Number(current),
+        )
+      ) {
+        return current;
+      }
+      return activeWorkspaceRows[0] ? String(activeWorkspaceRows[0].id) : "";
+    });
   }, []);
+
+  useEffect(() => {
+    fetchAccessData().catch((err) => {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to load workspace access options",
+      );
+    });
+  }, [fetchAccessData]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -160,6 +186,88 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
     }
   }
 
+  async function handleWorkspaceExport(workspace: Workspace) {
+    setWorkspaceActionId(workspace.id);
+    setError(null);
+    setRecoveryNotice(null);
+    try {
+      const result = await exportWorkspace(workspace.id);
+      setExportHashes((current) => ({
+        ...current,
+        [workspace.id]: result.sha256,
+      }));
+      setRecoveryNotice(
+        `${workspace.name} was exported as ${result.filename}. Keep that file safe.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to export workspace",
+      );
+    } finally {
+      setWorkspaceActionId(null);
+    }
+  }
+
+  async function handleScheduleDeletion(workspace: Workspace) {
+    const exportSha256 = exportHashes[workspace.id];
+    if (!exportSha256) {
+      setError(
+        `Export ${workspace.name} in this browser before scheduling deletion.`,
+      );
+      return;
+    }
+    const confirmation = window.prompt(
+      `Schedule "${workspace.name}" for permanent deletion after the recovery window.\n\nThis immediately revokes its API keys. Type ${workspace.slug} to continue:`,
+    );
+    if (confirmation === null) return;
+
+    setWorkspaceActionId(workspace.id);
+    setError(null);
+    setRecoveryNotice(null);
+    try {
+      const result = await scheduleWorkspaceDeletion(workspace.id, {
+        confirmation,
+        export_sha256: exportSha256,
+      });
+      await Promise.all([fetchAccessData(), fetchKeys()]);
+      setExportHashes((current) => {
+        const next = { ...current };
+        delete next[workspace.id];
+        return next;
+      });
+      setRecoveryNotice(
+        `${workspace.name} is hidden and recoverable until ${formatDateTime(result.purge_after)}. Its API keys were revoked.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to schedule workspace deletion",
+      );
+    } finally {
+      setWorkspaceActionId(null);
+    }
+  }
+
+  async function handleRestoreWorkspace(workspace: Workspace) {
+    setWorkspaceActionId(workspace.id);
+    setError(null);
+    setRecoveryNotice(null);
+    try {
+      await restoreWorkspace(workspace.id);
+      await Promise.all([fetchAccessData(), fetchKeys()]);
+      setRecoveryNotice(
+        `${workspace.name} was restored. Previously revoked API keys remain revoked; create new keys when needed.`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to restore workspace",
+      );
+    } finally {
+      setWorkspaceActionId(null);
+    }
+  }
+
   function copyKey(key: string) {
     navigator.clipboard.writeText(key);
     setCopied(true);
@@ -168,7 +276,10 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
 
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return "—";
-    const d = new Date(dateStr);
+    const normalized = /(?:Z|[+-]\d{2}:\d{2})$/.test(dateStr)
+      ? dateStr
+      : `${dateStr}Z`;
+    const d = new Date(normalized);
     return d.toLocaleDateString(undefined, {
       year: "numeric",
       month: "short",
@@ -176,8 +287,29 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
     });
   }
 
+  function formatDateTime(dateStr: string | null): string {
+    if (!dateStr) return "—";
+    const normalized = /(?:Z|[+-]\d{2}:\d{2})$/.test(dateStr)
+      ? dateStr
+      : `${dateStr}Z`;
+    return new Date(normalized).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
+  }
+
   const activeKeys = keys.filter((k) => !k.revoked);
   const revokedKeys = keys.filter((k) => k.revoked);
+  const activeWorkspaces = workspaces.filter(
+    (workspace) => !workspace.deletion_requested_at,
+  );
+  const deletedWorkspaces = workspaces.filter(
+    (workspace) => workspace.deletion_requested_at,
+  );
   const selectedWorkspaceProjects = projects.filter(
     (project) => project.workspace_id === Number(newKeyWorkspaceId),
   );
@@ -281,7 +413,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                   }}
                   className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
                 >
-                  {workspaces.map((workspace) => (
+                  {activeWorkspaces.map((workspace) => (
                     <option key={workspace.id} value={workspace.id}>
                       {workspace.name} · {workspace.role}
                     </option>
@@ -501,6 +633,116 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                     </p>
                   </div>
                 )}
+              </div>
+            )}
+          </section>
+
+          {/* Data recovery */}
+          <section className="space-y-4">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Download className="h-4 w-4" />
+                Data & Recovery
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Owners can export a complete workspace, then schedule a
+                recoverable deletion. Scheduling immediately revokes every API
+                key for that workspace.
+              </p>
+            </div>
+
+            {recoveryNotice && (
+              <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-700 dark:text-green-400">
+                {recoveryNotice}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {activeWorkspaces.map((workspace) => (
+                <div
+                  key={workspace.id}
+                  className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{workspace.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      <code>{workspace.slug}</code>
+                      {" · "}
+                      {workspace.role}
+                    </p>
+                  </div>
+                  {workspace.role === "OWNER" ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={workspaceActionId === workspace.id}
+                        onClick={() => handleWorkspaceExport(workspace)}
+                      >
+                        {workspaceActionId === workspace.id ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Download className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Export
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={
+                          workspaceActionId === workspace.id ||
+                          !exportHashes[workspace.id]
+                        }
+                        onClick={() => handleScheduleDeletion(workspace)}
+                      >
+                        <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                        Schedule deletion
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      Owner controls only
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {deletedWorkspaces.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Pending permanent deletion
+                </p>
+                {deletedWorkspaces.map((workspace) => (
+                  <div
+                    key={workspace.id}
+                    className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{workspace.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Recoverable until{" "}
+                        {formatDateTime(workspace.purge_after)}. API keys stay
+                        revoked after restoration.
+                      </p>
+                    </div>
+                    {workspace.role === "OWNER" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={workspaceActionId === workspace.id}
+                        onClick={() => handleRestoreWorkspace(workspace)}
+                      >
+                        {workspaceActionId === workspace.id ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        Restore
+                      </Button>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </section>

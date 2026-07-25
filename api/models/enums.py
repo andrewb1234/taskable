@@ -21,6 +21,15 @@ class WorkspaceRole(str, Enum):
     SERVICE = "SERVICE"
 
 
+class WorkspaceLifecycleAction(str, Enum):
+    """Auditable workspace export and deletion lifecycle actions."""
+
+    EXPORTED = "EXPORTED"
+    DELETION_SCHEDULED = "DELETION_SCHEDULED"
+    DELETION_RESTORED = "DELETION_RESTORED"
+    PURGED = "PURGED"
+
+
 class TicketStatus(str, Enum):
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"

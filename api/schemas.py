@@ -20,6 +20,7 @@ from api.models.enums import (
     SubprojectStatus,
     TicketAssignee,
     TicketStatus,
+    WorkspaceLifecycleAction,
     WorkspaceRole,
 )
 
@@ -45,6 +46,34 @@ class WorkspaceRead(BaseModel):
     slug: str
     role: WorkspaceRole
     created_at: datetime
+    deletion_requested_at: Optional[datetime] = None
+    purge_after: Optional[datetime] = None
+    deletion_requested_by: Optional[int] = None
+    deletion_export_sha256: Optional[str] = None
+
+
+class WorkspaceDeletionCreate(BaseModel):
+    confirmation: str = Field(min_length=1, max_length=80)
+    export_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class WorkspaceDeletionRead(BaseModel):
+    workspace_id: int
+    deletion_requested_at: datetime
+    purge_after: datetime
+    deletion_export_sha256: str
+    revoked_api_keys: int = 0
+
+
+class WorkspaceLifecycleEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workspace_id: int
+    action: WorkspaceLifecycleAction
+    actor_user_id: Optional[int] = None
+    occurred_at: datetime
+    details: dict = Field(default_factory=dict)
 
 
 class WorkspaceMemberRead(BaseModel):

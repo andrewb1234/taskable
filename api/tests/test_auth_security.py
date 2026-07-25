@@ -128,6 +128,19 @@ def test_production_rejects_local_auth():
         settings.validate_production()
 
 
+@pytest.mark.parametrize("days", [6, 91])
+def test_recovery_window_rejects_unsafe_bounds(days: int):
+    settings = _production_settings(deletion_recovery_days=days)
+
+    with pytest.raises(RuntimeError, match="DELETION_RECOVERY_DAYS"):
+        settings.validate_production()
+
+
+@pytest.mark.parametrize("days", [7, 30, 90])
+def test_recovery_window_accepts_supported_bounds(days: int):
+    _production_settings(deletion_recovery_days=days).validate_production()
+
+
 @pytest.mark.parametrize(
     "frontend_url",
     [

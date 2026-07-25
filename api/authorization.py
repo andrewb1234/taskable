@@ -82,13 +82,22 @@ def require_workspace(
     *,
     write: bool = False,
     admin: bool = False,
+    include_deleted: bool = False,
+    lock: bool = False,
 ) -> tuple[Workspace, WorkspaceMembership]:
     api_key = get_api_key_authorization()
     if api_key is not None and api_key.workspace_id != workspace_id:
         raise _not_found("Workspace")
-    workspace = session.get(Workspace, workspace_id)
     membership = get_membership(session, user, workspace_id)
     _check_role(membership, write=write, admin=admin, label="Workspace")
+    workspace_query = select(Workspace).where(Workspace.id == workspace_id)
+    if not include_deleted:
+        workspace_query = workspace_query.where(
+            Workspace.deletion_requested_at.is_(None)
+        )
+    if lock or write:
+        workspace_query = workspace_query.with_for_update()
+    workspace = session.exec(workspace_query).first()
     if workspace is None:
         raise _not_found("Workspace")
     return workspace, membership  # type: ignore[return-value]
@@ -110,6 +119,7 @@ def ensure_personal_workspace(session: Session, user: User) -> Workspace:
         .where(
             WorkspaceMembership.user_id == user.id,
             WorkspaceMembership.role == WorkspaceRole.OWNER,
+            Workspace.deletion_requested_at.is_(None),
         )
         .order_by(Workspace.id)
     ).first()
@@ -166,18 +176,34 @@ def require_project(
     row = session.exec(
         select(Project, WorkspaceMembership)
         .join(
+            Workspace,
+            Workspace.id == Project.workspace_id,  # type: ignore[arg-type]
+        )
+        .join(
             WorkspaceMembership,
             WorkspaceMembership.workspace_id == Project.workspace_id,  # type: ignore[arg-type]
         )
         .where(
             Project.id == project_id,
             WorkspaceMembership.user_id == user.id,
+            Workspace.deletion_requested_at.is_(None),
         )
     ).first()
     if row is None:
         raise _not_found("Project")
     project, membership = row
     _check_role(membership, write=write, admin=admin, label="Project")
+    if write:
+        locked_workspace = session.exec(
+            select(Workspace)
+            .where(
+                Workspace.id == project.workspace_id,
+                Workspace.deletion_requested_at.is_(None),
+            )
+            .with_for_update()
+        ).first()
+        if locked_workspace is None:
+            raise _not_found("Project")
     api_key = get_api_key_authorization()
     if api_key is not None:
         if api_key.workspace_id != project.workspace_id:

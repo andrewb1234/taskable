@@ -11,6 +11,8 @@ Real-time updates flow back to the UI through Server-Sent Events.
 > gates live in [`docs/company_blueprint.md`](./docs/company_blueprint.md).
 > Verified security controls and explicit non-guarantees live in
 > [`docs/security_and_trust.md`](./docs/security_and_trust.md).
+> Backup, restore, export, and recoverable deletion operations live in
+> [`docs/recovery.md`](./docs/recovery.md).
 
 ## Architecture
 
@@ -29,7 +31,7 @@ Real-time updates flow back to the UI through Server-Sent Events.
 - `api/` — FastAPI backend (SQLModel entities, routes, SSE broadcaster, pytest).
 - `web/` — Vite + React + Tailwind UI with `useSSE` reactive refetch.
 - `mcp/` — Python MCP stdio server exposing the agent tool catalogue.
-- `docker/` — two-service docker-compose stack.
+- `docker/` — local two-service Compose stack plus the isolated backup runner.
 
 ## Agent authentication
 
@@ -97,7 +99,8 @@ The SQLite database lives at `~/.taskable/taskable.db` by default — survives
 startup applies ordered Alembic revisions and creates a timestamped
 pre-migration backup before changing an existing file-backed database. See
 [`docs/migrations.md`](./docs/migrations.md) for hosted PostgreSQL and rollback
-procedures.
+procedures, and [`docs/recovery.md`](./docs/recovery.md) for encrypted backups
+and restore drills.
 
 Visit `http://127.0.0.1:8000/docs` for the OpenAPI explorer.
 
@@ -168,7 +171,9 @@ agent endpoints, and SSE broadcasting against isolated databases. The
 run local setup, start a real API, load the generated credentials file in the
 MCP subprocess, complete JSON-RPC initialization, and create an authenticated
 project. Playwright verifies local-key browser sign-in and that agent updates
-propagate to the live React DOM via SSE.
+propagate to the live React DOM via SSE. Required CI also performs a real
+encrypted `pg_dump`/`pg_restore` cycle against PostgreSQL 17 and verifies
+restored tenant data plus exact schema parity.
 
 Quick aliases via the `Makefile`:
 
@@ -187,6 +192,10 @@ make e2e          # playwright realtime spec
 | GET    | `/api/v1/workspaces`                                | Caller memberships and roles. |
 | POST   | `/api/v1/workspaces`                                | Creates an owned workspace.   |
 | GET    | `/api/v1/workspaces/{id}/members`                   | OWNER/ADMIN only.             |
+| GET    | `/api/v1/workspaces/{id}/export`                    | Owner export + SHA-256.       |
+| POST   | `/api/v1/workspaces/{id}/deletion`                  | Export-gated recovery window. |
+| POST   | `/api/v1/workspaces/{id}/restore`                   | Owner restore before expiry.  |
+| GET    | `/api/v1/workspaces/{id}/lifecycle-events`          | Owner lifecycle evidence.     |
 | GET    | `/api/v1/projects`                                  |                               |
 | POST   | `/api/v1/projects`                                  |                               |
 | GET    | `/api/v1/projects/{id}`                             |                               |
@@ -262,6 +271,13 @@ the UI. Deletes cascade through SQLModel relationships and broadcast
 `PROJECT_DELETED | SUBPROJECT_DELETED | TICKET_DELETED | KNOWLEDGE_NODE_DELETED`
 over SSE so other panes reconcile immediately.
 
+Workspace deletion is deliberately different. Profile → Data & Recovery
+requires a fresh owner export and the exact workspace slug, revokes all
+workspace API keys immediately, hides the workspace graph for the recovery
+window, and allows owner restoration before the purge deadline. Permanent
+purge is an operator job gated on a newly uploaded and download-verified
+encrypted backup. Restoring a workspace never reactivates its old API keys.
+
 ### Live source-reference chips
 
 Knowledge-node `source_refs` entries of the form `node:<id>` render above the
@@ -282,8 +298,11 @@ paths, URLs) render as muted monospace chips.
 - **Alpha boundary:** Do not expose the current build as a production public
   SaaS. Browser sessions are server-revocable, unsafe cookie writes require
   the exact trusted Origin, API keys are scoped, and baseline rate/security
-  headers are active. Shared realtime, distributed abuse controls, recovery
-  automation, and operational monitoring remain open.
+  headers are active. Encrypted recovery automation and owner workspace
+  lifecycle controls are implemented and tested, but the production backup
+  bucket/provider schedule and recurring restore evidence are not yet
+  configured. Shared realtime, distributed abuse controls, and operational
+  monitoring remain open.
   See `docs/security_and_trust.md`.
 
 ## Working directory layout

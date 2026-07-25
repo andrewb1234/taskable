@@ -19,6 +19,7 @@ from api.models.entities import (
     Project,
     Subproject,
     Ticket,
+    Workspace,
     WorkspaceMembership,
 )
 from api.models.enums import SSEAction
@@ -43,10 +44,17 @@ def list_projects(
     query = (
         select(Project)
         .join(
+            Workspace,
+            Workspace.id == Project.workspace_id,  # type: ignore[arg-type]
+        )
+        .join(
             WorkspaceMembership,
             WorkspaceMembership.workspace_id == Project.workspace_id,  # type: ignore[arg-type]
         )
-        .where(WorkspaceMembership.user_id == user.id)
+        .where(
+            WorkspaceMembership.user_id == user.id,
+            Workspace.deletion_requested_at.is_(None),
+        )
         .order_by(Project.created_at)
     )
     api_key = get_api_key_authorization()
@@ -91,6 +99,12 @@ async def create_project(
         )
     elif payload.workspace_id is None:
         workspace = ensure_personal_workspace(session, user)
+        workspace, _ = require_workspace(
+            session,
+            user,
+            workspace.id,  # type: ignore[arg-type]
+            write=True,
+        )
     else:
         workspace, _ = require_workspace(
             session,
@@ -162,7 +176,13 @@ async def delete_project(
     The ORM relationships on ``Project`` have ``cascade="all, delete-orphan"``
     so a single ``session.delete`` sweeps the tree.
     """
-    project = require_project(session, user, project_id, admin=True)
+    project = require_project(
+        session,
+        user,
+        project_id,
+        admin=True,
+        write=True,
+    )
     workspace_id = project.workspace_id
     ticket_ids = list(
         session.exec(

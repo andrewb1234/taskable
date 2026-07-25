@@ -38,6 +38,8 @@ Required for hosted operation:
 - `JWT_SECRET`: unique random value of at least 32 characters.
 - `MIGRATION_MODE=check`.
 - `LOCAL_AUTH_ENABLED=false`.
+- `DELETION_RECOVERY_DAYS=30` unless an explicitly reviewed 7-90 day policy
+  is used.
 
 Optional:
 
@@ -56,6 +58,20 @@ Optional:
 
 Never put credentials in container images, repository files, logs, migration
 configuration, or frontend build variables.
+
+### Backup Cron Job
+
+The independent backup job is defined separately in `render.backup.yaml` and
+uses `docker/Dockerfile.backup`. It needs its own database credential,
+application-layer backup-encryption key, and least-privilege S3 credentials.
+Do not add those secrets to the static frontend or expose them to the main web
+process without a concrete operational need.
+
+The job creates, uploads, downloads, and verifies an encrypted archive before
+it is allowed to purge an expired workspace. Apply the S3 lifecycle and IAM
+templates in `infra/`, enable bucket public-access blocking, versioning, and
+default encryption, and complete an isolated restore drill before describing
+production backup as operational. See `recovery.md`.
 
 The application emits CSP, frame-denial, MIME-sniffing, referrer, and
 permissions headers on every response; HTTPS deployments also emit one-year
@@ -79,6 +95,15 @@ before adding replicas or claiming denial-of-service resistance.
 - Builds with Node 20 Alpine.
 - Serves static output from Nginx Alpine.
 - Proxies `/api/v1` to the API service.
+
+### Backup
+
+- Base: PostgreSQL 17 Alpine so `pg_dump` and `pg_restore` match the supported
+  production major version.
+- Adds Python, the API package, and AWS CLI.
+- Runs the encrypted backup-to-S3 script as its entrypoint.
+- Uses an ephemeral filesystem; retained recovery artifacts exist only in the
+  configured object store.
 
 ### Compose
 
@@ -117,5 +142,8 @@ verify and record the managed backup before deploying.
 The repository supplies protected-CI workflow definitions, dependency update
 automation, and stable required-check names. The hosting platform, GitHub
 ruleset, and repository action policy remain operational configuration and
-must be checked during release. Managed infrastructure-as-code, shared
-realtime fanout, and disaster-recovery automation are still absent.
+must be checked during release. The independent backup job and retention
+templates exist, but their production secrets, bucket controls, provider
+snapshot schedule, and recurring restore evidence remain control-plane work.
+Shared realtime fanout and broader managed infrastructure-as-code remain
+absent.

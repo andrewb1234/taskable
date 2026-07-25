@@ -13,6 +13,8 @@ or modifying any system component.
   boundaries, findings, target controls, and offering security gates.
 * `migrations.md`: Supported database states, backup-before-migrate behavior,
   PostgreSQL deployment gate, failure handling, and rollback policy.
+* `recovery.md`: Encrypted database backup, independent object storage,
+  restore drills, workspace export, recovery window, and verified purge.
 
 ## 1. System Foundations
 * `prd.md`: High-level objectives, capabilities, and system architecture.

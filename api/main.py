@@ -71,6 +71,10 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[
+            "Content-Disposition",
+            "X-Mouvadah-Export-SHA256",
+        ],
     )
     # Added after CORS so it wraps every API/static response, including CORS
     # rejections and mounted sub-application routes.
