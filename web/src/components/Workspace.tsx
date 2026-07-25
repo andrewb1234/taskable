@@ -15,8 +15,15 @@ interface Props {
 }
 
 export function Workspace({ lastEvent }: Props) {
-  const { activeProjectId, activeSubprojectId, openTicket, view, setView } =
-    useWorkspace();
+  const {
+    activeProjectId,
+    activeSubprojectId,
+    activeProjectName,
+    activeSubprojectName,
+    openTicket,
+    view,
+    setView,
+  } = useWorkspace();
   const subproject = useAsync<SubprojectDetail | null>(
     () =>
       activeSubprojectId == null
@@ -43,37 +50,57 @@ export function Workspace({ lastEvent }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent, activeSubprojectId]);
 
-  if (activeProjectId == null) {
-    return (
-      <main className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        Select a project from the sidebar to get started.
-      </main>
-    );
-  }
-
   return (
-    <main className="flex flex-1 flex-col overflow-hidden">
-      <nav className="flex items-center gap-1 border-b border-border bg-card/20 px-4 py-2 text-xs">
-        <ViewTab
-          active={view === "knowledge"}
-          onClick={() => setView("knowledge")}
-          icon={<Network className="h-3.5 w-3.5" />}
-          label="Knowledge"
-          hint="Plan upstream"
-        />
-        <ViewTab
-          active={view === "subproject"}
-          onClick={() => setView("subproject")}
-          icon={<KanbanSquare className="h-3.5 w-3.5" />}
-          label="Kanban"
-          hint={
-            activeSubprojectId == null
-              ? "Pick a subproject"
-              : "Execute downstream"
-          }
-        />
-      </nav>
-      {view === "knowledge" ? (
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-border bg-card/50 px-3 py-3 sm:px-5">
+        <div className="mb-3 flex min-w-0 items-center gap-2">
+          <span className="technical-label shrink-0">Active context</span>
+          <span
+            className="min-w-0 truncate text-sm font-semibold"
+            title={activeProjectName ?? undefined}
+          >
+            {activeProjectId == null
+              ? "No project selected"
+              : activeProjectName ?? `Project #${activeProjectId}`}
+          </span>
+          {activeSubprojectId != null && (
+            <>
+              <span className="text-muted-foreground" aria-hidden>/</span>
+              <span
+                className="min-w-0 truncate text-sm text-muted-foreground"
+                title={activeSubprojectName ?? undefined}
+              >
+                {activeSubprojectName ?? `Subproject #${activeSubprojectId}`}
+              </span>
+            </>
+          )}
+        </div>
+        <nav className="grid grid-cols-2 gap-2" aria-label="Workspace views">
+          <ViewTab
+            active={view === "knowledge"}
+            onClick={() => setView("knowledge")}
+            icon={<Network className="h-4 w-4" />}
+            label="Knowledge"
+            description="Plan and review evidence"
+          />
+          <ViewTab
+            active={view === "subproject"}
+            onClick={() => setView("subproject")}
+            icon={<KanbanSquare className="h-4 w-4" />}
+            label="Kanban"
+            description={
+              activeSubprojectId == null
+                ? "Choose a subproject"
+                : "Execute and hand off work"
+            }
+          />
+        </nav>
+      </header>
+      {activeProjectId == null ? (
+        <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+          Open workspace navigation and select a project to get started.
+        </div>
+      ) : view === "knowledge" ? (
         <KnowledgePanel projectId={activeProjectId} lastEvent={lastEvent} />
       ) : activeSubprojectId == null ? (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -94,6 +121,7 @@ export function Workspace({ lastEvent }: Props) {
           minSize={72}
           maxSize={480}
           storageKey="taskable.kanban.headerHeight"
+          separatorLabel="Resize Kanban context"
           first={
             <SubprojectHeader
               subproject={subproject.data}
@@ -120,28 +148,36 @@ interface ViewTabProps {
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
-  hint?: string;
+  description: string;
 }
 
-function ViewTab({ active, onClick, icon, label, hint }: ViewTabProps) {
+function ViewTab({
+  active,
+  onClick,
+  icon,
+  label,
+  description,
+}: ViewTabProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 rounded-md border px-2.5 py-1 transition-colors",
+        "flex min-w-0 items-center gap-2 border px-3 py-2 text-left transition-colors",
         active
-          ? "border-primary/50 bg-primary/10 text-primary-foreground"
-          : "border-transparent text-muted-foreground hover:bg-accent/40",
+          ? "border-brand-brass bg-brand-brass/10 text-foreground"
+          : "border-border bg-background/40 text-muted-foreground hover:bg-accent/40",
       )}
     >
-      {icon}
-      <span className="font-semibold">{label}</span>
-      {hint && (
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          {hint}
+      <span className={cn("shrink-0", active && "text-brand-brass")}>
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold">{label}</span>
+        <span className="hidden truncate text-[10px] text-muted-foreground sm:block">
+          {description}
         </span>
-      )}
+      </span>
     </button>
   );
 }
