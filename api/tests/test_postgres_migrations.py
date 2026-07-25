@@ -261,6 +261,20 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
 
         monkeypatch.setenv("DATABASE_URL", raw_url)
         get_settings.cache_clear()
+        restored_engine = create_engine(restore_url)
+        try:
+            with restored_engine.begin() as connection:
+                connection.execute(
+                    text("CREATE SCHEMA restored_customer_data")
+                )
+                connection.execute(
+                    text(
+                        "CREATE TABLE restored_customer_data.private_rows "
+                        "(id integer primary key, value text)"
+                    )
+                )
+        finally:
+            restored_engine.dispose()
         reset_restore_drill_target(
             restore_url,
             confirm_database=restore_database,
@@ -268,6 +282,9 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
         scrubbed_engine = create_engine(restore_url)
         try:
             assert inspect(scrubbed_engine).get_table_names() == []
+            assert "restored_customer_data" not in (
+                inspect(scrubbed_engine).get_schema_names()
+            )
         finally:
             scrubbed_engine.dispose()
     finally:

@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-: "${DATABASE_URL:?DATABASE_URL is required}"
 : "${RESTORE_DRILL_DATABASE_URL:?RESTORE_DRILL_DATABASE_URL is required}"
 : "${RESTORE_DRILL_CONFIRM_DATABASE:?RESTORE_DRILL_CONFIRM_DATABASE is required}"
+: "${RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT:?RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT is required}"
 : "${BACKUP_ENCRYPTION_KEY:?BACKUP_ENCRYPTION_KEY is required}"
 : "${BACKUP_S3_BUCKET:?BACKUP_S3_BUCKET is required}"
 : "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"
@@ -28,7 +28,9 @@ cleanup() {
   if [ "$target_needs_scrub" -eq 1 ]; then
     python3 -m api.backup reset-drill-target \
       --target-url "$RESTORE_DRILL_DATABASE_URL" \
-      --confirm-database "$RESTORE_DRILL_CONFIRM_DATABASE" || scrub_status="$?"
+      --confirm-database "$RESTORE_DRILL_CONFIRM_DATABASE" \
+      --protected-database-fingerprint \
+        "$RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT" || scrub_status="$?"
   fi
   rm -rf "$work_dir"
   if [ "$original_status" -ne 0 ]; then
@@ -100,7 +102,9 @@ python3 -m api.backup verify --input "$backup_file"
 
 python3 -m api.backup reset-drill-target \
   --target-url "$RESTORE_DRILL_DATABASE_URL" \
-  --confirm-database "$RESTORE_DRILL_CONFIRM_DATABASE"
+  --confirm-database "$RESTORE_DRILL_CONFIRM_DATABASE" \
+  --protected-database-fingerprint \
+    "$RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT"
 target_needs_scrub=1
 
 restore_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -108,7 +112,9 @@ restore_started_epoch="$(date -u +%s)"
 python3 -m api.backup restore \
   --input "$backup_file" \
   --target-url "$RESTORE_DRILL_DATABASE_URL" \
-  --confirm-database "$RESTORE_DRILL_CONFIRM_DATABASE"
+  --confirm-database "$RESTORE_DRILL_CONFIRM_DATABASE" \
+  --protected-database-fingerprint \
+    "$RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT"
 DATABASE_URL="$RESTORE_DRILL_DATABASE_URL" \
   python3 -m api.migrations check
 restore_finished_epoch="$(date -u +%s)"
@@ -116,7 +122,9 @@ restore_finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 python3 -m api.backup reset-drill-target \
   --target-url "$RESTORE_DRILL_DATABASE_URL" \
-  --confirm-database "$RESTORE_DRILL_CONFIRM_DATABASE"
+  --confirm-database "$RESTORE_DRILL_CONFIRM_DATABASE" \
+  --protected-database-fingerprint \
+    "$RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT"
 target_needs_scrub=0
 
 python3 - \

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -11,6 +12,8 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+ARCHIVE_CONTENT = b"encrypted-placeholder\n"
+ARCHIVE_SHA256 = hashlib.sha256(ARCHIVE_CONTENT).hexdigest()
 
 
 def _write_executable(path: Path, content: str) -> None:
@@ -21,7 +24,7 @@ def _write_executable(path: Path, content: str) -> None:
 def _status(created_at: datetime) -> dict[str, object]:
     return {
         "backup_id": "backup-id",
-        "ciphertext_sha256": "a" * 64,
+        "ciphertext_sha256": ARCHIVE_SHA256,
         "created_at": created_at.isoformat().replace("+00:00", "Z"),
         "key_id": "primary",
         "migration_revision": "0006_workspace_data_lifecycle",
@@ -42,7 +45,6 @@ def _base_environment(fake_bin: Path) -> dict[str, str]:
             "AWS_SECRET_ACCESS_KEY": "test-secret",
             "BACKUP_ENCRYPTION_KEY": "not-used-by-fake-python",
             "BACKUP_S3_BUCKET": "backup-bucket",
-            "DATABASE_URL": "postgresql://source/source",
             "PATH": (
                 f"{fake_bin}{os.pathsep}{Path(sys.executable).parent}"
                 f"{os.pathsep}{environment['PATH']}"
@@ -53,6 +55,7 @@ def _base_environment(fake_bin: Path) -> dict[str, str]:
             "RESTORE_DRILL_DATABASE_URL": (
                 "postgresql://drill/drill"
             ),
+            "RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT": "b" * 64,
         }
     )
     return environment
@@ -64,26 +67,49 @@ def test_backup_freshness_checker_accepts_recent_verified_marker(
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     status_file = tmp_path / "status.json"
-    status_file.write_text(
-        json.dumps(_status(datetime.now(UTC))),
+    archive_file = tmp_path / "archive"
+    archive_file.write_bytes(ARCHIVE_CONTENT)
+    manifest_file = tmp_path / "manifest.json"
+    marker = _status(datetime.now(UTC))
+    manifest_file.write_text(
+        json.dumps(
+            {
+                "authenticated": {
+                    "backup_id": marker["backup_id"],
+                    "created_at": marker["created_at"],
+                    "key_id": marker["key_id"],
+                    "migration_revision": marker["migration_revision"],
+                },
+                "ciphertext_sha256": marker["ciphertext_sha256"],
+            }
+        ),
         encoding="utf-8",
     )
+    status_file.write_text(json.dumps(marker), encoding="utf-8")
     _write_executable(
         fake_bin / "aws",
         """#!/bin/sh
 set -eu
 if [ "$1" = "s3" ] && [ "$2" = "cp" ]; then
-  cp "$FAKE_STATUS_FILE" "$4"
-  exit 0
-fi
-if [ "$1" = "s3api" ] && [ "$2" = "head-object" ]; then
+  case "$3" in
+    s3://*/status/latest.json) cp "$FAKE_STATUS_FILE" "$4" ;;
+    s3://*/*.manifest.json) cp "$FAKE_MANIFEST_FILE" "$4" ;;
+    s3://*/*.mouvadah-backup) cp "$FAKE_ARCHIVE_FILE" "$4" ;;
+    *) exit 64 ;;
+  esac
   exit 0
 fi
 exit 64
 """,
     )
     environment = _base_environment(fake_bin)
-    environment["FAKE_STATUS_FILE"] = str(status_file)
+    environment.update(
+        {
+            "FAKE_ARCHIVE_FILE": str(archive_file),
+            "FAKE_MANIFEST_FILE": str(manifest_file),
+            "FAKE_STATUS_FILE": str(status_file),
+        }
+    )
 
     result = subprocess.run(
         ["sh", "scripts/check_backup_freshness.sh"],
@@ -95,7 +121,19 @@ exit 64
     )
 
     assert result.returncode == 0, result.stderr
-    assert "both objects are present" in result.stdout
+    assert "object integrity matches" in result.stdout
+
+    archive_file.write_bytes(b"replaced archive")
+    replaced = subprocess.run(
+        ["sh", "scripts/check_backup_freshness.sh"],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert replaced.returncode != 0
+    assert "object hash does not match" in replaced.stderr
 
 
 def test_backup_freshness_checker_fails_for_stale_marker(
@@ -201,6 +239,7 @@ esac
     assert "api.backup verify" in commands
     assert "api.backup restore" in commands
     assert "api.migrations check" in commands
+    assert "--protected-database-fingerprint" in commands
     assert "drills/" in upload_log.read_text(encoding="utf-8")
     assert "target was scrubbed" in result.stdout
 
@@ -222,3 +261,5 @@ def test_render_backup_image_uses_overridable_command() -> None:
     assert "BACKUP_MAX_AGE_SECONDS" in backup_blueprint
     assert "mouvadah-monthly-restore-drill" in drill_blueprint
     assert "RESTORE_DRILL_DATABASE_URL" in drill_blueprint
+    assert "RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT" in drill_blueprint
+    assert "key: DATABASE_URL" not in drill_blueprint

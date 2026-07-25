@@ -11,6 +11,8 @@ maximum_age_seconds="${BACKUP_MAX_AGE_SECONDS:-129600}"
 status_key="${backup_prefix}/status/latest.json"
 work_dir="$(mktemp -d)"
 status_file="${work_dir}/latest.json"
+backup_file="${work_dir}/backup"
+manifest_file="${backup_file}.manifest.json"
 
 cleanup() {
   rm -rf "$work_dir"
@@ -52,13 +54,48 @@ print(object_key)
 PY
 )"
 
-aws s3api head-object \
-  --bucket "$BACKUP_S3_BUCKET" \
-  --key "$object_key" \
-  --output json >/dev/null
-aws s3api head-object \
-  --bucket "$BACKUP_S3_BUCKET" \
-  --key "${object_key}.manifest.json" \
-  --output json >/dev/null
+aws s3 cp \
+  "s3://${BACKUP_S3_BUCKET}/${object_key}" \
+  "$backup_file" \
+  --only-show-errors
+aws s3 cp \
+  "s3://${BACKUP_S3_BUCKET}/${object_key}.manifest.json" \
+  "$manifest_file" \
+  --only-show-errors
 
-echo "latest encrypted backup is fresh and both objects are present"
+python3 - "$status_file" "$backup_file" "$manifest_file" <<'PY'
+import hashlib
+import json
+import sys
+
+status_path, backup_path, manifest_path = sys.argv[1:]
+with open(status_path, encoding="utf-8") as handle:
+    status = json.load(handle)
+with open(manifest_path, encoding="utf-8") as handle:
+    manifest = json.load(handle)
+digest = hashlib.sha256()
+with open(backup_path, "rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+ciphertext_sha256 = digest.hexdigest()
+expected = status.get("ciphertext_sha256")
+if ciphertext_sha256 != expected:
+    raise SystemExit("backup object hash does not match latest marker")
+if manifest.get("ciphertext_sha256") != expected:
+    raise SystemExit("backup manifest hash does not match latest marker")
+authenticated = manifest.get("authenticated")
+if not isinstance(authenticated, dict):
+    raise SystemExit("backup manifest lacks authenticated metadata")
+for marker_key, manifest_key in (
+    ("backup_id", "backup_id"),
+    ("created_at", "created_at"),
+    ("key_id", "key_id"),
+    ("migration_revision", "migration_revision"),
+):
+    if status.get(marker_key) != authenticated.get(manifest_key):
+        raise SystemExit(
+            f"backup manifest {manifest_key} does not match latest marker"
+        )
+PY
+
+echo "latest encrypted backup is fresh and its object integrity matches the marker"

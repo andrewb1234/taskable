@@ -11,12 +11,12 @@ services:
     dockerContext: .
     dockerCommand: /app/scripts/restore_drill_from_s3.sh
     envVars:
-      - key: DATABASE_URL
-        sync: false
       - key: RESTORE_DRILL_DATABASE_URL
         sync: false
       - key: RESTORE_DRILL_CONFIRM_DATABASE
         value: mouvadah_restore_drill
+      - key: RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT
+        sync: false
       - key: BACKUP_ENCRYPTION_KEY
         sync: false
       - key: BACKUP_S3_BUCKET

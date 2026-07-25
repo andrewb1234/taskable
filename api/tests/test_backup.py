@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 
 from api.backup import (
     BackupError,
+    _database_fingerprint,
     _safe_postgres_url,
     create_backup,
     reset_restore_drill_target,
@@ -220,4 +221,21 @@ def test_restore_drill_reset_rejects_configured_application_database(
         reset_restore_drill_target(
             configured_url,
             confirm_database="mouvadah_restore_drill_production",
+        )
+
+
+def test_restore_drill_reset_rejects_protected_database_fingerprint(
+    monkeypatch,
+):
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///unprivileged-placeholder.db")
+    get_settings.cache_clear()
+    target_url = (
+        "postgresql://drill-owner:secret@db.example.com/"
+        "mouvadah_restore_drill_protected"
+    )
+    with pytest.raises(BackupError, match="protected application database"):
+        reset_restore_drill_target(
+            target_url,
+            confirm_database="mouvadah_restore_drill_protected",
+            protected_database_fingerprint=_database_fingerprint(target_url),
         )
