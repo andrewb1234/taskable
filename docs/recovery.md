@@ -85,14 +85,20 @@ The daily job:
 3. applies S3 KMS encryption when `BACKUP_S3_KMS_KEY_ID` is configured,
    otherwise S3-managed AES-256 encryption;
 4. downloads both objects into a second path and verifies the downloaded copy;
-5. records the uploaded object's URI and ETag as backup evidence; and
-6. only then purges workspaces whose recovery windows have expired.
+5. records a content-free, encrypted `status/latest.json` freshness marker
+   containing the backup ID, creation time, key ID, migration revision,
+   ciphertext hash, object key, and ETag;
+6. records the uploaded object's URI and ETag as backup evidence; and
+7. only then purges workspaces whose recovery windows have expired.
 
 The shell exits on the first failure. A failed backup, upload, download, or
 verification therefore prevents permanent workspace purge.
-Render serializes runs of one Cron Job; enable workspace email or Slack
-notifications for cron-run failures and treat any missed daily success as an
-operator alert.
+Render serializes runs of one Cron Job. The same Blueprint provisions a second
+05:00 UTC freshness Cron that fails unless the marker is at most 36 hours old
+and the downloaded archive and manifest hashes and authenticated identifiers
+match that marker. Enable workspace email or Slack notifications for Cron
+failures; this converts a failed run, missed daily success, or replaced object
+into an operator alert without giving the web process backup credentials.
 
 Required job secrets:
 
@@ -104,7 +110,9 @@ Required job secrets:
 - `AWS_REGION`
 
 Optional settings are `BACKUP_KEY_ID`, `BACKUP_S3_PREFIX`, and
-`BACKUP_S3_KMS_KEY_ID`. Give the job a dedicated least-privilege AWS identity.
+`BACKUP_S3_KMS_KEY_ID`. `BACKUP_MAX_AGE_SECONDS` controls the independent
+freshness check and defaults to 129600 seconds. Give the jobs a dedicated
+least-privilege AWS identity.
 `infra/s3-backup-iam-policy.json` is the object-prefix policy template; add the
 narrow KMS permissions in `infra/s3-backup-kms-iam-policy.json` only when a
 customer-managed KMS key is selected.
@@ -134,6 +142,38 @@ python -m api.backup restore \
 DATABASE_URL='postgresql://.../mouvadah_restore_drill' \
   python -m api.migrations check
 ```
+
+For a recurring hosted drill, `render.restore-drill.yaml` provisions a
+separate monthly Cron Job that runs `scripts/restore_drill_from_s3.sh`. It
+downloads the latest verified marker and archive, verifies encryption and
+archive integrity, resets only an explicitly confirmed PostgreSQL database
+whose name begins with `mouvadah_restore_drill`, restores and checks schema
+parity, measures the observed recovery-point age and recovery duration,
+scrubs the target, and uploads encrypted JSON evidence under
+`mouvadah/database/drills/`.
+
+Required drill-only configuration:
+
+- `RESTORE_DRILL_DATABASE_URL`: a pre-provisioned database with no application
+  traffic and a dedicated credential;
+- `RESTORE_DRILL_CONFIRM_DATABASE`: the exact database name, beginning with
+  `mouvadah_restore_drill`;
+- `RESTORE_DRILL_PROTECTED_DATABASE_FINGERPRINT`: the credential-free SHA-256
+  identity of the application database; generate it in a protected operator
+  environment with `python -m api.backup fingerprint --database-url ...`; and
+- an escrowed backup key plus a drill-only object identity based on
+  `infra/s3-restore-drill-iam-policy.json`: read backup artifacts and write
+  evidence only beneath `mouvadah/database/drills/`.
+
+The hosted drill does not receive the production database DSN. The protected
+fingerprint is sufficient to reject an accidentally selected production
+target without granting the destructive job production database credentials.
+
+The drill job fails closed when the target is the configured application
+database fingerprint, has the wrong backend or name, or cannot be scrubbed.
+Scrubbing drops every restored non-system schema, not only `public`, and the
+exit trap retries after any partial failure. Never grant the drill credential
+access to create, drop, or modify the production database.
 
 The restore command:
 
@@ -165,6 +205,13 @@ Record for every drill:
 Run quarterly during private beta and monthly before paid general
 availability. Publish no RPO, RTO, or SLA until several production-environment
 drills establish repeatable results.
+
+The two measured values in automated evidence are observations, not published
+commitments:
+
+- `observed_recovery_point_age_seconds`: backup creation to drill start; and
+- `observed_recovery_duration_seconds`: restore start through schema-parity
+  verification.
 
 ## Workspace export
 

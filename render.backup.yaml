@@ -28,3 +28,26 @@ services:
         sync: false
       - key: AWS_REGION
         value: us-west-2
+  - type: cron
+    name: mouvadah-backup-freshness
+    runtime: docker
+    plan: starter
+    region: oregon
+    schedule: "0 5 * * *"
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./docker/Dockerfile.backup
+    dockerContext: .
+    dockerCommand: /app/scripts/check_backup_freshness.sh
+    envVars:
+      - key: BACKUP_S3_BUCKET
+        sync: false
+      - key: BACKUP_S3_PREFIX
+        value: mouvadah/database
+      - key: BACKUP_MAX_AGE_SECONDS
+        value: "129600"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-west-2

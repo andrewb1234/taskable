@@ -7,7 +7,7 @@ import base64
 import os
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlmodel import Session, select
 
@@ -16,7 +16,12 @@ from api.migrations.runtime import (
     assert_schema_matches_metadata,
     upgrade_database,
 )
-from api.backup import create_backup, restore_backup
+from api.backup import (
+    create_backup,
+    reset_restore_drill_target,
+    restore_backup,
+)
+from api.config import get_settings
 from api.events import Event, EventBroadcaster
 from api.models.entities import (
     AuditLog,
@@ -168,10 +173,11 @@ def test_legacy_audit_enum_is_repaired_before_claim_audit(
 def test_postgres_encrypted_backup_restores_into_fresh_database(
     postgres_engine,
     tmp_path,
+    monkeypatch,
 ) -> None:
     raw_url = os.environ["POSTGRES_TEST_URL"]
     parsed = make_url(raw_url)
-    restore_database = "taskable_restore_test"
+    restore_database = "mouvadah_restore_drill_test"
     restore_url = parsed.set(database=restore_database).render_as_string(
         hide_password=False
     )
@@ -182,10 +188,13 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
     with admin_engine.connect() as connection:
         connection.execute(
             text(
-                "DROP DATABASE IF EXISTS taskable_restore_test WITH (FORCE)"
+                "DROP DATABASE IF EXISTS mouvadah_restore_drill_test "
+                "WITH (FORCE)"
             )
         )
-        connection.execute(text("CREATE DATABASE taskable_restore_test"))
+        connection.execute(
+            text("CREATE DATABASE mouvadah_restore_drill_test")
+        )
 
     upgrade_database(postgres_engine)
     with Session(postgres_engine) as session:
@@ -249,11 +258,40 @@ def test_postgres_encrypted_backup_restores_into_fresh_database(
             assert names == ["Restored PostgreSQL project"]
         finally:
             restored_engine.dispose()
+
+        monkeypatch.setenv("DATABASE_URL", raw_url)
+        get_settings.cache_clear()
+        restored_engine = create_engine(restore_url)
+        try:
+            with restored_engine.begin() as connection:
+                connection.execute(
+                    text("CREATE SCHEMA restored_customer_data")
+                )
+                connection.execute(
+                    text(
+                        "CREATE TABLE restored_customer_data.private_rows "
+                        "(id integer primary key, value text)"
+                    )
+                )
+        finally:
+            restored_engine.dispose()
+        reset_restore_drill_target(
+            restore_url,
+            confirm_database=restore_database,
+        )
+        scrubbed_engine = create_engine(restore_url)
+        try:
+            assert inspect(scrubbed_engine).get_table_names() == []
+            assert "restored_customer_data" not in (
+                inspect(scrubbed_engine).get_schema_names()
+            )
+        finally:
+            scrubbed_engine.dispose()
     finally:
         with admin_engine.connect() as connection:
             connection.execute(
                 text(
-                    "DROP DATABASE IF EXISTS taskable_restore_test "
+                    "DROP DATABASE IF EXISTS mouvadah_restore_drill_test "
                     "WITH (FORCE)"
                 )
             )

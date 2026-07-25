@@ -115,17 +115,25 @@ configuration, or frontend build variables.
 
 ### Backup Cron Job
 
-The independent backup job is defined separately in `render.backup.yaml` and
-uses `docker/Dockerfile.backup`. It needs its own database credential,
-application-layer backup-encryption key, and least-privilege S3 credentials.
-Do not add those secrets to the static frontend or expose them to the main web
-process without a concrete operational need.
+The independent daily backup and freshness-check jobs are defined separately
+in `render.backup.yaml` and use `docker/Dockerfile.backup`. They need their own
+database credential, application-layer backup-encryption key, and
+least-privilege S3 credentials. The monthly isolated restore exercise is a
+separate opt-in Blueprint in `render.restore-drill.yaml` and additionally
+requires a dedicated disposable PostgreSQL target. Do not add any of those
+secrets to the static frontend or expose them to the main web process.
+Give the drill a credential-free protected-database fingerprint instead of the
+production DSN, and use `infra/s3-restore-drill-iam-policy.json` so it can read
+backup artifacts but write only drill evidence.
 
 The job creates, uploads, downloads, and verifies an encrypted archive before
-it is allowed to purge an expired workspace. Apply the S3 lifecycle and IAM
-templates in `infra/`, enable bucket public-access blocking, versioning, and
-default encryption, and complete an isolated restore drill before describing
-production backup as operational. See `recovery.md`.
+it is allowed to purge an expired workspace. A second daily job checks the
+content-free success marker and verifies the downloaded archive/manifest
+hashes so Render's failure-only notifications also cover missed or replaced
+backups. Apply the S3 lifecycle
+and IAM templates in `infra/`, enable bucket public-access blocking,
+versioning, and default encryption, and complete the isolated restore drill
+before describing production backup as operational. See `recovery.md`.
 
 The application emits CSP, frame-denial, MIME-sniffing, referrer, and
 permissions headers on every response; HTTPS deployments also emit one-year
@@ -198,6 +206,8 @@ automation, and stable required-check names. The hosting platform, GitHub
 ruleset, and repository action policy remain operational configuration and
 must be checked during release. Shared realtime is implemented and
 integration-tested but still needs hosted failover evidence. The independent
-backup job and retention templates exist, but their production secrets, bucket
-controls, provider snapshot schedule, and recurring restore evidence remain
-control-plane work. Broader managed infrastructure-as-code remains absent.
+backup, freshness, and restore-drill jobs and retention templates exist, but
+their production secrets, bucket controls, provider snapshot schedule, and
+recurring restore evidence remain control-plane work until the corresponding
+Blueprints are applied and accepted. Broader managed infrastructure-as-code
+remains absent.

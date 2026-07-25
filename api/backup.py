@@ -24,7 +24,7 @@ from typing import BinaryIO
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
 from api.config import get_settings
@@ -59,6 +59,7 @@ REQUIRED_POSTGRES_TABLES = {
     "workspacelifecycleevent",
     "workspacemembership",
 }
+RESTORE_DRILL_DATABASE_PREFIX = "mouvadah_restore_drill"
 
 
 class BackupError(RuntimeError):
@@ -546,6 +547,7 @@ def _guard_restore_target(
     confirm_database: str,
     allow_configured_target: bool,
     backup_evidence: str,
+    protected_database_fingerprint: str | None = None,
 ) -> None:
     database_name = _database_name(target_url)
     if confirm_database != database_name:
@@ -553,9 +555,26 @@ def _guard_restore_target(
             "Restore confirmation must exactly match the target database name."
         )
     configured_url = get_settings().database_url
-    if _database_fingerprint(target_url) == _database_fingerprint(
-        configured_url
-    ):
+    target_fingerprint = _database_fingerprint(target_url)
+    protected_fingerprint = (
+        protected_database_fingerprint.strip().lower()
+        if protected_database_fingerprint
+        else None
+    )
+    if protected_fingerprint is not None:
+        if len(protected_fingerprint) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in protected_fingerprint
+        ):
+            raise BackupError(
+                "Protected database fingerprint must be 64 lowercase "
+                "hexadecimal characters."
+            )
+        if target_fingerprint == protected_fingerprint:
+            raise BackupError(
+                "Refusing to restore over the protected application database."
+            )
+    if target_fingerprint == _database_fingerprint(configured_url):
         if not allow_configured_target:
             raise BackupError(
                 "Refusing to restore over the configured application database "
@@ -578,6 +597,7 @@ def restore_backup(
     allow_configured_target: bool = False,
     backup_evidence: str = "",
     postgres_host_override: str | None = None,
+    protected_database_fingerprint: str | None = None,
 ) -> dict:
     """Restore a verified archive into an explicitly confirmed target."""
     _guard_restore_target(
@@ -585,6 +605,7 @@ def restore_backup(
         confirm_database=confirm_database,
         allow_configured_target=allow_configured_target,
         backup_evidence=backup_evidence,
+        protected_database_fingerprint=protected_database_fingerprint,
     )
     backup = Path(backup_path).expanduser().resolve()
     manifest = _load_manifest(backup, manifest_path)
@@ -660,6 +681,73 @@ def restore_backup(
     return manifest
 
 
+def reset_restore_drill_target(
+    target_url: str,
+    *,
+    confirm_database: str,
+    protected_database_fingerprint: str | None = None,
+) -> dict[str, str]:
+    """Remove restored data from an explicitly named disposable database.
+
+    The configured application database is always rejected.  Requiring a
+    dedicated database-name prefix makes this destructive operation fail
+    closed even when an operator supplies a valid but unintended URL.
+    """
+    _guard_restore_target(
+        target_url,
+        confirm_database=confirm_database,
+        allow_configured_target=False,
+        backup_evidence="",
+        protected_database_fingerprint=protected_database_fingerprint,
+    )
+    parsed = make_url(target_url)
+    database_name = parsed.database or ""
+    if parsed.get_backend_name() != "postgresql":
+        raise BackupError(
+            "Restore-drill cleanup requires a PostgreSQL target."
+        )
+    if not database_name.startswith(RESTORE_DRILL_DATABASE_PREFIX):
+        raise BackupError(
+            "Restore-drill database names must start with "
+            f"{RESTORE_DRILL_DATABASE_PREFIX!r}."
+        )
+
+    target_engine = create_engine(
+        target_url,
+        isolation_level="AUTOCOMMIT",
+    )
+    try:
+        with target_engine.connect() as connection:
+            schema_names = list(
+                connection.execute(
+                    text(
+                        "SELECT schema_name FROM information_schema.schemata "
+                        "WHERE schema_name NOT IN "
+                        "('information_schema', 'pg_catalog', 'pg_toast') "
+                        "AND schema_name NOT LIKE 'pg_temp_%' "
+                        "AND schema_name NOT LIKE 'pg_toast_temp_%' "
+                        "AND (schema_owner = current_user "
+                        "OR schema_name = 'public')"
+                    )
+                ).scalars()
+            )
+            preparer = connection.dialect.identifier_preparer
+            for schema_name in schema_names:
+                connection.execute(
+                    text(
+                        "DROP SCHEMA IF EXISTS "
+                        f"{preparer.quote(schema_name)} CASCADE"
+                    )
+                )
+            connection.execute(text("CREATE SCHEMA public"))
+    finally:
+        target_engine.dispose()
+    return {
+        "database_name": database_name,
+        "status": "reset",
+    }
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Mouvadah encrypted database backup and restore."
@@ -686,6 +774,13 @@ def _parser() -> argparse.ArgumentParser:
     restore.add_argument("--allow-configured-target", action="store_true")
     restore.add_argument("--backup-evidence", default="")
     restore.add_argument("--postgres-host-override")
+    restore.add_argument("--protected-database-fingerprint")
+    reset_drill = subparsers.add_parser("reset-drill-target")
+    reset_drill.add_argument("--target-url", required=True)
+    reset_drill.add_argument("--confirm-database", required=True)
+    reset_drill.add_argument("--protected-database-fingerprint")
+    fingerprint = subparsers.add_parser("fingerprint")
+    fingerprint.add_argument("--database-url", required=True)
     return parser
 
 
@@ -709,7 +804,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     configure_runtime(settings)
     try:
-        with observe_job(f"database_{args.command}"):
+        with observe_job(f"database_{args.command.replace('-', '_')}"):
             if args.command == "backup":
                 manifest = create_backup(
                     args.database_url or settings.database_url,
@@ -733,14 +828,36 @@ def main(argv: list[str] | None = None) -> int:
                     allow_configured_target=args.allow_configured_target,
                     backup_evidence=args.backup_evidence,
                     postgres_host_override=args.postgres_host_override,
+                    protected_database_fingerprint=(
+                        args.protected_database_fingerprint
+                    ),
                 )
+            elif args.command == "reset-drill-target":
+                summary = reset_restore_drill_target(
+                    args.target_url,
+                    confirm_database=args.confirm_database,
+                    protected_database_fingerprint=(
+                        args.protected_database_fingerprint
+                    ),
+                )
+            elif args.command == "fingerprint":
+                summary = {
+                    "database_fingerprint": _database_fingerprint(
+                        args.database_url
+                    ),
+                    "database_identity": _database_identity(
+                        args.database_url
+                    ),
+                }
             else:  # pragma: no cover - argparse invariant
                 raise BackupError(
                     f"Unsupported command {args.command!r}."
                 )
     finally:
         flush_telemetry()
-    print(json.dumps(_safe_summary(manifest), sort_keys=True))
+    if args.command not in {"reset-drill-target", "fingerprint"}:
+        summary = _safe_summary(manifest)
+    print(json.dumps(summary, sort_keys=True))
     return 0
 
 
