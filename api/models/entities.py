@@ -13,7 +13,7 @@ rather than stringified PEP 563 forms.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import CheckConstraint, Column, JSON, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Index, JSON, String, UniqueConstraint, text
 from sqlmodel import Field, Relationship, SQLModel
 
 from api.models.enums import (
@@ -26,6 +26,7 @@ from api.models.enums import (
     TicketAssignee,
     TicketStatus,
     WorkspaceLifecycleAction,
+    WorkspaceMembershipAction,
     WorkspaceRole,
 )
 from api.utils.time import utcnow
@@ -91,6 +92,10 @@ class Workspace(SQLModel, table=True):
         back_populates="workspace",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    invitations: List["WorkspaceInvitation"] = Relationship(
+        back_populates="workspace",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class WorkspaceLifecycleEvent(SQLModel, table=True):
@@ -133,6 +138,13 @@ class WorkspaceMembership(SQLModel, table=True):
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),
+        Index(
+            "uq_workspacemembership_single_owner",
+            "workspace_id",
+            unique=True,
+            postgresql_where=text("role = 'OWNER'"),
+            sqlite_where=text("role = 'OWNER'"),
+        ),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -146,6 +158,87 @@ class WorkspaceMembership(SQLModel, table=True):
 
     workspace: Optional[Workspace] = Relationship(back_populates="memberships")
     user: Optional["User"] = Relationship(back_populates="memberships")
+
+
+class WorkspaceInvitation(SQLModel, table=True):
+    """Hashed, expiring, email-bound invitation to a workspace."""
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(token_hash) = 64",
+            name="ck_workspace_invitation_token_hash",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_workspace_invitation_expiry",
+        ),
+        CheckConstraint(
+            "role IN ('ADMIN', 'MEMBER', 'VIEWER')",
+            name="ck_workspace_invitation_role",
+        ),
+        CheckConstraint(
+            "NOT (accepted_at IS NOT NULL AND revoked_at IS NOT NULL)",
+            name="ck_workspace_invitation_terminal_state",
+        ),
+        CheckConstraint(
+            "(accepted_at IS NULL AND accepted_by_user_id IS NULL) "
+            "OR (accepted_at IS NOT NULL AND accepted_by_user_id IS NOT NULL)",
+            name="ck_workspace_invitation_acceptance_complete",
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(foreign_key="workspace.id", index=True)
+    email: str = Field(index=True)
+    role: WorkspaceRole = Field(
+        default=WorkspaceRole.MEMBER,
+        sa_column=Column(String, nullable=False, default="MEMBER"),
+    )
+    token_hash: str = Field(unique=True, index=True)
+    created_by_user_id: int = Field(foreign_key="user.id", index=True)
+    expires_at: datetime = Field(index=True)
+    accepted_at: Optional[datetime] = Field(default=None, index=True)
+    accepted_by_user_id: Optional[int] = Field(
+        default=None,
+        foreign_key="user.id",
+        index=True,
+    )
+    revoked_at: Optional[datetime] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False)
+
+    workspace: Optional[Workspace] = Relationship(back_populates="invitations")
+
+
+class WorkspaceMembershipEvent(SQLModel, table=True):
+    """Immutable, content-free ledger of workspace access changes."""
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ("
+            "'INVITATION_CREATED', "
+            "'INVITATION_REVOKED', "
+            "'INVITATION_ACCEPTED', "
+            "'ROLE_CHANGED', "
+            "'MEMBER_REMOVED', "
+            "'OWNERSHIP_TRANSFERRED'"
+            ")",
+            name="ck_workspace_membership_action",
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    workspace_id: int = Field(index=True)
+    action: WorkspaceMembershipAction = Field(
+        sa_column=Column(String, nullable=False, index=True)
+    )
+    actor_user_id: Optional[int] = Field(default=None, index=True)
+    subject_user_id: Optional[int] = Field(default=None, index=True)
+    invitation_id: Optional[int] = Field(default=None, index=True)
+    occurred_at: datetime = Field(default_factory=utcnow, nullable=False)
+    details: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, default=dict),
+    )
 
 
 class Project(SQLModel, table=True):

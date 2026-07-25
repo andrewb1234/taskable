@@ -186,11 +186,22 @@ Residual risk:
 
 - the boundary is enforced by application queries rather than database
   row-level security;
-- no independent penetration test has been performed;
-- membership administration currently exposes listing, not invitation,
-  role-change, removal, or ownership-transfer workflows; and
+- no independent penetration test has been performed; and
 - API-key permissions intentionally expose only read/write scopes rather than
   custom per-action policy.
+
+### Resolved high: workspace access administration
+
+Interactive owners can issue high-entropy, hash-only, expiring, single-use
+invitations bound to a verified normalized email; manage `ADMIN`, `MEMBER`,
+and `VIEWER` roles; remove members; and atomically transfer ownership. A
+partial unique database index prevents a second owner, while application
+guards prevent removing or generically demoting the final owner. Removal
+revokes the member's keys for that workspace and all of their account-wide
+browser sessions; role reduction to `VIEWER` revokes write-capable keys.
+Every change is recorded in a content-free access ledger. No email-delivery
+provider is configured, so the owner must copy the one-time link and send it
+through an appropriate channel.
 
 ### Resolved high: trusted OAuth callback origin
 

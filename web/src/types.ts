@@ -287,3 +287,37 @@ export interface Workspace {
   deletion_requested_by: number | null;
   deletion_export_sha256: string | null;
 }
+
+export interface WorkspaceMember {
+  user_id: number;
+  email: string;
+  name: string;
+  role: WorkspaceRole;
+  created_at: string;
+}
+
+export interface WorkspaceInvitation {
+  id: number;
+  workspace_id: number;
+  email: string;
+  role: WorkspaceRole;
+  created_by_user_id: number;
+  expires_at: string;
+  accepted_at: string | null;
+  accepted_by_user_id: number | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface WorkspaceInvitationCreated extends WorkspaceInvitation {
+  token: string;
+  accept_url: string;
+}
+
+export interface WorkspaceMembershipMutation {
+  workspace_id: number;
+  user_id: number;
+  role: WorkspaceRole | null;
+  revoked_browser_sessions: number;
+  revoked_api_keys: number;
+}

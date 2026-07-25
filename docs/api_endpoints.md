@@ -29,7 +29,20 @@ Every HTTP response includes a server-generated `X-Request-ID`.
 
 * `GET /workspaces` : List the caller's workspace memberships, including pending-deletion recovery metadata.
 * `POST /workspaces` : Create a workspace owned by the interactive caller.
-* `GET /workspaces/{id}/members` : List members; admin role required.
+* `GET /workspaces/{id}/members` : Owner-browser-only member listing.
+* `POST|GET /workspaces/{id}/invitations` : Create a copy-once, hashed,
+  expiring email-bound invitation or list invitation status.
+* `DELETE /workspaces/{id}/invitations/{invitation_id}` : Revoke an active
+  invitation.
+* `POST /workspaces/invitations/accept` : Accept once from the invited
+  verified-email browser account.
+* `PATCH|DELETE /workspaces/{id}/members/{user_id}` : Change a non-owner human
+  role or remove a member. Removal revokes the member's workspace API keys and
+  all browser sessions.
+* `POST /workspaces/{id}/ownership-transfer` : Atomically demote the current
+  owner to `ADMIN` and promote an accepted member after exact-slug
+  confirmation.
+* `GET /workspaces/{id}/membership-events` : Owner-only access-change ledger.
 * `GET /workspaces/{id}/export` : Owner-only interactive export with a SHA-256 response header; API keys are rejected.
 * `POST /workspaces/{id}/deletion` : Owner-only deletion schedule requiring exact slug and a matching export from the preceding 24 hours.
 * `POST /workspaces/{id}/restore` : Restore during the recovery window; revoked API keys remain revoked.

@@ -242,8 +242,13 @@ async def auth_callback(
             )
         profile = userinfo_resp.json()
 
+    if profile.get("verified_email") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A verified Google email address is required.",
+        )
     google_id = profile["id"]
-    email = profile["email"]
+    email = profile["email"].strip().lower()
     name = profile.get("name", email)
     avatar_url = profile.get("picture")
 

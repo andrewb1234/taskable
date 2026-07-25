@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.engine import make_url
 from sqlmodel import select
 from starlette.requests import Request
@@ -10,8 +11,8 @@ from starlette.requests import Request
 from api.api_keys import issue_api_key
 from api.authorization import ensure_personal_workspace
 from api.config import Settings
-from api.models.entities import BrowserSession, Project
-from api.routes.auth import _cookie_kwargs, _redirect_uri
+from api.models.entities import BrowserSession, Project, User
+from api.routes.auth import _cookie_kwargs, _redirect_uri, auth_callback
 from api.security import rate_limiter
 from api.utils.time import utcnow
 
@@ -309,6 +310,124 @@ def test_oauth_error_redirect_does_not_reflect_remote_input(client):
         "http://localhost:5173/?auth_error=oauth_denied"
     )
     assert "attacker" not in response.headers["location"]
+
+
+class _OAuthResponse:
+    def __init__(self, payload: dict):
+        self.status_code = 200
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _oauth_client(profile: dict):
+    class FakeOAuthClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            return _OAuthResponse({"access_token": "access-token"})
+
+        async def get(self, *_args, **_kwargs):
+            return _OAuthResponse(profile)
+
+    return FakeOAuthClient
+
+
+def _oauth_callback_request() -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/v1/auth/callback",
+            "raw_path": b"/api/v1/auth/callback",
+            "query_string": b"",
+            "headers": [
+                (b"host", b"localhost:8000"),
+                (b"cookie", b"oauth_state=expected-state"),
+            ],
+            "server": ("localhost", 8000),
+            "client": ("127.0.0.1", 12345),
+            "root_path": "",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_requires_verified_email(
+    session,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "api.routes.auth.httpx.AsyncClient",
+        _oauth_client(
+            {
+                "id": "unverified-google-id",
+                "email": "unverified@example.com",
+                "verified_email": False,
+            }
+        ),
+    )
+    settings = Settings(
+        _env_file=None,
+        frontend_url="http://localhost:5173",
+        google_client_id="client",
+        google_client_secret="secret",
+    )
+
+    with pytest.raises(HTTPException, match="verified Google email"):
+        await auth_callback(
+            _oauth_callback_request(),
+            session,
+            settings,
+            code="code",
+            state="expected-state",
+        )
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_normalizes_verified_email(
+    session,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "api.routes.auth.httpx.AsyncClient",
+        _oauth_client(
+            {
+                "id": "verified-google-id",
+                "email": " Verified.User@Example.COM ",
+                "verified_email": True,
+                "name": "Verified User",
+            }
+        ),
+    )
+    settings = Settings(
+        _env_file=None,
+        frontend_url="http://localhost:5173",
+        google_client_id="client",
+        google_client_secret="secret",
+    )
+
+    response = await auth_callback(
+        _oauth_callback_request(),
+        session,
+        settings,
+        code="code",
+        state="expected-state",
+    )
+    assert response.status_code == 302
+    user = session.exec(
+        select(User).where(User.google_id == "verified-google-id")
+    ).one()
+    assert user.email == "verified.user@example.com"
 
 
 def test_security_headers_are_applied_without_hsts_in_local_mode(client):

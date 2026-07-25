@@ -56,8 +56,10 @@ REQUIRED_POSTGRES_TABLES = {
     "ticketdependency",
     "user",
     "workspace",
+    "workspaceinvitation",
     "workspacelifecycleevent",
     "workspacemembership",
+    "workspacemembershipevent",
 }
 RESTORE_DRILL_DATABASE_PREFIX = "mouvadah_restore_drill"
 

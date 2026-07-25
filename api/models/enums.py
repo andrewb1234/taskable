@@ -30,6 +30,17 @@ class WorkspaceLifecycleAction(str, Enum):
     PURGED = "PURGED"
 
 
+class WorkspaceMembershipAction(str, Enum):
+    """Auditable workspace access-administration actions."""
+
+    INVITATION_CREATED = "INVITATION_CREATED"
+    INVITATION_REVOKED = "INVITATION_REVOKED"
+    INVITATION_ACCEPTED = "INVITATION_ACCEPTED"
+    ROLE_CHANGED = "ROLE_CHANGED"
+    MEMBER_REMOVED = "MEMBER_REMOVED"
+    OWNERSHIP_TRANSFERRED = "OWNERSHIP_TRANSFERRED"
+
+
 class TicketStatus(str, Enum):
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"

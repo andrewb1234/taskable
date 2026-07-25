@@ -27,6 +27,7 @@ from api.models.entities import (
     Ticket,
     TicketDependency,
     Workspace,
+    WorkspaceInvitation,
     WorkspaceLifecycleEvent,
     WorkspaceMembership,
 )
@@ -147,6 +148,13 @@ def purge_workspace(
                 )
             ).all()
         ),
+        "workspace_invitations": len(
+            session.exec(
+                select(WorkspaceInvitation.id).where(
+                    WorkspaceInvitation.workspace_id == workspace_id
+                )
+            ).all()
+        ),
         "projects": len(project_ids),
         "subprojects": len(subproject_ids),
         "tickets": len(ticket_ids),
@@ -254,6 +262,11 @@ def purge_workspace(
         session.exec(delete(ApiKey).where(ApiKey.id.in_(api_key_ids)))
     if project_ids:
         session.exec(delete(Project).where(Project.id.in_(project_ids)))
+    session.exec(
+        delete(WorkspaceInvitation).where(
+            WorkspaceInvitation.workspace_id == workspace_id
+        )
+    )
     session.exec(
         delete(WorkspaceMembership).where(
             WorkspaceMembership.workspace_id == workspace_id

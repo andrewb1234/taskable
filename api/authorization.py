@@ -68,10 +68,12 @@ def get_membership(
     workspace_id: int,
 ) -> WorkspaceMembership | None:
     return session.exec(
-        select(WorkspaceMembership).where(
+        select(WorkspaceMembership)
+        .where(
             WorkspaceMembership.workspace_id == workspace_id,
             WorkspaceMembership.user_id == user.id,
         )
+        .execution_options(populate_existing=True)
     ).first()
 
 
@@ -88,8 +90,16 @@ def require_workspace(
     api_key = get_api_key_authorization()
     if api_key is not None and api_key.workspace_id != workspace_id:
         raise _not_found("Workspace")
-    membership = get_membership(session, user, workspace_id)
-    _check_role(membership, write=write, admin=admin, label="Workspace")
+    # Reject callers outside the tenant before taking its serialization lock.
+    # The role is checked again after the lock because it may change while a
+    # request is queued behind an ownership transfer, downgrade, or removal.
+    preflight_membership = get_membership(session, user, workspace_id)
+    _check_role(
+        preflight_membership,
+        write=write,
+        admin=admin,
+        label="Workspace",
+    )
     workspace_query = select(Workspace).where(Workspace.id == workspace_id)
     if not include_deleted:
         workspace_query = workspace_query.where(
@@ -97,9 +107,17 @@ def require_workspace(
         )
     if lock or write:
         workspace_query = workspace_query.with_for_update()
+    workspace_query = workspace_query.execution_options(
+        populate_existing=True
+    )
     workspace = session.exec(workspace_query).first()
     if workspace is None:
         raise _not_found("Workspace")
+    # Membership must be read after the tenant lock. Otherwise a request can
+    # snapshot OWNER/MEMBER, wait behind a transfer/removal transaction, and
+    # then mutate with privileges that no longer exist.
+    membership = get_membership(session, user, workspace_id)
+    _check_role(membership, write=write, admin=admin, label="Workspace")
     return workspace, membership  # type: ignore[return-value]
 
 
@@ -173,27 +191,38 @@ def require_project(
     write: bool = False,
     admin: bool = False,
 ) -> Project:
-    row = session.exec(
-        select(Project, WorkspaceMembership)
+    project = session.exec(
+        select(Project)
         .join(
             Workspace,
             Workspace.id == Project.workspace_id,  # type: ignore[arg-type]
         )
-        .join(
-            WorkspaceMembership,
-            WorkspaceMembership.workspace_id == Project.workspace_id,  # type: ignore[arg-type]
-        )
         .where(
             Project.id == project_id,
-            WorkspaceMembership.user_id == user.id,
             Workspace.deletion_requested_at.is_(None),
         )
+        .execution_options(populate_existing=True)
     ).first()
-    if row is None:
+    if project is None or project.workspace_id is None:
         raise _not_found("Project")
-    project, membership = row
-    _check_role(membership, write=write, admin=admin, label="Project")
-    if write:
+    preflight_membership = get_membership(
+        session,
+        user,
+        project.workspace_id,
+    )
+    _check_role(
+        preflight_membership,
+        write=write,
+        admin=admin,
+        label="Project",
+    )
+    api_key = get_api_key_authorization()
+    if api_key is not None:
+        if api_key.workspace_id != project.workspace_id:
+            raise _not_found("Project")
+        if api_key.project_ids and project.id not in api_key.project_ids:
+            raise _not_found("Project")
+    if write or admin:
         locked_workspace = session.exec(
             select(Workspace)
             .where(
@@ -201,15 +230,16 @@ def require_project(
                 Workspace.deletion_requested_at.is_(None),
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         ).first()
         if locked_workspace is None:
             raise _not_found("Project")
-    api_key = get_api_key_authorization()
-    if api_key is not None:
-        if api_key.workspace_id != project.workspace_id:
-            raise _not_found("Project")
-        if api_key.project_ids and project.id not in api_key.project_ids:
-            raise _not_found("Project")
+    membership = get_membership(
+        session,
+        user,
+        project.workspace_id,
+    )
+    _check_role(membership, write=write, admin=admin, label="Project")
     return project
 
 
