@@ -50,7 +50,7 @@ function authenticatedApi() {
 test("local API key is exchanged for an HttpOnly browser session", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/app");
 
   await page.getByLabel("Local API key").fill(E2E_API_KEY);
   await page.getByRole("button", { name: "Continue locally" }).click();
@@ -107,7 +107,7 @@ test.describe("SSE realtime contract", () => {
     const ticket = await ticketResp.json();
 
     // Load the UI and pin the freshly-seeded subproject.
-    await page.goto("/");
+    await page.goto("/app");
 
     // The sidebar auto-selects the first project on load; our test project is
     // likely to come later because the auto-select is a first-wins race. So
@@ -180,7 +180,7 @@ test.describe("SSE realtime contract", () => {
       })
     ).json();
 
-    await page.goto("/");
+    await page.goto("/app");
     await page
       .locator("button", { hasText: project.name })
       .first()
