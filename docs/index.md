@@ -15,6 +15,8 @@ or modifying any system component.
   PostgreSQL deployment gate, failure handling, and rollback policy.
 * `recovery.md`: Encrypted database backup, independent object storage,
   restore drills, workspace export, recovery window, and verified purge.
+* `incident_response.md`: Telemetry boundaries, alert thresholds, severity,
+  response roles, containment, communication, evidence, and drills.
 
 ## 1. System Foundations
 * `prd.md`: High-level objectives, capabilities, and system architecture.

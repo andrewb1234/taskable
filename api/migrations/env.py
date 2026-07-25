@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -12,8 +13,17 @@ import api.models.entities  # noqa: F401
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+if (
+    config.config_file_name is not None
+    and not getattr(
+        logging.getLogger(),
+        "mouvadah_structured_logging",
+        False,
+    )
+):
+    # Alembic's default disables every logger created before migration
+    # inspection, including the request/incident observability loggers.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = SQLModel.metadata
 

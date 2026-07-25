@@ -14,18 +14,29 @@ Both forms are supported because the ``Dockerfile.api`` layer copies the
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import FileResponse
+from sqlalchemy import text
+from starlette.responses import FileResponse, JSONResponse
 
+from api import database
 from api.auth import get_current_user
 from api.config import get_settings
 from api.database import init_db
 from api.events import get_broadcaster
+from api.observability import (
+    ObservabilityMiddleware,
+    configure_runtime,
+    flush_telemetry,
+    log_event,
+    metrics_response,
+    metrics_token_matches,
+)
 from api.routes import (
     agent,
     apikeys,
@@ -40,7 +51,7 @@ from api.routes import (
     tickets,
     workspaces,
 )
-from api.security import SecurityMiddleware
+from api.security import SecurityMiddleware, parse_bearer_token
 from api.version import __version__, git_sha
 
 
@@ -55,11 +66,13 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await broadcaster.stop()
+        flush_telemetry()
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     settings.validate_production()
+    configure_runtime(settings)
     app = FastAPI(
         title="Taskable Co-Pilot Workspace API",
         version=__version__,
@@ -82,11 +95,15 @@ def create_app() -> FastAPI:
         expose_headers=[
             "Content-Disposition",
             "X-Mouvadah-Export-SHA256",
+            "X-Request-ID",
         ],
     )
     # Added after CORS so it wraps every API/static response, including CORS
     # rejections and mounted sub-application routes.
     app.add_middleware(SecurityMiddleware)
+    # Added last so it wraps security/CORS/static responses and correlates
+    # failures that occur before route authentication.
+    app.add_middleware(ObservabilityMiddleware)
 
     # --- API v1 ---
     api_v1 = FastAPI(title="Taskable API v1", version=__version__)
@@ -124,6 +141,64 @@ def create_app() -> FastAPI:
             "git_sha": git_sha(),
             "realtime": get_broadcaster().status(),
         }
+
+    @app.get("/readyz", tags=["meta"])
+    def readyz():
+        realtime = get_broadcaster().status()
+        try:
+            with database.engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+        except Exception:
+            log_event(
+                logging.getLogger("mouvadah.readiness"),
+                logging.ERROR,
+                "readiness.database.failed",
+                exc_info=True,
+            )
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "status": "not_ready",
+                    "database": "unavailable",
+                    "realtime": realtime,
+                    "version": __version__,
+                    "git_sha": git_sha(),
+                },
+            )
+        if realtime in {"degraded", "not_started"}:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "status": "not_ready",
+                    "database": "healthy",
+                    "realtime": realtime,
+                    "version": __version__,
+                    "git_sha": git_sha(),
+                },
+            )
+        return {
+            "status": "ready",
+            "database": "healthy",
+            "realtime": realtime,
+            "version": __version__,
+            "git_sha": git_sha(),
+        }
+
+    @app.get("/internal/metrics", include_in_schema=False)
+    def internal_metrics(request: Request):
+        configured_token = settings.metrics_bearer_token_value()
+        if configured_token is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        supplied_token = parse_bearer_token(
+            request.headers.get("Authorization", "")
+        )
+        if not metrics_token_matches(configured_token, supplied_token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return metrics_response()
 
     # --- Serve built frontend (production) ---
     dist_dir = Path("web/dist")

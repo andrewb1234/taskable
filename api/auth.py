@@ -210,6 +210,8 @@ async def get_current_user(
             )
             request.state.auth_method = "api_key"
             request.state.api_key_id = api_key.id
+            request.state.user_id = user.id
+            request.state.workspace_id = api_key.workspace_id
             return user
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -247,6 +249,7 @@ async def get_current_user(
                         session.commit()
                     request.state.auth_method = "cookie"
                     request.state.browser_session_id = session_id
+                    request.state.user_id = user.id
                     return user
 
     raise HTTPException(

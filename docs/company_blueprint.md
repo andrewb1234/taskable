@@ -227,7 +227,7 @@ improving the current product.
 | Background work | Caller-driven | Durable job table + worker | Queue service after workload proves it |
 | Agent protocol | Local stdio MCP | Streamable HTTP MCP + OAuth scopes | Regional gateways when required |
 | Files | Local filesystem | S3-compatible object storage | Customer-controlled buckets for enterprise |
-| Observability | Health endpoint | Structured logs, traces, errors, metrics | SIEM export and SLO automation |
+| Observability | Redacted JSON logs, request/trace correlation, protected metrics, optional OTLP/Sentry, health/readiness, incident runbook; production sinks/paging pending | Configure and exercise sinks, dashboards, paging, backup alerts | SIEM export and SLO automation |
 | Delivery | Manual/Render-style | CI, migrations, preview, staged deploy | Progressive delivery at larger scale |
 
 ### Architectural principles

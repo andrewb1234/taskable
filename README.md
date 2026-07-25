@@ -14,7 +14,8 @@ LISTEN/NOTIFY; SQLite deployments retain the lightweight local broadcaster.
 > Verified security controls and explicit non-guarantees live in
 > [`docs/security_and_trust.md`](./docs/security_and_trust.md).
 > Backup, restore, export, and recoverable deletion operations live in
-> [`docs/recovery.md`](./docs/recovery.md).
+> [`docs/recovery.md`](./docs/recovery.md) and incident operations in
+> [`docs/incident_response.md`](./docs/incident_response.md).
 
 ## Architecture
 

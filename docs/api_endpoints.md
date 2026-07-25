@@ -6,6 +6,18 @@
   `Authorization: Bearer <TASKABLE_API_KEY>` for MCP/agent callers
 * **Format:** `application/json`
 
+## Service Operations
+
+These endpoints are outside the `/api/v1` base:
+
+* `GET /healthz` : Lightweight process liveness and immutable release identity.
+* `GET /readyz` : Database/realtime readiness; returns `503` when traffic
+  should not be routed to the instance.
+* `GET /internal/metrics` : Prometheus exposition, hidden with `404` until a
+  dedicated metrics token is configured and then protected by bearer auth.
+
+Every HTTP response includes a server-generated `X-Request-ID`.
+
 ## Real-Time Synchronization
 * `GET /events` : Authenticated SSE stream broadcasting
   `{action, entity, entity_id, parent_id, workspace_id}` invalidations.

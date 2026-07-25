@@ -15,6 +15,7 @@ from sqlmodel import Session, create_engine
 
 from api.config import get_settings
 from api.migrations.runtime import assert_database_current, upgrade_database
+from api.observability import instrument_database_metrics
 
 
 def _engine_kwargs(url: str) -> dict:
@@ -39,6 +40,7 @@ def _ensure_sqlite_dir(url: str) -> None:
 _settings = get_settings()
 _ensure_sqlite_dir(_settings.database_url)
 engine = create_engine(_settings.database_url, **_engine_kwargs(_settings.database_url))
+instrument_database_metrics(engine)
 
 
 def init_db() -> None:
@@ -60,6 +62,7 @@ def get_session() -> Iterator[Session]:
 def _set_engine(new_engine) -> None:  # pragma: no cover - test-only helper
     global engine
     engine = new_engine
+    instrument_database_metrics(engine)
 
 
 __all__ = ["engine", "init_db", "get_session", "_set_engine"]

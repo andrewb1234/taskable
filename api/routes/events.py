@@ -14,6 +14,7 @@ from api import database
 from api.auth import StreamCurrentUser
 from api.events import Event, ResyncSignal, get_broadcaster
 from api.models.entities import WorkspaceMembership
+from api.observability import record_realtime_resync
 from api.security import get_api_key_authorization
 
 router = APIRouter(tags=["events"])
@@ -95,6 +96,7 @@ async def stream_events(
             # Notifications are invalidation hints, not a replayable log.
             # Every initial connection and automatic EventSource reconnect
             # therefore instructs the UI to refetch all authorized live state.
+            record_realtime_resync("connected")
             yield {
                 "event": "ready",
                 "data": ResyncSignal(reason="connected").to_json(),
