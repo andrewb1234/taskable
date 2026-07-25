@@ -8,7 +8,7 @@ from api.authorization import ensure_personal_workspace
 from api.events import Event
 from api.models.entities import Project, User, WorkspaceMembership
 from api.models.enums import SSEAction, WorkspaceRole
-from api.routes.events import can_receive_event
+from api.routes.events import StreamAuthorization, can_receive_event
 
 
 def _headers(identity: str) -> dict[str, str]:
@@ -331,8 +331,27 @@ def test_realtime_event_membership_is_checked_at_delivery(
     )
 
     with Session(engine) as session:
-        assert can_receive_event(session, users["alice"], event) is True
-        assert can_receive_event(session, users["bob"], event) is False
+        alice_auth = StreamAuthorization(
+            user_id=users["alice"].id,
+            api_key_workspace_id=None,
+        )
+        bob_auth = StreamAuthorization(
+            user_id=users["bob"].id,
+            api_key_workspace_id=None,
+        )
+        assert can_receive_event(session, alice_auth, event) is True
+        assert can_receive_event(session, bob_auth, event) is False
+        assert (
+            can_receive_event(
+                session,
+                StreamAuthorization(
+                    user_id=users["alice"].id,
+                    api_key_workspace_id=alice["workspace"] + 999,
+                ),
+                event,
+            )
+            is False
+        )
         membership = WorkspaceMembership(
             workspace_id=alice["workspace"],
             user_id=users["bob"].id,
@@ -340,10 +359,10 @@ def test_realtime_event_membership_is_checked_at_delivery(
         )
         session.add(membership)
         session.commit()
-        assert can_receive_event(session, users["bob"], event) is True
+        assert can_receive_event(session, bob_auth, event) is True
         session.delete(membership)
         session.commit()
-        assert can_receive_event(session, users["bob"], event) is False
+        assert can_receive_event(session, bob_auth, event) is False
 def test_sole_local_user_safely_adopts_legacy_projects(engine):
     with Session(engine) as session:
         user = User(

@@ -39,7 +39,8 @@ The current repository is a functional alpha, not a concept demo.
 ### Shipped product capabilities
 
 - Shared project, subproject, ticket, comment, and audit state.
-- React Kanban interface with targeted real-time refresh over SSE.
+- React Kanban interface with targeted real-time refresh over SSE; PostgreSQL
+  instances share content-free invalidations through direct LISTEN/NOTIFY.
 - Project-scoped knowledge trees with RAW, SUMMARY, PRD, and TDD node types.
 - Deterministic context-trail search that recommends a scoped load order.
 - Human correction requests and agent-authored knowledge proposals.
@@ -52,9 +53,9 @@ The current repository is a functional alpha, not a concept demo.
 - Google authentication, revocable browser sessions, workspace-bound scoped
   API keys, workspace ownership, membership roles, and object authorization.
 - SQLite for local use and a nominal PostgreSQL configuration path.
-- Docker packaging, 149 passing backend/MCP tests plus PostgreSQL-only
-  migration/claim/encrypted-restore regressions, MCP subprocess simulation, a
-  production frontend build, and three Playwright browser tests.
+- Docker packaging, 156 passing backend/MCP tests plus PostgreSQL-only
+  migration/claim/encrypted-restore/realtime regressions, MCP subprocess
+  simulation, a production frontend build, and three Playwright browser tests.
 
 ### Current product maturity
 
@@ -222,7 +223,7 @@ improving the current product.
 | API | FastAPI + SQLModel | Same, with explicit service boundaries | Split only after measured contention |
 | Web | React + Vite | Same, route-based product shell | Add SSR only for public marketing/docs |
 | Database | SQLite | Managed PostgreSQL + Alembic | Read replicas after real demand |
-| Realtime | In-memory SSE | PostgreSQL LISTEN/NOTIFY or a small broker | Dedicated event bus for multi-region |
+| Realtime | In-memory SSE | Implemented PostgreSQL LISTEN/NOTIFY with resync-on-reconnect; production evidence pending | Dedicated event bus for multi-region |
 | Background work | Caller-driven | Durable job table + worker | Queue service after workload proves it |
 | Agent protocol | Local stdio MCP | Streamable HTTP MCP + OAuth scopes | Regional gateways when required |
 | Files | Local filesystem | S3-compatible object storage | Customer-controlled buckets for enterprise |
@@ -406,7 +407,8 @@ messages and ticket creation are not value metrics.
 - **Delivered:** workspace/tenant model, membership, project ownership, and
   centralized object-level authorization across application and MCP routes.
 - **Delivered:** tenant-scoped SSE and baseline authenticated actor
-  classification.
+  classification, plus tested cross-process PostgreSQL fan-out and explicit
+  reconnect/overflow resynchronization.
 - **Delivered:** trusted OAuth callback origin and production secret
   validation.
 - **Delivered:** ordered Alembic migrations, safe adoption of recognized
@@ -435,7 +437,8 @@ messages and ticket creation are not value metrics.
 - Workspace onboarding, invitations, and role-management workflows.
 - GitHub App with repository/PR linkage and webhook-driven state.
 - Idempotent ticket creation and command deduplication.
-- Durable multi-instance events and jobs.
+- Durable background jobs; SSE remains a recoverable invalidation channel, not
+  a business-event log.
 - Structured product telemetry, logs, error tracking, and operator runbooks.
 - Improved audit records with actor ID and before/after metadata.
 
@@ -469,6 +472,8 @@ messages and ticket creation are not value metrics.
 ### Cloud private beta
 
 - Cross-tenant read, write, delete, SSE, and API-key tests pass.
+- Two independent API broadcasters exchange workspace-tagged invalidations
+  through the hosted PostgreSQL connection.
 - PostgreSQL migration and production-like restore exercises pass.
 - OAuth, CSRF, session, rate-limit, and security-header controls pass review.
 - Operator can identify a tenant, revoke access, restore data, and audit a

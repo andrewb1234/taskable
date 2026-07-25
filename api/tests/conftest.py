@@ -18,7 +18,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from api import database, events
 from api.authorization import ensure_personal_workspace
-from api.auth import get_current_user, hash_api_key
+from api.auth import get_current_user, get_stream_current_user, hash_api_key
 from api.dependencies import get_session
 from api.main import app
 from api.models.entities import ApiKey, User
@@ -97,18 +97,26 @@ def client(engine, test_user) -> Iterator[TestClient]:
 
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[
+        get_stream_current_user
+    ] = override_get_current_user
     api_v1 = getattr(app, "api_v1", None)
     if api_v1 is not None:
         api_v1.dependency_overrides[get_session] = override_get_session
         api_v1.dependency_overrides[get_current_user] = override_get_current_user
+        api_v1.dependency_overrides[
+            get_stream_current_user
+        ] = override_get_current_user
     events.reset_broadcaster()
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.pop(get_session, None)
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_stream_current_user, None)
     if api_v1 is not None:
         api_v1.dependency_overrides.pop(get_session, None)
         api_v1.dependency_overrides.pop(get_current_user, None)
+        api_v1.dependency_overrides.pop(get_stream_current_user, None)
 
 
 @pytest.fixture
@@ -147,18 +155,26 @@ def multi_user_client(engine) -> Iterator[tuple[TestClient, dict[str, User]]]:
 
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[
+        get_stream_current_user
+    ] = override_get_current_user
     api_v1 = getattr(app, "api_v1", None)
     if api_v1 is not None:
         api_v1.dependency_overrides[get_session] = override_get_session
         api_v1.dependency_overrides[get_current_user] = override_get_current_user
+        api_v1.dependency_overrides[
+            get_stream_current_user
+        ] = override_get_current_user
     events.reset_broadcaster()
     with TestClient(app) as test_client:
         yield test_client, users
     app.dependency_overrides.pop(get_session, None)
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_stream_current_user, None)
     if api_v1 is not None:
         api_v1.dependency_overrides.pop(get_session, None)
         api_v1.dependency_overrides.pop(get_current_user, None)
+        api_v1.dependency_overrides.pop(get_stream_current_user, None)
 
 
 @pytest.fixture

@@ -86,8 +86,9 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
   useEffect(() => {
     if (!lastEvent) return;
     if (
-      lastEvent.entity === "knowledge_node" &&
-      lastEvent.parent_id === projectId
+      lastEvent.action === "SYNC_REQUIRED" ||
+      (lastEvent.entity === "knowledge_node" &&
+        lastEvent.parent_id === projectId)
     ) {
       nodes.refetch();
     }

@@ -33,8 +33,9 @@ export function TicketModal({ ticketId, onClose, lastEvent }: Props) {
   useEffect(() => {
     if (!lastEvent || ticketId == null) return;
     if (
-      lastEvent.entity === "ticket" &&
-      lastEvent.entity_id === ticketId
+      lastEvent.action === "SYNC_REQUIRED" ||
+      (lastEvent.entity === "ticket" &&
+        lastEvent.entity_id === ticketId)
     ) {
       ticket.refetch();
     }

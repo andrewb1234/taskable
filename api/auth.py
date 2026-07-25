@@ -20,7 +20,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import Session, select
 
 from api.api_keys import hash_api_key
-from api.dependencies import SessionDep, SettingsDep
+from api.dependencies import FunctionSessionDep, SessionDep, SettingsDep
 from api.models.entities import (
     ApiKey,
     ApiKeyProject,
@@ -256,3 +256,15 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_stream_current_user(
+    request: Request,
+    session: FunctionSessionDep,
+    settings: SettingsDep,
+) -> User:
+    """Authenticate an SSE request without retaining a request-long session."""
+    return await get_current_user(request, session, settings)
+
+
+StreamCurrentUser = Annotated[User, Depends(get_stream_current_user)]
