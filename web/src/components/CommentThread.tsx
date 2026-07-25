@@ -91,7 +91,7 @@ export function CommentThread({
                   {comment.author === "AGENT" ? "Agent" : "Human"}
                 </strong>
                 <time
-                  className="font-mono text-[10px] text-muted-foreground"
+                  className="font-mono text-[11px] text-muted-foreground"
                   dateTime={comment.timestamp}
                 >
                   {new Date(`${comment.timestamp}Z`).toLocaleString()}
@@ -140,7 +140,7 @@ export function CommentThread({
         </div>
         <p
           id={`ticket-${ticketId}-comment-help`}
-          className="mt-1 text-[10px] text-muted-foreground"
+          className="mt-1 text-[11px] text-muted-foreground"
         >
           Press {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} + Enter to
           post.

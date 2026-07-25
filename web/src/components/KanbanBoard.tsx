@@ -143,9 +143,9 @@ function KanbanColumn({
           <h3 id={`column-${status}-heading`} className="sr-only">
             {TICKET_STATUS_LABELS[status]}
           </h3>
-          <TicketStatusIndicator status={status} className="text-[10px]" />
+          <TicketStatusIndicator status={status} className="text-[11px]" />
           <span
-            className="font-mono text-[10px] text-muted-foreground"
+            className="font-mono text-[11px] text-muted-foreground"
             aria-label={`${tickets.length} tickets`}
           >
             {String(tickets.length).padStart(2, "0")}
@@ -192,7 +192,7 @@ function KanbanColumn({
             <p className="text-xs font-medium text-muted-foreground">
               No {TICKET_STATUS_LABELS[status].toLowerCase()} work
             </p>
-            <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               Status changes appear here after they are saved.
             </p>
           </div>

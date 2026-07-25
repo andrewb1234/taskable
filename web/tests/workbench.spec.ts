@@ -116,7 +116,8 @@ async function openWorkbench(page: Page, fixture: WorkbenchFixture) {
   await authenticateBrowser(page);
   await page.goto("/app");
 
-  if ((page.viewportSize()?.width ?? 1280) < 768) {
+  const isMobile = (page.viewportSize()?.width ?? 1280) < 768;
+  if (isMobile) {
     const navigationTrigger = page.getByRole("button", {
       name: "Open workspace navigation",
     });
@@ -127,14 +128,16 @@ async function openWorkbench(page: Page, fixture: WorkbenchFixture) {
     .getByRole("button", { name: fixture.project.name, exact: true })
     .click();
 
-  if (
-    (await page.getByRole("dialog", { name: "Workspace navigation" }).count()) ===
-    0
-  ) {
+  const workspaceNavigation = page.getByRole("dialog", {
+    name: "Workspace navigation",
+  });
+  if (isMobile) {
+    await expect(workspaceNavigation).toBeHidden();
     const navigationTrigger = page.getByRole("button", {
       name: "Open workspace navigation",
     });
-    if (await navigationTrigger.isVisible()) await navigationTrigger.click();
+    await navigationTrigger.click();
+    await expect(workspaceNavigation).toBeVisible();
   }
 
   await page

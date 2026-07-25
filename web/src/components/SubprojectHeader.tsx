@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TechnicalLabel } from "@/components/ui/technical-label";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { deleteSubproject, updateSubproject } from "@/lib/api";
 import type { Subproject, SubprojectStatus } from "@/types";
@@ -97,8 +96,7 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
       {!editing ? (
         <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
-            <TechnicalLabel>Execution context</TechnicalLabel>
-            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h2
                 id="execution-context-heading"
                 className="min-w-0 truncate text-xl font-semibold tracking-tight"
@@ -106,7 +104,7 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
               >
                 {subproject.name}
               </h2>
-              <Badge variant="outline" className="font-mono text-[10px] uppercase">
+              <Badge variant="outline" className="font-mono text-[11px] uppercase">
                 {subproject.status}
               </Badge>
             </div>
@@ -141,7 +139,9 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
         </div>
       ) : (
         <div className="space-y-4">
-          <TechnicalLabel>Edit execution context</TechnicalLabel>
+          <h3 className="text-sm font-semibold tracking-tight">
+            Edit execution context
+          </h3>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
             <div>
               <label htmlFor="subproject-name" className="technical-label">

@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { TechnicalLabel } from "@/components/ui/technical-label";
 import {
   ASSIGNEE_LABELS,
   BLOCKED_BY_LABELS,
@@ -189,7 +188,9 @@ export function MetadataPane({ ticket, onChanged }: Props) {
   return (
     <div className="space-y-6 text-sm">
       <div>
-        <TechnicalLabel>Execution metadata</TechnicalLabel>
+        <h2 className="text-sm font-semibold tracking-tight">
+          Execution metadata
+        </h2>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           Explicit controls remain authoritative. Board columns update after
           the saved state is returned.
@@ -337,19 +338,19 @@ export function MetadataPane({ ticket, onChanged }: Props) {
             </div>
             <dl className="mt-3 grid gap-2">
               <div>
-                <dt className="font-mono text-[9px] uppercase opacity-70">
+                <dt className="font-mono text-[11px] uppercase opacity-70">
                   Worker
                 </dt>
                 <dd className="break-all font-mono">{ticket.claimed_by}</dd>
               </div>
               <div>
-                <dt className="font-mono text-[9px] uppercase opacity-70">
+                <dt className="font-mono text-[11px] uppercase opacity-70">
                   Claimed
                 </dt>
                 <dd>{formatTimestamp(ticket.claimed_at)}</dd>
               </div>
               <div>
-                <dt className="font-mono text-[9px] uppercase opacity-70">
+                <dt className="font-mono text-[11px] uppercase opacity-70">
                   Lease expiry
                 </dt>
                 <dd>{formatTimestamp(ticket.lease_expires_at)}</dd>
@@ -423,7 +424,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
               </span>
               {reference.subproject_name && (
                 <span
-                  className="max-w-24 shrink-0 truncate text-[10px] text-muted-foreground"
+                  className="max-w-24 shrink-0 truncate text-[11px] text-muted-foreground"
                   title={reference.subproject_name}
                 >
                   {reference.subproject_name}
@@ -535,7 +536,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
                     <strong>{log.actor}</strong>{" "}
                     {log.action.replaceAll("_", " ").toLowerCase()}
                     <time
-                      className="mt-0.5 block font-mono text-[9px] text-muted-foreground"
+                      className="mt-0.5 block font-mono text-[11px] text-muted-foreground"
                       dateTime={log.timestamp}
                     >
                       {formatTimestamp(log.timestamp)}
@@ -570,7 +571,7 @@ function MetadataSection({
 }) {
   return (
     <section className="space-y-3 border-t border-border pt-4">
-      <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      <h3 className="text-sm font-semibold tracking-tight">
         {title}
       </h3>
       {children}

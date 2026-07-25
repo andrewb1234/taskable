@@ -251,26 +251,29 @@ function TicketBody({
             {dirty && (
               <span
                 role="status"
-                className="border border-warning/40 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning"
+                className="border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning"
               >
                 Unsaved changes
               </span>
             )}
             {refreshing && (
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
                 Refreshing
               </span>
             )}
           </div>
-          <label htmlFor={`ticket-${ticket.id}-title`} className="sr-only">
+          <label
+            htmlFor={`ticket-${ticket.id}-title`}
+            className="mt-3 font-mono text-[11px] font-semibold text-muted-foreground"
+          >
             Ticket title
           </label>
           <Input
             id={`ticket-${ticket.id}-title`}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            className="h-auto min-h-11 border-none bg-transparent px-0 py-1 text-xl font-semibold shadow-none focus-visible:ring-0 sm:text-2xl"
+            className="h-auto min-h-11 rounded-none border-x-0 border-t-0 bg-transparent px-0 py-1 text-xl font-semibold shadow-none transition-fast hover:border-input focus-visible:border-brand-brass focus-visible:ring-0 sm:text-2xl"
           />
         </DialogHeader>
 
@@ -331,9 +334,12 @@ function TicketBody({
           )}
 
           <section aria-labelledby={`ticket-${ticket.id}-content-heading`}>
-            <TechnicalLabel id={`ticket-${ticket.id}-content-heading`}>
-              Primary work content
-            </TechnicalLabel>
+            <h3
+              id={`ticket-${ticket.id}-content-heading`}
+              className="text-sm font-semibold tracking-tight"
+            >
+              Work content
+            </h3>
             <label
               htmlFor={`ticket-${ticket.id}-description`}
               className="mt-3 block text-xs font-semibold"

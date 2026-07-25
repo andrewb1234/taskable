@@ -65,7 +65,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
       data-testid={`ticket-${ticket.id}`}
       data-ticket-id={ticket.id}
       data-status={ticket.status}
-      className="group relative overflow-hidden border border-border bg-card shadow-sm transition-fast hover:border-brand-brass/60 hover:shadow-md"
+      className="group relative overflow-hidden border border-border bg-card transition-fast hover:border-brand-brass/60"
     >
       <button
         type="button"
@@ -74,7 +74,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
         aria-label={`Open ticket #${ticket.id}: ${ticket.title}`}
       >
         <div className="flex items-start gap-3">
-          <span className="shrink-0 font-mono text-[10px] font-semibold text-brand-brass">
+          <span className="shrink-0 font-mono text-[11px] font-semibold text-brand-brass">
             #{ticket.id}
           </span>
           <h4
@@ -95,7 +95,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
         )}
 
         {ticket.status === "BLOCKED" && ticket.blocked_by && (
-          <div className="mt-2 flex min-w-0 items-start gap-1.5 border-l-2 border-status-blocked-border pl-2 text-[10px] text-status-blocked-foreground">
+          <div className="mt-2 flex min-w-0 items-start gap-1.5 border-l-2 border-status-blocked-border pl-2 text-[11px] text-status-blocked-foreground">
             <OctagonAlert className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
             <span className="min-w-0">
               <strong>{BLOCKED_BY_LABELS[ticket.blocked_by]}</strong>
@@ -110,7 +110,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
 
         {ticket.depends_on.length > 0 && (
           <div className="mt-2">
-            <div className="mb-1 flex items-center gap-1 font-mono text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="mb-1 flex items-center gap-1 font-mono text-[11px] font-semibold text-muted-foreground">
               <Link2 className="h-3 w-3" aria-hidden />
               Dependencies
             </div>
@@ -123,7 +123,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
                     <Badge
                       key={id}
                       variant="todo"
-                      className="max-w-full gap-1 px-1.5 py-0 text-[9px]"
+                      className="max-w-full gap-1 px-1.5 py-0 text-[11px]"
                     >
                       <span className="font-mono">#{id}</span>
                     </Badge>
@@ -135,7 +135,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
         {ticket.claimed_by && (
           <div
             className={cn(
-              "mt-2 flex min-w-0 items-center gap-1.5 text-[10px]",
+              "mt-2 flex min-w-0 items-center gap-1.5 text-[11px]",
               leaseExpired
                 ? "text-status-blocked-foreground"
                 : "text-status-progress-foreground",
@@ -155,7 +155,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <Badge
             variant={assigneeVariant[ticket.assignee]}
-            className="gap-1 px-1.5 py-0 text-[9px]"
+            className="gap-1 px-1.5 py-0 text-[11px]"
           >
             {assigneeIcon[ticket.assignee]}
             <span>{ASSIGNEE_LABELS[ticket.assignee]}</span>
@@ -163,7 +163,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
           {ticket.mr_link && (
             <Badge
               variant="review"
-              className="gap-1 px-1.5 py-0 text-[9px]"
+              className="gap-1 px-1.5 py-0 text-[11px]"
             >
               <GitPullRequest className="h-3 w-3" aria-hidden />
               MR linked
@@ -172,7 +172,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
           {ticket.source_refs.length > 0 && (
             <Badge
               variant="outline"
-              className="gap-1 px-1.5 py-0 text-[9px] text-muted-foreground"
+              className="gap-1 px-1.5 py-0 text-[11px] text-muted-foreground"
             >
               <BookOpen className="h-3 w-3" aria-hidden />
               {ticket.source_refs.length} evidence
@@ -185,7 +185,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
         <button
           type="button"
           aria-label={`Delete ticket ${ticket.title}`}
-          className="focus-ring absolute right-2 top-2 flex h-8 w-8 items-center justify-center text-muted-foreground transition-fast hover:bg-destructive/10 hover:text-destructive"
+          className="focus-ring absolute right-1.5 top-1.5 flex h-11 w-11 items-center justify-center text-muted-foreground transition-fast hover:bg-destructive/10 hover:text-destructive sm:right-2 sm:top-2 sm:h-8 sm:w-8"
           onClick={onDelete}
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -197,7 +197,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
           href={ticket.mr_link}
           target="_blank"
           rel="noopener noreferrer"
-          className="focus-ring flex min-h-11 items-center justify-between border-t border-border px-3 py-2 text-[10px] font-semibold text-muted-foreground hover:bg-accent/50 hover:text-foreground sm:min-h-9"
+          className="focus-ring flex min-h-11 items-center justify-between border-t border-border px-3 py-2 text-[11px] font-semibold text-muted-foreground hover:bg-accent/50 hover:text-foreground sm:min-h-9"
           aria-label={`Open merge request for ticket #${ticket.id}`}
         >
           <span className="flex items-center gap-1.5">
@@ -216,7 +216,7 @@ function DependencyChip({ depRef }: { depRef: TicketRef }) {
   return (
     <Badge
       variant={dependencyVariant[depRef.status]}
-      className="max-w-full gap-1 px-1.5 py-0 text-[9px]"
+      className="max-w-full gap-1 px-1.5 py-0 text-[11px]"
       title={`${TICKET_STATUS_LABELS[depRef.status]} · ${
         depRef.subproject_name ?? "same subproject"
       } · ${depRef.title}`}
