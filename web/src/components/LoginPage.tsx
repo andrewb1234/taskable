@@ -2,7 +2,11 @@ import { useState, type FormEvent } from "react";
 import { MouvadahLockup } from "@/components/brand/mouvadah-brand";
 import { useAuth } from "@/context/AuthContext";
 
-export function LoginPage() {
+export function LoginPage({
+  onBackToLanding,
+}: {
+  onBackToLanding?: () => void;
+}) {
   const { login, loginWithLocalApiKey, providers } = useAuth();
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState("");
@@ -32,6 +36,15 @@ export function LoginPage() {
           <p className="text-center text-sm text-muted-foreground">
             Co-pilot workspace for human-agent collaboration
           </p>
+          {onBackToLanding ? (
+            <button
+              type="button"
+              onClick={onBackToLanding}
+              className="focus-ring transition-fast mt-2 rounded-sm text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
+            >
+              Back to overview
+            </button>
+          ) : null}
         </div>
 
         <div className="flex w-full flex-col gap-4">
