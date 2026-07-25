@@ -12,8 +12,10 @@ export type WorkspaceView = "subproject" | "knowledge";
 interface WorkspaceState {
   activeProjectId: number | null;
   activeSubprojectId: number | null;
-  setActiveProjectId: (id: number | null) => void;
-  setActiveSubprojectId: (id: number | null) => void;
+  activeProjectName: string | null;
+  activeSubprojectName: string | null;
+  setActiveProjectId: (id: number | null, name?: string | null) => void;
+  setActiveSubprojectId: (id: number | null, name?: string | null) => void;
   activeTicketId: number | null;
   openTicket: (id: number | null) => void;
   view: WorkspaceView;
@@ -26,18 +28,38 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeProjectId, setActiveProjectIdRaw] = useState<number | null>(
     null,
   );
-  const [activeSubprojectId, setActiveSubprojectId] = useState<number | null>(
+  const [activeSubprojectId, setActiveSubprojectIdRaw] = useState<number | null>(
     null,
   );
+  const [activeProjectName, setActiveProjectName] = useState<string | null>(
+    null,
+  );
+  const [activeSubprojectName, setActiveSubprojectName] = useState<
+    string | null
+  >(null);
   const [activeTicketId, setActiveTicketId] = useState<number | null>(null);
   const [view, setView] = useState<WorkspaceView>("subproject");
 
-  const setActiveProjectId = useCallback((id: number | null) => {
-    setActiveProjectIdRaw(id);
-    // Switching project invalidates subproject/ticket context.
-    setActiveSubprojectId(null);
-    setActiveTicketId(null);
-  }, []);
+  const setActiveProjectId = useCallback(
+    (id: number | null, name: string | null = null) => {
+      setActiveProjectIdRaw(id);
+      setActiveProjectName(id == null ? null : name);
+      // Switching project invalidates subproject/ticket context.
+      setActiveSubprojectIdRaw(null);
+      setActiveSubprojectName(null);
+      setActiveTicketId(null);
+    },
+    [],
+  );
+
+  const setActiveSubprojectId = useCallback(
+    (id: number | null, name: string | null = null) => {
+      setActiveSubprojectIdRaw(id);
+      setActiveSubprojectName(id == null ? null : name);
+      setActiveTicketId(null);
+    },
+    [],
+  );
 
   const openTicket = useCallback((id: number | null) => {
     setActiveTicketId(id);
@@ -47,6 +69,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () => ({
       activeProjectId,
       activeSubprojectId,
+      activeProjectName,
+      activeSubprojectName,
       setActiveProjectId,
       setActiveSubprojectId,
       activeTicketId,
@@ -57,8 +81,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [
       activeProjectId,
       activeSubprojectId,
+      activeProjectName,
+      activeSubprojectName,
       activeTicketId,
       setActiveProjectId,
+      setActiveSubprojectId,
       openTicket,
       view,
     ],

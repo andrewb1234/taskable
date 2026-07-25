@@ -22,6 +22,8 @@ interface ResizableSplitProps {
   maxSize?: number;
   /** Persist size under this key in localStorage. */
   storageKey?: string;
+  separatorLabel?: string;
+  collapseFirstBelowMd?: boolean;
   first: React.ReactNode;
   second: React.ReactNode;
   className?: string;
@@ -35,6 +37,8 @@ export function ResizableSplit({
   minSize = 160,
   maxSize = 800,
   storageKey,
+  separatorLabel = "Resize pane",
+  collapseFirstBelowMd = false,
   first,
   second,
   className,
@@ -94,6 +98,21 @@ export function ResizableSplit({
     }
   }, []);
 
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const decrement =
+        direction === "horizontal" ? e.key === "ArrowLeft" : e.key === "ArrowUp";
+      const increment =
+        direction === "horizontal"
+          ? e.key === "ArrowRight"
+          : e.key === "ArrowDown";
+      if (!decrement && !increment) return;
+      e.preventDefault();
+      setSize(currentSize + (increment ? 16 : -16));
+    },
+    [currentSize, direction, setSize],
+  );
+
   // Restore a global body cursor while dragging so the feedback is clear
   // even when the pointer leaves the gutter briefly.
   useEffect(() => {
@@ -125,21 +144,33 @@ export function ResizableSplit({
         className,
       )}
     >
-      <div style={firstStyle} className="flex min-h-0 min-w-0 overflow-hidden">
+      <div
+        style={firstStyle}
+        className={cn(
+          "flex min-h-0 min-w-0 overflow-hidden",
+          collapseFirstBelowMd && "max-md:hidden",
+        )}
+      >
         {first}
       </div>
       <div
         role="separator"
         aria-orientation={direction === "horizontal" ? "vertical" : "horizontal"}
-        aria-label="Resize pane"
+        aria-label={separatorLabel}
+        aria-valuemin={minSize}
+        aria-valuemax={maxSize}
+        aria-valuenow={Math.round(currentSize)}
+        tabIndex={0}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onKeyDown={onKeyDown}
         className={cn(
-          "group relative shrink-0 bg-border/30 transition-colors hover:bg-primary/50",
+          "group relative shrink-0 bg-border/30 transition-colors hover:bg-primary/50 focus-visible:bg-primary",
           direction === "horizontal"
             ? "w-1 cursor-col-resize"
             : "h-1 cursor-row-resize",
+          collapseFirstBelowMd && "max-md:hidden",
           dragging && "bg-primary",
         )}
       >

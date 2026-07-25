@@ -31,9 +31,14 @@ import { cn } from "@/lib/utils";
 interface SidebarProps {
   lastEvent: SSEPayload | null;
   onNavigateProfile: () => void;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
+export function Sidebar({
+  lastEvent,
+  onNavigateProfile,
+  onNavigate,
+}: SidebarProps) {
   const {
     activeProjectId,
     activeSubprojectId,
@@ -96,32 +101,32 @@ export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
       projects.data &&
       projects.data.length > 0
     ) {
-      setActiveProjectId(projects.data[0].id);
+      setActiveProjectId(projects.data[0].id, projects.data[0].name);
     }
   }, [activeProjectId, projects.data, setActiveProjectId]);
 
   return (
-    <aside className="flex h-full w-full flex-col border-r border-border bg-card/30">
-      <header className="border-b border-border px-4 py-3">
+    <aside className="flex h-full w-full min-w-0 flex-col border-r border-border bg-card">
+      <header className="border-b border-border px-4 pb-4 pt-5">
         <div className="flex items-center justify-between">
           <h1>
             <MouvadahLockup size="sm" />
           </h1>
-          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-            Co-Pilot
+          <span className="rounded-full border border-brand-brass/40 bg-brand-brass/10 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-brand-brass">
+            Control plane
           </span>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Human + Agent workspace
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+          Projects, execution, and durable context in one accountable workspace.
         </p>
       </header>
 
       <ScrollArea className="flex-1">
-        <div className="space-y-4 px-3 py-4">
+        <div className="space-y-4 px-3 py-5">
           <section>
-            <div className="mb-2 flex items-center justify-between px-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Projects
+            <div className="mb-3 flex items-center justify-between px-1">
+              <span className="technical-label">
+                Project hierarchy
               </span>
               <NewProjectButton onCreated={projects.refetch} />
             </div>
@@ -146,22 +151,26 @@ export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
                 <li key={project.id}>
                   <div
                     className={cn(
-                      "group flex items-center gap-1 rounded-md pr-1 transition-colors",
+                      "group flex items-center gap-1 border-l-2 pr-1 transition-colors",
                       activeProjectId === project.id
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-accent/50",
+                        ? "border-brand-brass bg-accent text-accent-foreground"
+                        : "border-transparent hover:bg-accent/50",
                     )}
                   >
                     <button
-                      className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
-                      onClick={() => setActiveProjectId(project.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-sm"
+                      onClick={() => {
+                        setActiveProjectId(project.id, project.name);
+                        onNavigate?.();
+                      }}
+                      title={project.name}
                     >
                       <Folder className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">{project.name}</span>
                     </button>
                     <button
                       type="button"
-                      className="h-6 w-6 shrink-0 rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground group-hover:opacity-100"
+                      className="h-7 w-7 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground md:opacity-0 md:group-hover:opacity-100"
                       aria-label={`Delete ${project.name}`}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -177,6 +186,7 @@ export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
                       lastEvent={lastEvent}
                       activeSubprojectId={activeSubprojectId}
                       onSelect={setActiveSubprojectId}
+                      onNavigate={onNavigate}
                     />
                   )}
                 </li>
@@ -186,7 +196,7 @@ export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
         </div>
       </ScrollArea>
 
-      <footer className="border-t border-border px-3 py-2">
+      <footer className="border-t border-border bg-surface-subtle px-3 py-3">
         <div className="flex items-center gap-2">
           {user?.avatar_url ? (
             <img
@@ -209,7 +219,10 @@ export function Sidebar({ lastEvent, onNavigateProfile }: SidebarProps) {
             type="button"
             className="h-7 w-7 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             aria-label="Profile & settings"
-            onClick={onNavigateProfile}
+            onClick={() => {
+              onNavigate?.();
+              onNavigateProfile();
+            }}
           >
             <Settings className="mx-auto h-3.5 w-3.5" />
           </button>
@@ -232,11 +245,13 @@ function SubprojectList({
   lastEvent,
   activeSubprojectId,
   onSelect,
+  onNavigate,
 }: {
   projectId: number;
   lastEvent: SSEPayload | null;
   activeSubprojectId: number | null;
-  onSelect: (id: number | null) => void;
+  onSelect: (id: number | null, name?: string | null) => void;
+  onNavigate?: () => void;
 }) {
   const subprojects = useAsync<Subproject[]>(
     () => listSubprojects(projectId),
@@ -280,7 +295,7 @@ function SubprojectList({
       subprojects.data &&
       subprojects.data.length > 0
     ) {
-      onSelect(subprojects.data[0].id);
+      onSelect(subprojects.data[0].id, subprojects.data[0].name);
     }
   }, [activeSubprojectId, subprojects.data, onSelect]);
 
@@ -301,7 +316,7 @@ function SubprojectList({
   }
 
   return (
-    <div className="ml-6 mt-1 border-l border-border pl-3">
+    <div className="ml-4 mt-1 border-l border-border pl-3">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
           Subprojects
@@ -316,7 +331,7 @@ function SubprojectList({
           <li key={sub.id}>
             <div
               className={cn(
-                "group flex items-center gap-1 rounded-md pr-1 transition-colors",
+                "group flex items-center gap-1 pr-1 transition-colors",
                 activeSubprojectId === sub.id
                   ? "bg-primary/10 text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent/40",
@@ -324,7 +339,11 @@ function SubprojectList({
             >
               <button
                 className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-xs"
-                onClick={() => onSelect(sub.id)}
+                onClick={() => {
+                  onSelect(sub.id, sub.name);
+                  onNavigate?.();
+                }}
+                title={sub.name}
               >
                 <FileText className="h-3 w-3 shrink-0" />
                 <span className="truncate">{sub.name}</span>
@@ -334,7 +353,7 @@ function SubprojectList({
               </button>
               <button
                 type="button"
-                className="h-5 w-5 shrink-0 rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground group-hover:opacity-100"
+                className="h-6 w-6 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground md:opacity-0 md:group-hover:opacity-100"
                 aria-label={`Delete ${sub.name}`}
                 onClick={(e) => {
                   e.stopPropagation();
