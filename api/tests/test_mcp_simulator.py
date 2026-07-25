@@ -30,7 +30,7 @@ import httpx
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
+VENV_PYTHON = Path(sys.executable)
 MCP_SERVER_SCRIPT = REPO_ROOT / "mcp" / "mcp_server.py"
 TEST_AGENT_KEY = "taskable_integration_test_key_12345"
 
