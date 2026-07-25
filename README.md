@@ -49,6 +49,14 @@ and is rejected for non-loopback or HTTPS origins.
 
 ## Authenticated ten-minute setup
 
+Prerequisites:
+
+- Python 3.12 or newer. The bootstrap detects an older macOS/Linux `python3`
+  and automatically restarts with `python3.12`–`python3.15` when one is
+  installed; otherwise it stops with an installation hint before changing
+  local state.
+- Node.js 20 or newer with `npm`.
+
 From a clean clone:
 
 ```bash

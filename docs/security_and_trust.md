@@ -74,7 +74,7 @@ evidence support.
 
 ### Verification
 
-- 111 backend and MCP integration tests pass.
+- 114 backend and MCP integration tests pass.
 - The suite includes concurrent claim, expiry, dependency, cascade, state,
   knowledge, cross-workspace read/write/delete isolation, role enforcement,
   tenant-filtered events, safe legacy adoption, OAuth hardening, and MCP

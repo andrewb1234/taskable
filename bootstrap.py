@@ -37,6 +37,13 @@ DEFAULT_CREDENTIALS_FILE = (
 DEFAULT_WINDSURF_CONFIG = (
     Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
 )
+MIN_PYTHON = (3, 12)
+PYTHON_CANDIDATES = (
+    "python3.15",
+    "python3.14",
+    "python3.13",
+    "python3.12",
+)
 
 COLOR_GREEN = "\033[92m"
 COLOR_YELLOW = "\033[93m"
@@ -65,6 +72,76 @@ def fatal(message: str) -> None:
 def step(title: str) -> None:
     print()
     print(f"\033[1m── {title} ──{COLOR_RESET}")
+
+
+def _probe_python(executable: str) -> tuple[int, int] | None:
+    """Return an interpreter's major/minor version without importing the app."""
+    try:
+        result = subprocess.run(
+            [
+                executable,
+                "-c",
+                (
+                    "import sys; "
+                    "print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+                ),
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        major, minor = result.stdout.strip().split(".", 1)
+        return int(major), int(minor)
+    except (OSError, subprocess.SubprocessError, TypeError, ValueError):
+        return None
+
+
+def _find_supported_python(
+    *,
+    current_executable: str | None = None,
+) -> str | None:
+    """Find a supported versioned Python when ``python3`` is too old."""
+    current = os.path.realpath(current_executable or sys.executable)
+    for command in PYTHON_CANDIDATES:
+        candidate = shutil.which(command)
+        if candidate is None or os.path.realpath(candidate) == current:
+            continue
+        if (_probe_python(candidate) or (0, 0)) >= MIN_PYTHON:
+            return candidate
+    return None
+
+
+def ensure_supported_python() -> None:
+    """Re-exec with a supported local Python or fail with actionable guidance."""
+    current_version = sys.version_info[:2]
+    if current_version >= MIN_PYTHON:
+        return
+
+    replacement = _find_supported_python()
+    required = ".".join(str(part) for part in MIN_PYTHON)
+    current = ".".join(str(part) for part in current_version)
+    if replacement is not None:
+        warn(
+            f"Python {current} is too old; restarting setup with {replacement}."
+        )
+        os.execv(
+            replacement,
+            [
+                replacement,
+                str(Path(__file__).resolve()),
+                *sys.argv[1:],
+            ],
+        )
+        return
+
+    fatal(
+        f"Python {required} or newer is required (found {current}). "
+        "Install a supported Python, then run `python3.12 bootstrap.py` "
+        "or a newer versioned command."
+    )
 
 
 def venv_python() -> Path:
@@ -364,6 +441,7 @@ def print_summary(
 
 
 def main() -> int:
+    ensure_supported_python()
     print("\033[1mMouvadah authenticated local setup\033[0m")
     print(f"Repository: {REPO_ROOT}")
     if not API_REQ.exists():
