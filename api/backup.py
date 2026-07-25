@@ -33,6 +33,7 @@ from api.migrations.runtime import (
     assert_schema_matches_metadata,
     current_revision,
 )
+from api.observability import configure_runtime, flush_telemetry, observe_job
 
 BACKUP_FORMAT = "mouvadah.encrypted-database-backup.v1"
 MAGIC = b"MOUVADAH-BACKUP\x01"
@@ -705,32 +706,40 @@ def _safe_summary(manifest: dict) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command == "backup":
-        manifest = create_backup(
-            args.database_url or get_settings().database_url,
-            args.output,
-            key_id=args.key_id,
-            overwrite=args.overwrite,
-            postgres_host_override=args.postgres_host_override,
-        )
-    elif args.command == "verify":
-        manifest = verify_backup(
-            args.input,
-            manifest_path=args.manifest,
-        )
-    elif args.command == "restore":
-        manifest = restore_backup(
-            args.input,
-            args.target_url,
-            confirm_database=args.confirm_database,
-            manifest_path=args.manifest,
-            allow_replace=args.allow_replace,
-            allow_configured_target=args.allow_configured_target,
-            backup_evidence=args.backup_evidence,
-            postgres_host_override=args.postgres_host_override,
-        )
-    else:  # pragma: no cover - argparse invariant
-        raise BackupError(f"Unsupported command {args.command!r}.")
+    settings = get_settings()
+    configure_runtime(settings)
+    try:
+        with observe_job(f"database_{args.command}"):
+            if args.command == "backup":
+                manifest = create_backup(
+                    args.database_url or settings.database_url,
+                    args.output,
+                    key_id=args.key_id,
+                    overwrite=args.overwrite,
+                    postgres_host_override=args.postgres_host_override,
+                )
+            elif args.command == "verify":
+                manifest = verify_backup(
+                    args.input,
+                    manifest_path=args.manifest,
+                )
+            elif args.command == "restore":
+                manifest = restore_backup(
+                    args.input,
+                    args.target_url,
+                    confirm_database=args.confirm_database,
+                    manifest_path=args.manifest,
+                    allow_replace=args.allow_replace,
+                    allow_configured_target=args.allow_configured_target,
+                    backup_evidence=args.backup_evidence,
+                    postgres_host_override=args.postgres_host_override,
+                )
+            else:  # pragma: no cover - argparse invariant
+                raise BackupError(
+                    f"Unsupported command {args.command!r}."
+                )
+    finally:
+        flush_telemetry()
     print(json.dumps(_safe_summary(manifest), sort_keys=True))
     return 0
 

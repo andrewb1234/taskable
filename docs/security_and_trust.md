@@ -363,18 +363,26 @@ Residual risk:
 - destructive MCP tools for individual projects, subprojects, tickets, and
   knowledge nodes still hard-delete immediately without an approval policy.
 
-### Low: operational visibility is minimal
+### Partially resolved low: operational visibility
 
-Only a basic health endpoint is visible. There are no structured security
-events, traces, service metrics, error aggregation, operator audit trail, or
-incident playbooks.
+The application now emits redacted JSON logs with server-generated request
+IDs and W3C trace correlation, a protected Prometheus endpoint for
+API/database/auth/SSE/job signals, database-aware readiness, optional
+privacy-restricted Sentry error aggregation, and vendor-neutral OTLP tracing.
+Backup/restore/purge commands emit bounded job outcomes and trace spans.
+`docs/incident_response.md` defines initial alert thresholds, severity, roles,
+containment, evidence, communications, postmortems, and drills.
 
-Required outcome:
+Residual risk:
 
-- structured redacted logs and correlation IDs;
-- latency, error, saturation, auth-failure, job, and SSE metrics;
-- tracing across API, jobs, and integrations;
-- alert thresholds and incident severity/runbooks.
+- production telemetry sinks, dashboards, notification destinations, and
+  provider alerts are not yet configured and evidenced;
+- transient backup jobs need a live scheduler failure alert and retained
+  success signal;
+- integrations do not yet exist, so end-to-end integration traces remain a
+  future control; and
+- alert thresholds and response objectives have not been calibrated against
+  production traffic or exercised by the operator.
 
 ## Target security architecture
 

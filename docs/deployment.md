@@ -41,6 +41,39 @@ Required for hosted operation:
 - `DELETION_RECOVERY_DAYS=30` unless an explicitly reviewed 7-90 day policy
   is used.
 
+### Observability and readiness
+
+Every response includes a server-generated `X-Request-ID`; valid W3C
+`traceparent` context is retained in structured JSON logs and OpenTelemetry
+spans. `/healthz` is liveness. `/readyz` performs a database round trip and
+returns `503` when the database is unavailable or the shared realtime
+transport is degraded/not started. Route labels are normalized and telemetry
+does not record request bodies, query strings, credentials, email addresses,
+client IPs, or SQL statements.
+
+Optional production configuration:
+
+- `DEPLOYMENT_ENVIRONMENT`: a stable deployment label; defaults to
+  `production` for an HTTPS `FRONTEND_URL`.
+- `LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, or `ERROR`.
+- `METRICS_BEARER_TOKEN`: dedicated random value of at least 32 characters.
+  When absent, `/internal/metrics` returns `404`; when present, the Prometheus
+  endpoint requires that bearer token.
+- `SENTRY_DSN`: optional HTTPS error-aggregation DSN. PII, request content,
+  local variables, and Sentry transaction sampling are disabled.
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: optional HTTPS OTLP/HTTP trace endpoint,
+  supplied as the collector base URL; the standard exporters append
+  `/v1/traces` and `/v1/metrics`.
+- `OTEL_EXPORTER_OTLP_HEADERS`: collector authentication. Never put
+  credentials in the endpoint URL.
+- `OTEL_TRACE_SAMPLE_RATIO`: `0` to `1`, default `0.1`.
+
+Configure an external liveness check, a metrics/trace/error backend, paging
+destinations, and a tested backup-failure alert before describing production
+monitoring as operational. The thresholds, severities, roles, containment,
+communications, evidence, and drill procedure are in
+`incident_response.md`.
+
 ### Realtime database connection
 
 PostgreSQL deployments use LISTEN/NOTIFY to fan out content-free invalidations

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -49,6 +51,15 @@ class Settings(BaseSettings):
     # development may safely adopt them when exactly one user exists.
     legacy_owner_email: str | None = None
 
+    # Observability. Export/scrape integrations remain fail-closed until their
+    # dedicated credentials or endpoints are explicitly configured.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    deployment_environment: str | None = None
+    metrics_bearer_token: SecretStr | None = None
+    sentry_dsn: SecretStr | None = None
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_trace_sample_ratio: float = 0.1
+
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
@@ -59,6 +70,21 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Return whether trusted configuration describes an HTTPS deployment."""
         return self.frontend_url.startswith("https://")
+
+    def observability_environment(self) -> str:
+        if self.deployment_environment:
+            return self.deployment_environment
+        return "production" if self.is_production() else "local"
+
+    def metrics_bearer_token_value(self) -> str | None:
+        if self.metrics_bearer_token is None:
+            return None
+        return self.metrics_bearer_token.get_secret_value()
+
+    def sentry_dsn_value(self) -> str | None:
+        if self.sentry_dsn is None:
+            return None
+        return self.sentry_dsn.get_secret_value()
 
     def public_origin(self) -> str:
         """Return the configured frontend origin without a path or query."""
@@ -133,6 +159,43 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "DELETION_RECOVERY_DAYS must be between 7 and 90."
             )
+        if not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}",
+            self.observability_environment(),
+        ):
+            raise RuntimeError(
+                "DEPLOYMENT_ENVIRONMENT must be a simple 1-63 character label."
+            )
+        metrics_token = self.metrics_bearer_token_value()
+        if metrics_token is not None and len(metrics_token) < 32:
+            raise RuntimeError(
+                "METRICS_BEARER_TOKEN must contain at least 32 characters."
+            )
+        if not 0 <= self.otel_trace_sample_ratio <= 1:
+            raise RuntimeError(
+                "OTEL_TRACE_SAMPLE_RATIO must be between 0 and 1."
+            )
+        for name, raw_url in {
+            "OTEL_EXPORTER_OTLP_ENDPOINT": self.otel_exporter_otlp_endpoint,
+            "SENTRY_DSN": self.sentry_dsn_value(),
+        }.items():
+            if not raw_url:
+                continue
+            observability_url = urlsplit(raw_url)
+            if (
+                observability_url.scheme not in {"http", "https"}
+                or not observability_url.netloc
+            ):
+                raise RuntimeError(
+                    f"{name} must be an absolute HTTP(S) URL."
+                )
+            if name == "OTEL_EXPORTER_OTLP_ENDPOINT" and (
+                observability_url.username or observability_url.password
+            ):
+                raise RuntimeError(
+                    "OTEL_EXPORTER_OTLP_ENDPOINT must not contain credentials; "
+                    "use OTEL_EXPORTER_OTLP_HEADERS."
+                )
         if self.local_auth_enabled and parsed.hostname not in {
             "localhost",
             "127.0.0.1",
@@ -144,6 +207,12 @@ class Settings(BaseSettings):
             )
         if not self.is_production():
             return
+        for name, raw_url in {
+            "OTEL_EXPORTER_OTLP_ENDPOINT": self.otel_exporter_otlp_endpoint,
+            "SENTRY_DSN": self.sentry_dsn_value(),
+        }.items():
+            if raw_url and urlsplit(raw_url).scheme != "https":
+                raise RuntimeError(f"{name} must use HTTPS in production.")
         if self.local_auth_enabled:
             raise RuntimeError(
                 "LOCAL_AUTH_ENABLED must be false in production."

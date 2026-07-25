@@ -24,6 +24,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
 
 from api.models.enums import SSEAction
+from api.observability import (
+    add_realtime_subscriber,
+    record_realtime_event,
+    record_realtime_reconnect,
+    record_realtime_resync,
+    set_realtime_health,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +207,7 @@ class _PostgresTransport:
         self._stop_event.clear()
         connection = await asyncio.to_thread(self._open_listener)
         self._attach(connection)
+        set_realtime_health(True)
 
     def _detach(self) -> None:
         if self._loop is not None and self._reader_fd is not None:
@@ -239,6 +247,8 @@ class _PostgresTransport:
                         self._open_listener
                     )
                 except Exception:
+                    record_realtime_reconnect("failed")
+                    set_realtime_health(False)
                     logger.exception(
                         "Realtime listener reconnect failed; retrying."
                     )
@@ -248,6 +258,8 @@ class _PostgresTransport:
                     connection.close()
                     return
                 self._attach(connection)
+                record_realtime_reconnect("succeeded")
+                set_realtime_health(True)
                 await self._on_resync("transport_reconnected")
                 logger.info("Realtime PostgreSQL listener reconnected.")
                 return
@@ -280,6 +292,7 @@ class _PostgresTransport:
                         notification.payload
                     )
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    record_realtime_event("postgresql", "invalid")
                     logger.warning(
                         "Ignored an invalid realtime notification."
                     )
@@ -287,6 +300,7 @@ class _PostgresTransport:
                 if event is not None:
                     self._loop.create_task(self._on_event(event))
         except Exception:
+            set_realtime_health(False)
             logger.exception(
                 "Realtime listener disconnected; scheduling reconnect."
             )
@@ -309,12 +323,15 @@ class _PostgresTransport:
             separators=(",", ":"),
         )
         if len(payload.encode("utf-8")) > _MAX_NOTIFY_BYTES:
+            record_realtime_event("postgresql", "oversize")
             logger.error("Realtime notification exceeded safe payload size.")
             self._publish_healthy = False
             return False
         try:
             await asyncio.to_thread(self._notify, payload)
         except Exception:
+            record_realtime_event("postgresql", "failed")
+            set_realtime_health(False)
             logger.exception(
                 "Shared realtime publish failed after the application "
                 "transaction committed."
@@ -322,6 +339,8 @@ class _PostgresTransport:
             self._publish_healthy = False
             return False
         self._publish_healthy = True
+        record_realtime_event("postgresql", "published")
+        set_realtime_health(True)
         return True
 
     async def stop(self) -> None:
@@ -333,6 +352,7 @@ class _PostgresTransport:
             await reconnect
         self._detach()
         await asyncio.to_thread(self._engine.dispose)
+        set_realtime_health(False)
         self._loop = None
 
 
@@ -371,6 +391,8 @@ class EventBroadcaster:
             raise RuntimeError(
                 f"Unsupported realtime database backend {backend!r}."
             )
+        else:
+            set_realtime_health(True)
         self._started = True
 
     async def stop(self) -> None:
@@ -379,6 +401,8 @@ class EventBroadcaster:
         self._started = False
         if transport is not None:
             await transport.stop()
+        else:
+            set_realtime_health(False)
 
     def status(self) -> str:
         if self._transport is None:
@@ -392,6 +416,7 @@ class EventBroadcaster:
             try:
                 queue.put_nowait(item)
             except asyncio.QueueFull:
+                record_realtime_resync("subscriber_overflow")
                 while True:
                     try:
                         queue.get_nowait()
@@ -407,10 +432,12 @@ class EventBroadcaster:
     async def publish(self, event: Event) -> None:
         """Deliver locally, then emit a shared PostgreSQL invalidation."""
         await self._deliver(event)
+        record_realtime_event("local", "delivered")
         if self._transport is not None:
             await self._transport.publish(event)
 
     async def resync_all(self, reason: str) -> None:
+        record_realtime_resync(reason)
         await self._deliver_item(ResyncSignal(reason=reason))
 
     @asynccontextmanager
@@ -422,11 +449,13 @@ class EventBroadcaster:
         )
         async with self._lock:
             self._subscribers.add(queue)
+        add_realtime_subscriber(1)
         try:
             yield queue
         finally:
             async with self._lock:
                 self._subscribers.discard(queue)
+            add_realtime_subscriber(-1)
 
     def subscriber_count(self) -> int:
         return len(self._subscribers)

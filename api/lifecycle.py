@@ -31,6 +31,7 @@ from api.models.entities import (
     WorkspaceMembership,
 )
 from api.models.enums import WorkspaceLifecycleAction
+from api.observability import configure_runtime, flush_telemetry, observe_job
 from api.utils.time import utcnow
 
 
@@ -343,28 +344,33 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    assert_database_current(engine)
-    assert_schema_matches_metadata(engine)
-    if args.command == "purge-due":
-        with Session(engine) as session:
-            results = purge_due_workspaces(
-                session,
-                backup_evidence=args.backup_evidence,
-                workspace_id=args.workspace_id,
-                dry_run=args.dry_run,
-            )
-        print(
-            json.dumps(
-                [
-                    asdict(result)
-                    if isinstance(result, PurgeResult)
-                    else result
-                    for result in results
-                ],
-                sort_keys=True,
-            )
-        )
-        return 0
+    configure_runtime(get_settings())
+    try:
+        with observe_job("workspace_purge"):
+            assert_database_current(engine)
+            assert_schema_matches_metadata(engine)
+            if args.command == "purge-due":
+                with Session(engine) as session:
+                    results = purge_due_workspaces(
+                        session,
+                        backup_evidence=args.backup_evidence,
+                        workspace_id=args.workspace_id,
+                        dry_run=args.dry_run,
+                    )
+                print(
+                    json.dumps(
+                        [
+                            asdict(result)
+                            if isinstance(result, PurgeResult)
+                            else result
+                            for result in results
+                        ],
+                        sort_keys=True,
+                    )
+                )
+                return 0
+    finally:
+        flush_telemetry()
     raise RuntimeError(f"Unsupported lifecycle command {args.command!r}.")
 
 
