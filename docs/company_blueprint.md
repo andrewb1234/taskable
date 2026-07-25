@@ -410,11 +410,15 @@ messages and ticket creation are not value metrics.
 - **Delivered:** ordered Alembic migrations, safe adoption of recognized
   legacy schemas, automatic SQLite backup, PostgreSQL upgrade evidence, and
   fail-closed deployment checks.
+- **Delivered:** CI for the Python 3.12/3.14 backend, frontend type/build, and
+  authenticated realtime path; dependency, secret, and CodeQL scanning;
+  SHA-pinned Actions; and Dependabot coverage.
 - Complete CSRF defense, browser-session revocation, rate limits, and security
   headers.
 - Automate managed PostgreSQL backup/restore and run production-like recovery
   exercises with measured RPO/RTO.
-- CI with tests, builds, dependency and secret scanning.
+- Add hash-locked Python dependencies, container scanning, SBOMs, artifact
+  signing, and build provenance.
 - Tenant export, verified deletion, and recovery-window controls.
 - License, privacy policy, terms, and a security contact.
 

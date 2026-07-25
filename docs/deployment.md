@@ -67,7 +67,8 @@ service waits for the API health check.
 ## Release procedure
 
 1. Build immutable API and web artifacts from the reviewed commit.
-2. Run backend tests, frontend build, security scans, and migration tests.
+2. Require `Required CI`, `Required security`, and `Required CodeQL` on the
+   reviewed commit.
 3. Back up the target database and record its identity.
 4. Run the single Alembic migration job.
 5. Run `python -m api.migrations check`.
@@ -77,6 +78,20 @@ service waits for the API health check.
    reversible write.
 9. Record release, migration, and rollback evidence.
 
-The current repository does not yet supply protected CI, managed hosting
-infrastructure, shared realtime fanout, or disaster-recovery automation. Those
-remain explicit release gates rather than implied guarantees.
+For a Render-style single-service deployment, configure the pre-deploy command
+as:
+
+```bash
+python -m api.migrations upgrade --backup-confirmed \
+  && python -m api.migrations check
+```
+
+The application must still start with `MIGRATION_MODE=check`. The
+`--backup-confirmed` flag is an operator assertion, not a backup mechanism:
+verify and record the managed backup before deploying.
+
+The repository supplies protected-CI workflow definitions, dependency update
+automation, and stable required-check names. The hosting platform, GitHub
+ruleset, and repository action policy remain operational configuration and
+must be checked during release. Managed infrastructure-as-code, shared
+realtime fanout, and disaster-recovery automation are still absent.

@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { E2E_API_KEY, E2E_JWT_SECRET } from "./tests/authFixture";
 
 // package.json declares "type": "module", so __dirname is not defined.
 const __filename = fileURLToPath(import.meta.url);
@@ -12,8 +13,8 @@ const REPO_ROOT = path.resolve(__dirname, "..");
  *
  * We boot two processes simultaneously via `webServer` array entries:
  *   1. `uvicorn` — the FastAPI backend pointed at a throwaway SQLite file
- *      under `/tmp/taskable-e2e.db` so the user's ~/.taskable DB is never
- *      touched.
+ *      under `web/tests/.e2e-taskable.db` so the user's ~/.taskable DB is
+ *      never touched.
  *   2. `vite`    — the React dev server (proxies /api/v1/* to uvicorn).
  *
  * Both servers are reused across tests (`reuseExistingServer: true`) so local
@@ -21,7 +22,6 @@ const REPO_ROOT = path.resolve(__dirname, "..");
  */
 
 const E2E_DB_PATH = path.join(REPO_ROOT, "web", "tests", ".e2e-taskable.db");
-const E2E_AGENT_KEY = "e2e-agent-key";
 
 export default defineConfig({
   testDir: "./tests",
@@ -46,8 +46,10 @@ export default defineConfig({
   webServer: [
     {
       // FastAPI — points at a throwaway DB so the user's real
-      // ~/.taskable/taskable.db is never mutated by tests.
+      // ~/.taskable/taskable.db is never mutated by tests. The seed script
+      // fails closed unless this exact test database path is configured.
       command:
+        `./.venv/bin/python -m scripts.seed_e2e && ` +
         `./.venv/bin/uvicorn api.main:app ` +
         `--host 127.0.0.1 --port 8000 --log-level warning`,
       url: "http://127.0.0.1:8000/healthz",
@@ -57,8 +59,10 @@ export default defineConfig({
       stderr: "pipe",
       timeout: 30_000,
       env: {
-        AGENT_API_KEY: E2E_AGENT_KEY,
         DATABASE_URL: `sqlite:///${E2E_DB_PATH}`,
+        E2E_API_KEY,
+        JWT_SECRET: E2E_JWT_SECRET,
+        MIGRATION_MODE: "check",
       },
     },
     {
