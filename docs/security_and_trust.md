@@ -87,7 +87,8 @@ evidence support.
 
 ### Verification
 
-- 133 backend and MCP integration tests pass.
+- 133 backend/MCP tests pass in the normal suite and one additional
+  PostgreSQL-only migration/claim regression passes against PostgreSQL 17.
 - The suite includes concurrent claim, expiry, dependency, cascade, state,
   knowledge, cross-workspace read/write/delete isolation, role enforcement,
   tenant-filtered events, safe legacy adoption, OAuth hardening, and MCP
@@ -99,8 +100,9 @@ evidence support.
   migration-built database: local-key-to-HttpOnly-session exchange plus two
   realtime/SSE behaviors.
 - GitHub workflows cover the test/build path on Python 3.12 and 3.14,
-  dependency review, Python and npm vulnerability audits, complete-history
-  secret scanning, and CodeQL for Python and JavaScript/TypeScript.
+  a PostgreSQL 17 migration/claim path, dependency review, Python and npm
+  vulnerability audits, complete-history secret scanning, and CodeQL for
+  Python and JavaScript/TypeScript.
 - Workflow actions are pinned to full commit SHAs and Dependabot covers the
   Actions, Python, MCP, and npm manifests.
 
@@ -213,7 +215,10 @@ Verified behavior:
   database;
 - fresh and unversioned SQLite upgrades preserve data and match ORM metadata;
 - fresh and unversioned PostgreSQL 17 upgrades preserve data and match ORM
-  metadata; and
+  metadata;
+- revision 0005 repairs native PostgreSQL `auditaction` values, the release
+  parity gate now compares the actual `pg_enum` labels, and the CI regression
+  commits real claim/requeue audit rows after reproducing the legacy drift; and
 - the operator runbook defines backup, failure, forward-fix, and restore-based
   rollback procedures.
 

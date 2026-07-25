@@ -15,6 +15,10 @@ realtime path, and dependency supply chain.
   `drop_all()` for isolated fixture speed. Migration tests must build the
   schema only through Alembic and prove revision, upgrade, backup, data
   preservation, fail-closed behavior, and ORM parity.
+* `api/tests/test_postgres_migrations.py` runs only with a dedicated loopback
+  database named `taskable_test`. It destroys and recreates that database's
+  `public` schema, reproduces legacy native-enum drift, applies the repair
+  migration, and commits real claim/requeue audit actions.
 * Playwright uses only `web/tests/.e2e-taskable.db`. Its seed helper validates
   that exact resolved SQLite path before deleting or writing anything and
   refuses every other database or dialect.
@@ -39,13 +43,17 @@ From the repository root:
 
 Playwright starts an isolated FastAPI process and Vite server, authenticates a
 real browser session, writes through the API, and proves SSE-driven DOM updates.
+The PostgreSQL-only regression runs in its own disposable PostgreSQL 17
+container in CI; local execution requires an explicit `POSTGRES_TEST_URL` for
+the dedicated loopback `taskable_test` database.
 
 ## GitHub gates
 
 Pull requests and merge-queue candidates run:
 
 - `Required CI`: backend tests on Python 3.12 and 3.14, frontend type/build,
-  and authenticated Chromium realtime tests;
+  a PostgreSQL 17 migration/claim regression, and authenticated Chromium
+  realtime tests;
 - `Required security`: dependency review, Python and npm vulnerability audits,
   and complete-history secret scanning; and
 - `Required CodeQL`: Python and JavaScript/TypeScript static analysis.

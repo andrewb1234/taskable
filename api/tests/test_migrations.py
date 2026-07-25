@@ -202,7 +202,7 @@ def test_api_key_migration_backfills_only_unambiguous_workspace_ownership(
 
     result = upgrade_database(engine)
 
-    assert result.current_revision == "0004_session_key_security"
+    assert result.current_revision == head_revision()
     with engine.connect() as connection:
         rows = connection.execute(
             text(

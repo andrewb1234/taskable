@@ -52,8 +52,9 @@ The current repository is a functional alpha, not a concept demo.
 - Google authentication, revocable browser sessions, workspace-bound scoped
   API keys, workspace ownership, membership roles, and object authorization.
 - SQLite for local use and a nominal PostgreSQL configuration path.
-- Docker packaging, 133 passing backend/MCP tests, MCP subprocess simulation,
-  a production frontend build, and three Playwright browser tests.
+- Docker packaging, 133 passing backend/MCP tests plus a PostgreSQL-only
+  migration/claim regression, MCP subprocess simulation, a production
+  frontend build, and three Playwright browser tests.
 
 ### Current product maturity
 
