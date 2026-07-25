@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import type { Ticket, TicketAssignee, TicketRef } from "@/types";
 import { BLOCKED_BY_LABELS, BLOCKED_BY_COLORS, TICKET_STATUS_LABELS } from "@/types";
 
-const assigneeIcon: Record<TicketAssignee, JSX.Element> = {
+const assigneeIcon: Record<TicketAssignee, React.JSX.Element> = {
   HUMAN: <User className="h-3 w-3" />,
   AGENT: <Bot className="h-3 w-3" />,
   UNASSIGNED: <HelpCircle className="h-3 w-3" />,
