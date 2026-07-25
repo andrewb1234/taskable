@@ -139,7 +139,7 @@ export function ResizableSplit({
     <div
       ref={containerRef}
       className={cn(
-        "flex h-full w-full min-h-0",
+        "flex h-full w-full min-h-0 min-w-0 overflow-hidden",
         direction === "horizontal" ? "flex-row" : "flex-col",
         className,
       )}

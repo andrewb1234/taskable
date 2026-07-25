@@ -1,13 +1,28 @@
-import { GitPullRequest, Bot, User, HelpCircle, Trash2, BookOpen, Link2, Clock, CheckCircle2 } from "lucide-react";
+import {
+  BookOpen,
+  Bot,
+  CheckCircle2,
+  Clock3,
+  GitPullRequest,
+  HelpCircle,
+  Link2,
+  OctagonAlert,
+  Trash2,
+  User,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { Ticket, TicketAssignee, TicketRef } from "@/types";
-import { BLOCKED_BY_LABELS, BLOCKED_BY_COLORS, TICKET_STATUS_LABELS } from "@/types";
+import type { Ticket, TicketAssignee, TicketRef, TicketStatus } from "@/types";
+import {
+  ASSIGNEE_LABELS,
+  BLOCKED_BY_LABELS,
+  TICKET_STATUS_LABELS,
+} from "@/types";
 
 const assigneeIcon: Record<TicketAssignee, React.JSX.Element> = {
-  HUMAN: <User className="h-3 w-3" />,
-  AGENT: <Bot className="h-3 w-3" />,
-  UNASSIGNED: <HelpCircle className="h-3 w-3" />,
+  HUMAN: <User className="h-3 w-3" aria-hidden />,
+  AGENT: <Bot className="h-3 w-3" aria-hidden />,
+  UNASSIGNED: <HelpCircle className="h-3 w-3" aria-hidden />,
 };
 
 const assigneeVariant: Record<TicketAssignee, "human" | "agent" | "unassigned"> =
@@ -17,175 +32,206 @@ const assigneeVariant: Record<TicketAssignee, "human" | "agent" | "unassigned"> 
     UNASSIGNED: "unassigned",
   };
 
+const dependencyVariant: Record<
+  TicketStatus,
+  "todo" | "inprogress" | "blocked" | "review" | "done"
+> = {
+  TODO: "todo",
+  IN_PROGRESS: "inprogress",
+  BLOCKED: "blocked",
+  REVIEW: "review",
+  DONE: "done",
+};
+
 interface Props {
   ticket: Ticket;
   onClick: () => void;
-  isDragging?: boolean;
-  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
-  onDragEnd?: () => void;
   onDelete?: () => void;
 }
 
-export function TicketCard({
-  ticket,
-  onClick,
-  isDragging,
-  onDragStart,
-  onDragEnd,
-  onDelete,
-}: Props) {
+export function TicketCard({ ticket, onClick, onDelete }: Props) {
+  const leaseExpiry = ticket.lease_expires_at
+    ? new Date(
+        ticket.lease_expires_at.endsWith("Z")
+          ? ticket.lease_expires_at
+          : `${ticket.lease_expires_at}Z`,
+      )
+    : null;
+  const leaseExpired =
+    leaseExpiry != null && leaseExpiry.getTime() <= Date.now();
+
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      draggable
+    <article
       data-testid={`ticket-${ticket.id}`}
       data-ticket-id={ticket.id}
       data-status={ticket.status}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
-      className={cn(
-        "group relative w-full cursor-pointer rounded-md border border-border bg-card p-3 text-left shadow-sm transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        isDragging && "opacity-60",
-      )}
+      className="group relative overflow-hidden border border-border bg-card transition-fast hover:border-brand-brass/60"
     >
+      <button
+        type="button"
+        onClick={onClick}
+        className="focus-ring block min-h-11 w-full p-3 pr-10 text-left"
+        aria-label={`Open ticket #${ticket.id}: ${ticket.title}`}
+      >
+        <div className="flex items-start gap-3">
+          <span className="shrink-0 font-mono text-[11px] font-semibold text-brand-brass">
+            #{ticket.id}
+          </span>
+          <h4
+            className="min-w-0 flex-1 line-clamp-2 text-sm font-semibold leading-snug"
+            title={ticket.title}
+          >
+            {ticket.title}
+          </h4>
+        </div>
+
+        {ticket.description && (
+          <p
+            className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground"
+            title={ticket.description}
+          >
+            {ticket.description}
+          </p>
+        )}
+
+        {ticket.status === "BLOCKED" && ticket.blocked_by && (
+          <div className="mt-2 flex min-w-0 items-start gap-1.5 border-l-2 border-status-blocked-border pl-2 text-[11px] text-status-blocked-foreground">
+            <OctagonAlert className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+            <span className="min-w-0">
+              <strong>{BLOCKED_BY_LABELS[ticket.blocked_by]}</strong>
+              {ticket.blocked_reason && (
+                <span className="block truncate" title={ticket.blocked_reason}>
+                  {ticket.blocked_reason}
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+
+        {ticket.depends_on.length > 0 && (
+          <div className="mt-2">
+            <div className="mb-1 flex items-center gap-1 font-mono text-[11px] font-semibold text-muted-foreground">
+              <Link2 className="h-3 w-3" aria-hidden />
+              Dependencies
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {ticket.depends_on_refs?.length
+                ? ticket.depends_on_refs.map((depRef) => (
+                    <DependencyChip key={depRef.id} depRef={depRef} />
+                  ))
+                : ticket.depends_on.map((id) => (
+                    <Badge
+                      key={id}
+                      variant="todo"
+                      className="max-w-full gap-1 px-1.5 py-0 text-[11px]"
+                    >
+                      <span className="font-mono">#{id}</span>
+                    </Badge>
+                  ))}
+            </div>
+          </div>
+        )}
+
+        {ticket.claimed_by && (
+          <div
+            className={cn(
+              "mt-2 flex min-w-0 items-center gap-1.5 text-[11px]",
+              leaseExpired
+                ? "text-status-blocked-foreground"
+                : "text-status-progress-foreground",
+            )}
+          >
+            <Clock3 className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="min-w-0 truncate" title={ticket.claimed_by}>
+              {ticket.claimed_by}
+            </span>
+            <span className="shrink-0" aria-hidden>·</span>
+            <span className="shrink-0 font-semibold">
+              {leaseExpired ? "Lease expired" : "Lease active"}
+            </span>
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <Badge
+            variant={assigneeVariant[ticket.assignee]}
+            className="gap-1 px-1.5 py-0 text-[11px]"
+          >
+            {assigneeIcon[ticket.assignee]}
+            <span>{ASSIGNEE_LABELS[ticket.assignee]}</span>
+          </Badge>
+          {ticket.mr_link && (
+            <Badge
+              variant="review"
+              className="gap-1 px-1.5 py-0 text-[11px]"
+            >
+              <GitPullRequest className="h-3 w-3" aria-hidden />
+              MR linked
+            </Badge>
+          )}
+          {ticket.source_refs.length > 0 && (
+            <Badge
+              variant="outline"
+              className="gap-1 px-1.5 py-0 text-[11px] text-muted-foreground"
+            >
+              <BookOpen className="h-3 w-3" aria-hidden />
+              {ticket.source_refs.length} evidence
+            </Badge>
+          )}
+        </div>
+      </button>
+
       {onDelete && (
         <button
           type="button"
           aria-label={`Delete ticket ${ticket.title}`}
-          className="absolute right-1 top-1 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground group-hover:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
+          className="focus-ring absolute right-1.5 top-1.5 flex h-11 w-11 items-center justify-center text-muted-foreground transition-fast hover:bg-destructive/10 hover:text-destructive sm:right-2 sm:top-2 sm:h-8 sm:w-8"
+          onClick={onDelete}
         >
-          <Trash2 className="h-3 w-3" />
+          <Trash2 className="h-3.5 w-3.5" aria-hidden />
         </button>
       )}
-      <div className="mb-1 flex items-start justify-between gap-2 pr-6">
-        <p className="line-clamp-2 text-sm font-medium leading-snug">
-          {ticket.title}
-        </p>
-        <span className="shrink-0 text-[10px] text-muted-foreground">
-          #{ticket.id}
-        </span>
-      </div>
-      {ticket.description && (
-        <p className="line-clamp-2 text-xs text-muted-foreground">
-          {ticket.description}
-        </p>
-      )}
-      {ticket.status === "BLOCKED" && ticket.blocked_by && (
-        <div
-          className={cn(
-            "mt-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium",
-            BLOCKED_BY_COLORS[ticket.blocked_by],
-          )}
-          title={ticket.blocked_reason ?? undefined}
+
+      {ticket.mr_link && (
+        <a
+          href={ticket.mr_link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="focus-ring flex min-h-11 items-center justify-between border-t border-border px-3 py-2 text-[11px] font-semibold text-muted-foreground hover:bg-accent/50 hover:text-foreground sm:min-h-9"
+          aria-label={`Open merge request for ticket #${ticket.id}`}
         >
-          {BLOCKED_BY_LABELS[ticket.blocked_by]}
-        </div>
-      )}
-      {ticket.depends_on && ticket.depends_on.length > 0 && (
-        <div className="mt-1.5 space-y-1">
-          <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <Link2 className="h-3 w-3" />
-            <span>depends on</span>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {ticket.depends_on_refs && ticket.depends_on_refs.length > 0
-              ? ticket.depends_on_refs.map((depRef) => (
-                  <DepChip key={depRef.id} depRef={depRef} />
-                ))
-              : ticket.depends_on.map((id) => (
-                  <span
-                    key={id}
-                    className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                  >
-                    #{id}
-                  </span>
-                ))}
-          </div>
-        </div>
-      )}
-      {ticket.claimed_by && (
-        <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-          <Clock className="h-3 w-3" />
-          <span>claimed by {ticket.claimed_by}</span>
-        </div>
-      )}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge
-          variant={assigneeVariant[ticket.assignee]}
-          className="flex items-center gap-1"
-        >
-          {assigneeIcon[ticket.assignee]}
-          <span>{ticket.assignee.toLowerCase()}</span>
-        </Badge>
-        {ticket.mr_link && (
-          <a
-            href={ticket.mr_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted/80"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GitPullRequest className="h-3 w-3" />
-            MR
-          </a>
-        )}
-        {ticket.source_refs && ticket.source_refs.length > 0 && (
-          <span
-            className="flex items-center gap-0.5 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-            title={ticket.source_refs.join(", ")}
-          >
-            <BookOpen className="h-3 w-3" />
-            {ticket.source_refs.length}
+          <span className="flex items-center gap-1.5">
+            <GitPullRequest className="h-3 w-3" aria-hidden />
+            Review merge request
           </span>
-        )}
-      </div>
-    </div>
+          <span aria-hidden>↗</span>
+        </a>
+      )}
+    </article>
   );
 }
 
-const statusDotColor: Record<string, string> = {
-  TODO: "bg-muted-foreground/40",
-  IN_PROGRESS: "bg-blue-500",
-  BLOCKED: "bg-red-500",
-  REVIEW: "bg-yellow-500",
-  DONE: "bg-green-500",
-};
-
-function DepChip({ depRef }: { depRef: TicketRef }) {
+function DependencyChip({ depRef }: { depRef: TicketRef }) {
   const done = depRef.status === "DONE";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
-        done
-          ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400"
-          : "bg-muted text-muted-foreground",
-      )}
-      title={`${TICKET_STATUS_LABELS[depRef.status]} · ${depRef.subproject_name ?? "same subproject"}`}
+    <Badge
+      variant={dependencyVariant[depRef.status]}
+      className="max-w-full gap-1 px-1.5 py-0 text-[11px]"
+      title={`${TICKET_STATUS_LABELS[depRef.status]} · ${
+        depRef.subproject_name ?? "same subproject"
+      } · ${depRef.title}`}
     >
       {done ? (
-        <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+        <CheckCircle2 className="h-2.5 w-2.5 shrink-0" aria-hidden />
       ) : (
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", statusDotColor[depRef.status] ?? "bg-muted-foreground/40")} />
+        <span className="font-mono">{TICKET_STATUS_LABELS[depRef.status]}</span>
       )}
-      <span className="max-w-[140px] truncate">
-        #{depRef.id} {depRef.title}
-      </span>
+      <span className="max-w-32 truncate font-mono">#{depRef.id}</span>
       {depRef.subproject_name && (
-        <span className="shrink-0 opacity-60">· {depRef.subproject_name}</span>
+        <span className="max-w-24 truncate opacity-70">
+          {depRef.subproject_name}
+        </span>
       )}
-    </span>
+    </Badge>
   );
 }

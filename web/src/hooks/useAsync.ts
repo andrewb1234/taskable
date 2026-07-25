@@ -33,11 +33,11 @@ export function useAsync<T>(
       })
       .catch((err: unknown) => {
         if (runId !== latestRunId.current) return;
-        setState({
-          data: undefined,
+        setState((previous) => ({
+          ...previous,
           loading: false,
           error: err instanceof Error ? err : new Error(String(err)),
-        });
+        }));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

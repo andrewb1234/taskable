@@ -171,6 +171,10 @@
     margin: 0;
   }
 
+  html {
+    overflow-x: clip;
+  }
+
   body {
     @apply bg-background font-sans text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
