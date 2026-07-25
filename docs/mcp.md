@@ -9,7 +9,7 @@ API to agentic IDEs (Windsurf, Claude Desktop, etc.) over a `stdio` transport.
 ## Dependencies
 * `mcp >=1.1` (Official Python SDK)
 * `httpx` (Async HTTP client for REST calls)
-* `python-dotenv` (reads `AGENT_API_KEY` / `TASKABLE_API_URL` from the repo's `.env`)
+* `python-dotenv` (reads non-secret MCP configuration from the environment)
 
 See `mcp/pyproject.toml` for the packaging manifest. Install via
 `pipx install ./mcp`, `uv tool install ./mcp`, or `pip install -e ./mcp` to
@@ -19,8 +19,10 @@ get the `taskable-mcp` console script.
 * **API Target:** `TASKABLE_API_URL` (default `http://localhost:8000/api/v1`).
   Trailing slashes are stripped at load time.
 * **Transport:** Standard Input/Output (`stdio`).
-* **Auth:** Every request sends `Authorization: Bearer {AGENT_API_KEY}`. The
-  same value must be set in the FastAPI server's environment.
+* **Auth:** Every request sends `Authorization: Bearer {TASKABLE_API_KEY}`.
+  The value is a revocable per-user key stored only as a hash by the API.
+  Supply it directly or point `TASKABLE_CREDENTIALS_FILE` at the owner-only
+  file created by `bootstrap.py`.
 
 ## Tool Catalogue
 

@@ -313,7 +313,21 @@ export interface AuthUser {
   avatar_url: string | null;
 }
 
+export interface AuthProviders {
+  google: boolean;
+  local_api_key: boolean;
+}
+
 export const getMe = () => request<AuthUser>("/auth/me");
+
+export const getAuthProviders = () =>
+  request<AuthProviders>("/auth/providers");
+
+export const createLocalSession = (apiKey: string) =>
+  request<void>("/auth/local-session", {
+    method: "POST",
+    body: JSON.stringify({ api_key: apiKey }),
+  });
 
 export const logout = () =>
   request<void>("/auth/logout", { method: "POST" });

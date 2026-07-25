@@ -6,12 +6,22 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { getMe, logout, getLoginUrl, type AuthUser } from "@/lib/api";
+import {
+  createLocalSession,
+  getAuthProviders,
+  getMe,
+  logout,
+  getLoginUrl,
+  type AuthProviders,
+  type AuthUser,
+} from "@/lib/api";
 
 interface AuthState {
   user: AuthUser | null;
+  providers: AuthProviders;
   loading: boolean;
   login: () => void;
+  loginWithLocalApiKey: (apiKey: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -19,17 +29,34 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [providers, setProviders] = useState<AuthProviders>({
+    google: false,
+    local_api_key: false,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getMe()
-      .then((u) => setUser(u))
-      .catch(() => setUser(null))
+    Promise.all([
+      getMe().catch(() => null),
+      getAuthProviders().catch(() => ({
+        google: false,
+        local_api_key: false,
+      })),
+    ])
+      .then(([currentUser, configuredProviders]) => {
+        setUser(currentUser);
+        setProviders(configuredProviders);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const login = useCallback(() => {
     window.location.href = getLoginUrl();
+  }, []);
+
+  const loginWithLocalApiKey = useCallback(async (apiKey: string) => {
+    await createLocalSession(apiKey);
+    setUser(await getMe());
   }, []);
 
   const doLogout = useCallback(async () => {
@@ -43,7 +70,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, logout: doLogout }}
+      value={{
+        user,
+        providers,
+        loading,
+        login,
+        loginWithLocalApiKey,
+        logout: doLogout,
+      }}
     >
       {children}
     </AuthContext.Provider>

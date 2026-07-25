@@ -64,6 +64,8 @@ export default defineConfig({
         DATABASE_URL: `sqlite:///${E2E_DB_PATH}`,
         E2E_API_KEY,
         JWT_SECRET: E2E_JWT_SECRET,
+        LOCAL_AUTH_ENABLED: "true",
+        FRONTEND_URL: "http://127.0.0.1:5173",
         MIGRATION_MODE: "check",
       },
     },

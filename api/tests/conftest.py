@@ -29,7 +29,7 @@ TEST_AGENT_API_KEY = "test-agent-key"
 def _set_test_env(monkeypatch) -> None:
     """Pin config to deterministic values for every test."""
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
-    monkeypatch.setenv("JWT_SECRET", "test-jwt-secret")
+    monkeypatch.setenv("JWT_SECRET", "test-jwt-secret-at-least-32-bytes")
     # Reset cached settings so the new env wins.
     from api.config import get_settings
 

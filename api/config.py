@@ -22,7 +22,6 @@ _DEFAULT_DATABASE_URL = f"sqlite:///{_DEFAULT_DB_PATH}"
 class Settings(BaseSettings):
     """Typed, cached runtime settings for the FastAPI process."""
 
-    agent_api_key: str = "dev-agent-key-change-me"
     github_pat: str | None = None
     database_url: str = _DEFAULT_DATABASE_URL
     migration_mode: Literal["upgrade", "check"] = "upgrade"
@@ -36,6 +35,7 @@ class Settings(BaseSettings):
     # Auth
     google_client_id: str | None = None
     google_client_secret: str | None = None
+    local_auth_enabled: bool = False
     jwt_secret: str = "dev-jwt-secret-change-me"
     frontend_url: str = "http://localhost:5173"
     # Required to adopt pre-tenancy projects in a production database. Local
@@ -64,9 +64,22 @@ class Settings(BaseSettings):
 
     def validate_production(self) -> None:
         """Raise if security-sensitive defaults are still set in production."""
-        self.public_origin()
+        parsed = urlsplit(self.public_origin())
+        if self.local_auth_enabled and parsed.hostname not in {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        }:
+            raise RuntimeError(
+                "LOCAL_AUTH_ENABLED is restricted to loopback FRONTEND_URL "
+                "origins. Use a configured identity provider for hosted use."
+            )
         if not self.is_production():
             return
+        if self.local_auth_enabled:
+            raise RuntimeError(
+                "LOCAL_AUTH_ENABLED must be false in production."
+            )
         if (
             self.jwt_secret == "dev-jwt-secret-change-me"
             or len(self.jwt_secret) < 32

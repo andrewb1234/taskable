@@ -9,7 +9,13 @@
 - `MIGRATION_MODE=upgrade` applies ordered Alembic revisions at startup.
 - Existing file-backed SQLite databases receive an automatic pre-migration
   backup.
-- The MCP server runs locally over stdio and uses a per-user API key.
+- `python3 bootstrap.py` creates a local owner and revocable per-user API key;
+  it never disables authentication.
+- Local browser sign-in is available only when `LOCAL_AUTH_ENABLED=true` and
+  `FRONTEND_URL` is a loopback origin. The API key is exchanged for an
+  HttpOnly session and is not retained by the browser.
+- The MCP server runs locally over stdio and reads the same per-user key from
+  an owner-only `TASKABLE_CREDENTIALS_FILE`.
 
 ### Hosted
 
@@ -31,6 +37,7 @@ Required for hosted operation:
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 - `JWT_SECRET`: unique random value of at least 32 characters.
 - `MIGRATION_MODE=check`.
+- `LOCAL_AUTH_ENABLED=false`.
 
 Optional:
 
@@ -38,6 +45,10 @@ Optional:
 - `GITHUB_PAT`: temporary legacy credential for MR-link lookup.
 - `LEGACY_OWNER_EMAIL`: explicit owner for safe adoption of pre-tenancy
   projects.
+- `LOCAL_AUTH_ENABLED=true`: loopback community installations only; rejected
+  for hosted and non-loopback origins.
+- `TASKABLE_CREDENTIALS_FILE`: local MCP credential path. It is not consumed
+  by the hosted API.
 
 Never put credentials in container images, repository files, logs, migration
 configuration, or frontend build variables.
@@ -62,7 +73,9 @@ configuration, or frontend build variables.
 
 `docker/docker-compose.yml` is a local profile. It bind-mounts the host
 `~/.taskable` directory rather than hiding SQLite in a named volume. The web
-service waits for the API health check.
+service waits for the API health check. Run `python3 bootstrap.py` before
+Compose so the host database contains the local owner and the `.env` contains
+the strong JWT secret. Ports 3000 and 8000 bind to `127.0.0.1` only.
 
 ## Release procedure
 

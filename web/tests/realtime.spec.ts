@@ -48,6 +48,23 @@ function authenticatedApi() {
   });
 }
 
+test("local API key is exchanged for an HttpOnly browser session", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await page.getByLabel("Local API key").fill(E2E_API_KEY);
+  await page.getByRole("button", { name: "Continue locally" }).click();
+
+  await expect(page.getByRole("heading", { name: "mouvadah" })).toBeVisible();
+  await expect(page.getByText("Playwright Owner", { exact: true })).toBeVisible();
+  const sessionCookie = (await page.context().cookies()).find(
+    (cookie) => cookie.name === "session",
+  );
+  expect(sessionCookie?.httpOnly).toBe(true);
+  expect(sessionCookie?.sameSite).toBe("Lax");
+});
+
 test.describe("SSE realtime contract", () => {
   test("ticket status PATCHed via API appears in the UI within 1s", async ({
     page,

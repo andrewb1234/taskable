@@ -249,7 +249,12 @@ class KnowledgeNode(SQLModel, table=True):
 
 
 class User(SQLModel, table=True):
-    """Registered user authenticated via Google OAuth."""
+    """Registered user authenticated via Google OAuth or loopback local setup.
+
+    ``google_id`` is the historical identity-subject column name. Local users
+    receive a collision-resistant ``local:<uuid>`` subject and can later link
+    the same verified email through Google OAuth.
+    """
 
     id: Optional[int] = Field(default=None, primary_key=True)
     google_id: str = Field(unique=True, index=True)

@@ -1,4 +1,4 @@
-"""Google OAuth routes: login, callback, me, logout.
+"""Google OAuth and loopback local-session routes.
 
 Flow:
     1. ``GET /auth/login`` → redirect to Google consent screen with a random
@@ -14,18 +14,22 @@ Flow:
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from sqlmodel import Session, select
+from pydantic import BaseModel, SecretStr
+from sqlmodel import select
 
-from api.auth import COOKIE_NAME, create_jwt, get_current_user
+from api.auth import (
+    COOKIE_NAME,
+    create_jwt,
+    get_current_user,
+    verify_api_key,
+)
 from api.authorization import ensure_personal_workspace
-from api.config import Settings, get_settings
+from api.config import Settings
 from api.dependencies import SessionDep, SettingsDep
 from api.models.entities import User
 
@@ -39,6 +43,15 @@ SCOPES = ["openid", "email", "profile"]
 
 STATE_COOKIE = "oauth_state"
 STATE_COOKIE_MAX_AGE = 600  # 10 minutes
+
+
+class AuthProviders(BaseModel):
+    google: bool
+    local_api_key: bool
+
+
+class LocalSessionRequest(BaseModel):
+    api_key: SecretStr
 
 
 def _redirect_uri(request: Request, settings: Settings) -> str:
@@ -61,6 +74,57 @@ def _cookie_kwargs(settings: Settings, max_age: int | None = None) -> dict:
     if max_age is not None:
         kwargs["max_age"] = max_age
     return kwargs
+
+
+@router.get("/providers")
+async def auth_providers(settings: SettingsDep) -> AuthProviders:
+    """Return the login methods that are safe and configured for this runtime."""
+    return AuthProviders(
+        google=bool(settings.google_client_id),
+        local_api_key=(
+            settings.local_auth_enabled and not settings.is_production()
+        ),
+    )
+
+
+@router.post("/local-session", status_code=status.HTTP_204_NO_CONTENT)
+async def local_session(
+    payload: LocalSessionRequest,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> Response:
+    """Exchange a local per-user API key for an HttpOnly browser session."""
+    if settings.is_production() or not settings.local_auth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Local authentication is not enabled.",
+        )
+
+    origin = request.headers.get("origin")
+    if origin is not None and origin != settings.public_origin():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Untrusted local authentication origin.",
+        )
+
+    user = verify_api_key(payload.api_key.get_secret_value(), session)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired API key.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    ensure_personal_workspace(session, user)
+    jwt_token = create_jwt(user.id, user.email, settings.jwt_secret)
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.set_cookie(
+        COOKIE_NAME,
+        jwt_token,
+        **_cookie_kwargs(settings, max_age=60 * 60 * 24 * 30),
+    )
+    return response
 
 
 @router.get("/login")
@@ -105,7 +169,7 @@ async def auth_callback(
     """Handle the OAuth callback: exchange code, upsert user, set JWT cookie."""
     if error:
         return RedirectResponse(
-            url=f"{settings.frontend_url}/?auth_error={quote(error)}",
+            url=f"{settings.public_origin()}/?auth_error=oauth_denied",
             status_code=status.HTTP_302_FOUND,
         )
     if not code or not state:
@@ -164,6 +228,13 @@ async def auth_callback(
     existing = session.exec(
         select(User).where(User.google_id == google_id)
     ).first()
+    if existing is None:
+        local_user = session.exec(
+            select(User).where(User.email == email)
+        ).first()
+        if local_user is not None and local_user.google_id.startswith("local:"):
+            local_user.google_id = google_id
+            existing = local_user
     if existing:
         existing.email = email
         existing.name = name

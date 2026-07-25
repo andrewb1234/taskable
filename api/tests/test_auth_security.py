@@ -115,6 +115,31 @@ def test_production_requires_check_only_application_startup():
         settings.validate_production()
 
 
+def test_production_rejects_local_auth():
+    settings = _production_settings(local_auth_enabled=True)
+
+    with pytest.raises(RuntimeError, match="LOCAL_AUTH_ENABLED"):
+        settings.validate_production()
+
+
+@pytest.mark.parametrize(
+    "frontend_url",
+    [
+        "http://192.168.1.20:5173",
+        "http://devbox.internal:5173",
+    ],
+)
+def test_local_auth_is_restricted_to_loopback(frontend_url: str):
+    settings = Settings(
+        _env_file=None,
+        frontend_url=frontend_url,
+        local_auth_enabled=True,
+    )
+
+    with pytest.raises(RuntimeError, match="loopback"):
+        settings.validate_production()
+
+
 def test_frontend_url_rejects_credentials():
     settings = Settings(
         _env_file=None,
@@ -123,3 +148,101 @@ def test_frontend_url_rejects_credentials():
 
     with pytest.raises(RuntimeError, match="must not contain credentials"):
         settings.validate_production()
+
+
+def _enable_local_auth(monkeypatch) -> None:
+    monkeypatch.setenv("LOCAL_AUTH_ENABLED", "true")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:5173")
+    from api.config import get_settings
+
+    get_settings.cache_clear()
+
+
+def test_auth_providers_report_only_configured_methods(
+    enforce_auth_client,
+    monkeypatch,
+):
+    _enable_local_auth(monkeypatch)
+
+    response = enforce_auth_client.get("/api/v1/auth/providers")
+
+    assert response.status_code == 200
+    assert response.json() == {"google": False, "local_api_key": True}
+
+
+def test_local_api_key_creates_httponly_session(
+    enforce_auth_client,
+    agent_headers,
+    monkeypatch,
+):
+    _enable_local_auth(monkeypatch)
+
+    response = enforce_auth_client.post(
+        "/api/v1/auth/local-session",
+        headers={"Origin": "http://localhost:5173"},
+        json={"api_key": "test-agent-key"},
+    )
+
+    assert response.status_code == 204
+    cookie = response.headers["set-cookie"]
+    assert "session=" in cookie
+    assert "HttpOnly" in cookie
+    assert "SameSite=lax" in cookie
+    me = enforce_auth_client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["email"] == "test@example.com"
+
+
+def test_local_api_key_rejects_bad_key(
+    enforce_auth_client,
+    agent_headers,
+    monkeypatch,
+):
+    _enable_local_auth(monkeypatch)
+
+    response = enforce_auth_client.post(
+        "/api/v1/auth/local-session",
+        headers={"Origin": "http://localhost:5173"},
+        json={"api_key": "not-the-key"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_local_api_key_rejects_untrusted_origin_before_key_lookup(
+    enforce_auth_client,
+    monkeypatch,
+):
+    _enable_local_auth(monkeypatch)
+
+    response = enforce_auth_client.post(
+        "/api/v1/auth/local-session",
+        headers={"Origin": "http://evil.localhost:5173"},
+        json={"api_key": "anything"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_local_api_key_endpoint_is_hidden_when_disabled(
+    enforce_auth_client,
+):
+    response = enforce_auth_client.post(
+        "/api/v1/auth/local-session",
+        json={"api_key": "anything"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_oauth_error_redirect_does_not_reflect_remote_input(client):
+    response = client.get(
+        "/api/v1/auth/callback?error=https://attacker.example/redirect",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == (
+        "http://localhost:5173/?auth_error=oauth_denied"
+    )
+    assert "attacker" not in response.headers["location"]

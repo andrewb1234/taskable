@@ -1,39 +1,26 @@
 #!/usr/bin/env python3
-"""Interactive zero-config setup for a fresh Taskable clone.
+"""Authenticated local setup for a fresh Mouvadah clone.
 
-What this does, in order:
+The bootstrap path never disables authentication. It installs the local
+runtime, writes a loopback-only development configuration, provisions a local
+owner plus a revocable per-user API key, and configures Windsurf MCP (when
+present) to read that key from an owner-only credentials file.
 
-1. Creates `.venv/` at the repo root if missing and installs backend + MCP deps.
-2. Prompts for an ``AGENT_API_KEY`` (or offers to generate one with
-   ``secrets.token_hex(32)``).
-3. Writes a minimal ``.env`` at the repo root.
-4. Detects the Windsurf MCP config file (typically
-   ``~/.codeium/windsurf/mcp_config.json``). If found, merges a ``taskable``
-   server block into it, preserving all other servers and re-using the best
-   available invocation style:
-
-   * If ``taskable-mcp`` is on ``$PATH`` (pipx / uv install)  → use it.
-   * Else                                                      → point at the
-     venv's Python + absolute path to ``mcp/mcp_server.py``.
-
-5. Prints the next-step commands.
-
-The script is idempotent: re-running it updates the existing ``.env`` /
-``mcp_config.json`` in place and leaves the venv alone if already built.
-
-Run from the repo root::
+Run from the repository root::
 
     python3 bootstrap.py
 """
 
 from __future__ import annotations
 
+import getpass
 import json
 import os
 import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +30,10 @@ ENV_FILE = REPO_ROOT / ".env"
 API_REQ = REPO_ROOT / "api" / "requirements.txt"
 MCP_DIR = REPO_ROOT / "mcp"
 MCP_SERVER = MCP_DIR / "mcp_server.py"
+WEB_DIR = REPO_ROOT / "web"
+DEFAULT_CREDENTIALS_FILE = (
+    Path.home() / ".config" / "mouvadah" / "credentials.env"
+)
 DEFAULT_WINDSURF_CONFIG = (
     Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
 )
@@ -54,21 +45,21 @@ COLOR_RESET = "\033[0m"
 COLOR_DIM = "\033[2m"
 
 
-def log(icon: str, msg: str, color: str = "") -> None:
-    print(f"{color}{icon}  {msg}{COLOR_RESET}")
+def log(icon: str, message: str, color: str = "") -> None:
+    print(f"{color}{icon}  {message}{COLOR_RESET}")
 
 
-def ok(msg: str) -> None:
-    log("✓", msg, COLOR_GREEN)
+def ok(message: str) -> None:
+    log("✓", message, COLOR_GREEN)
 
 
-def warn(msg: str) -> None:
-    log("!", msg, COLOR_YELLOW)
+def warn(message: str) -> None:
+    log("!", message, COLOR_YELLOW)
 
 
-def fatal(msg: str) -> None:
-    log("✗", msg, COLOR_RED)
-    sys.exit(1)
+def fatal(message: str) -> None:
+    log("✗", message, COLOR_RED)
+    raise SystemExit(1)
 
 
 def step(title: str) -> None:
@@ -76,220 +67,327 @@ def step(title: str) -> None:
     print(f"\033[1m── {title} ──{COLOR_RESET}")
 
 
-# ---- Virtualenv ----------------------------------------------------------
-
-
 def venv_python() -> Path:
-    """Absolute path to the Python interpreter inside `.venv/`."""
+    """Return the virtualenv interpreter path for the current platform."""
     return VENV_DIR / ("Scripts" if os.name == "nt" else "bin") / "python"
 
 
+def _secure_atomic_write(path: Path, content: str) -> None:
+    """Write a local configuration atomically with owner-only permissions."""
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        dir=path.parent,
+        text=True,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        if os.name == "posix":
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        if os.name == "posix":
+            path.chmod(0o600)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+
+
 def ensure_venv() -> None:
-    step("Virtualenv")
+    step("Python runtime")
     if VENV_DIR.exists():
-        ok(f".venv already exists at {VENV_DIR}")
+        ok(f"Reusing {VENV_DIR}")
     else:
-        log("…", "Creating .venv (this takes ~10 seconds)")
+        log("…", "Creating .venv")
         subprocess.check_call([sys.executable, "-m", "venv", str(VENV_DIR)])
         ok(f"Created {VENV_DIR}")
 
-    py = venv_python()
-    log("…", "Installing backend dependencies")
-    subprocess.check_call([
-        str(py), "-m", "pip", "install", "--quiet",
-        "--disable-pip-version-check", "-r", str(API_REQ),
-    ])
-    log("…", "Installing MCP server (editable)")
-    subprocess.check_call([
-        str(py), "-m", "pip", "install", "--quiet",
-        "--disable-pip-version-check", "-e", str(MCP_DIR),
-    ])
-    ok("Python deps installed")
-
-
-# ---- Key prompt + .env ---------------------------------------------------
-
-
-def prompt_api_key() -> str:
-    step("Agent API Key")
-    existing = _read_existing_key()
-    if existing:
-        warn(f"Found existing AGENT_API_KEY in .env (len={len(existing)}).")
-        reply = input("Reuse it? [Y/n] ").strip().lower()
-        if reply in {"", "y", "yes"}:
-            return existing
-
-    print()
-    print("The AGENT_API_KEY is a SHARED SECRET between:")
-    print("  • the FastAPI backend   (read from .env)")
-    print("  • the MCP stdio server  (sent as 'Authorization: Bearer ...')")
-    print("It is NOT issued by any third party. You invent it locally.")
-    print()
-    reply = input(
-        "Press Enter to generate one with `secrets.token_hex(32)` "
-        "or paste your own: "
-    ).strip()
-    if not reply:
-        reply = secrets.token_hex(32)
-        ok(f"Generated key ({len(reply)} hex chars)")
-    else:
-        if len(reply) < 16:
-            warn("Key is shorter than 16 chars; consider something longer.")
-    return reply
-
-
-def _read_existing_key() -> str | None:
-    if not ENV_FILE.exists():
-        return None
-    for line in ENV_FILE.read_text().splitlines():
-        line = line.strip()
-        if line.startswith("AGENT_API_KEY="):
-            return line.split("=", 1)[1].strip().strip("\"'")
-    return None
-
-
-def write_env(api_key: str) -> None:
-    step(".env file")
-    # Preserve any extra keys the user already had.
-    existing_lines: list[str] = []
-    if ENV_FILE.exists():
-        existing_lines = [
-            l for l in ENV_FILE.read_text().splitlines()
-            if not l.strip().startswith("AGENT_API_KEY=")
+    python = venv_python()
+    log("…", "Installing API dependencies")
+    subprocess.check_call(
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--disable-pip-version-check",
+            "-r",
+            str(API_REQ),
         ]
-    body = "\n".join(existing_lines).rstrip() + "\n" if existing_lines else ""
-    if not body:
-        body = (
-            "# Autogenerated by bootstrap.py. Re-run to rotate the key.\n"
-            "GITHUB_PAT=\n"
-            "VITE_API_URL=http://localhost:8000/api/v1\n"
+    )
+    log("…", "Installing the MCP server")
+    subprocess.check_call(
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "--disable-pip-version-check",
+            "-e",
+            str(MCP_DIR),
+        ]
+    )
+    ok("Python and MCP dependencies installed")
+
+
+def ensure_frontend() -> None:
+    step("Web runtime")
+    npm = shutil.which("npm")
+    if npm is None:
+        fatal(
+            "npm is required to run the local UI. Install Node.js 20 or newer "
+            "and re-run bootstrap.py."
         )
-    body += f"AGENT_API_KEY={api_key}\n"
-    ENV_FILE.write_text(body)
-    ok(f"Wrote {ENV_FILE}")
+    subprocess.check_call(
+        [npm, "ci", "--no-fund", "--no-audit"],
+        cwd=WEB_DIR,
+    )
+    ok("Frontend dependencies installed from package-lock.json")
 
 
-# ---- Windsurf MCP config merge -------------------------------------------
+def _parse_env_file(path: Path) -> tuple[list[str], dict[str, str]]:
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    values: dict[str, str] = {}
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        values[key] = value
+    return lines, values
+
+
+def _upsert_env_lines(
+    lines: list[str],
+    updates: dict[str, str],
+    *,
+    remove: set[str],
+) -> str:
+    output: list[str] = []
+    handled: set[str] = set()
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            output.append(line)
+            continue
+        key = stripped.split("=", 1)[0]
+        if key in remove:
+            continue
+        if key in updates:
+            if key not in handled:
+                output.append(f"{key}={updates[key]}")
+                handled.add(key)
+            continue
+        output.append(line)
+
+    if output and output[-1] != "":
+        output.append("")
+    if not lines:
+        output.extend(
+            [
+                "# Local Mouvadah configuration generated by bootstrap.py.",
+                "# This file is owner-only and must never be committed.",
+            ]
+        )
+    for key, value in updates.items():
+        if key not in handled:
+            output.append(f"{key}={value}")
+    return "\n".join(output).rstrip() + "\n"
+
+
+def write_local_env(credentials_file: Path) -> None:
+    step("Authenticated local configuration")
+    lines, values = _parse_env_file(ENV_FILE)
+    jwt_secret = values.get("JWT_SECRET", "")
+    if jwt_secret in {"", "change-me-to-a-random-string", "dev-jwt-secret-change-me"}:
+        jwt_secret = secrets.token_urlsafe(48)
+    elif len(jwt_secret) < 32:
+        warn("Existing JWT_SECRET was too short and has been rotated.")
+        jwt_secret = secrets.token_urlsafe(48)
+
+    body = _upsert_env_lines(
+        lines,
+        {
+            "LOCAL_AUTH_ENABLED": "true",
+            "JWT_SECRET": jwt_secret,
+            "FRONTEND_URL": "http://localhost:5173",
+            "MIGRATION_MODE": "upgrade",
+            "VITE_API_URL": "http://localhost:8000/api/v1",
+            "TASKABLE_CREDENTIALS_FILE": str(credentials_file),
+        },
+        remove={"AGENT_API_KEY"},
+    )
+    _secure_atomic_write(ENV_FILE, body)
+    ok(f"Wrote loopback-only {ENV_FILE} with mode 0600")
+
+
+def prompt_identity() -> tuple[str, str]:
+    step("Local owner")
+    default_name = getpass.getuser().replace(".", " ").title() or "Local Owner"
+    name = input(f"Display name [{default_name}]: ").strip() or default_name
+    default_email = f"{getpass.getuser()}@localhost.invalid"
+    email = input(f"Owner email [{default_email}]: ").strip() or default_email
+    return email, name
+
+
+def provision_local_owner(
+    *,
+    email: str,
+    name: str,
+    credentials_file: Path,
+) -> None:
+    step("Owner, workspace, and API key")
+    subprocess.check_call(
+        [
+            str(venv_python()),
+            "-m",
+            "api.local_setup",
+            "--email",
+            email,
+            "--name",
+            name,
+            "--credentials-file",
+            str(credentials_file),
+        ],
+        cwd=REPO_ROOT,
+    )
+    ok("Authenticated local owner is ready")
 
 
 def resolve_mcp_command() -> dict[str, Any]:
-    """Choose the most durable command+args form for the MCP server."""
+    """Choose the most durable installed invocation for the MCP server."""
     global_tool = shutil.which("taskable-mcp")
-    venv_bin_tool = VENV_DIR / "bin" / "taskable-mcp"
+    venv_tool = VENV_DIR / ("Scripts" if os.name == "nt" else "bin") / "taskable-mcp"
     if global_tool:
         return {"command": "taskable-mcp", "args": []}
-    if venv_bin_tool.exists():
-        return {"command": str(venv_bin_tool), "args": []}
-    # Fallback: venv python + absolute script path.
+    if venv_tool.exists():
+        return {"command": str(venv_tool), "args": []}
     return {
         "command": str(venv_python()),
         "args": [str(MCP_SERVER)],
     }
 
 
-def merge_windsurf_config(api_key: str) -> Path | None:
-    step("Windsurf MCP config")
+def _locate_windsurf_config() -> Path | None:
+    override = os.environ.get("TASKABLE_WINDSURF_CONFIG")
+    if override:
+        return Path(override).expanduser()
+    candidates = [
+        DEFAULT_WINDSURF_CONFIG,
+        Path.home() / ".windsurf" / "mcp_config.json",
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Windsurf"
+        / "mcp_config.json",
+    ]
+    return next(
+        (candidate for candidate in candidates if candidate.parent.is_dir()),
+        None,
+    )
+
+
+def merge_windsurf_config(credentials_file: Path) -> Path | None:
+    step("MCP client")
     target = _locate_windsurf_config()
     if target is None:
         warn(
-            "Could not find a Windsurf MCP config. Skipping. "
-            f"Expected at {DEFAULT_WINDSURF_CONFIG}."
+            "Windsurf was not detected. Use mcp/mcp.json.example with "
+            f"TASKABLE_CREDENTIALS_FILE={credentials_file} in another client."
         )
         return None
 
     current: dict[str, Any] = {}
-    if target.exists() and target.stat().st_size > 0:
+    if target.exists() and target.stat().st_size:
         try:
-            current = json.loads(target.read_text())
+            current = json.loads(target.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             backup = target.with_suffix(target.suffix + ".bak")
-            shutil.copy(target, backup)
-            warn(
-                f"Existing config was not valid JSON ({exc}). "
-                f"Backed it up to {backup} and rewriting."
-            )
-            current = {}
+            shutil.copy2(target, backup)
+            warn(f"Backed up invalid JSON to {backup}: {exc}")
 
-    cmd = resolve_mcp_command()
+    command = resolve_mcp_command()
     servers = current.setdefault("mcpServers", {})
-    servers["taskable"] = {
-        **cmd,
+    # Migrate the legacy bootstrap entry so a stale shared credential is not
+    # left active beside the authenticated Mouvadah configuration.
+    servers.pop("taskable", None)
+    servers["mouvadah"] = {
+        **command,
         "env": {
             "TASKABLE_API_URL": "http://localhost:8000/api/v1",
-            "AGENT_API_KEY": api_key,
+            "TASKABLE_CREDENTIALS_FILE": str(credentials_file),
         },
     }
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(current, indent=2) + "\n")
-    ok(f"Patched {target}")
-    log(
-        "→",
-        f"Using command: {cmd['command']} "
-        + (" ".join(cmd["args"]) if cmd["args"] else "(no args)"),
-        COLOR_DIM,
-    )
+    _secure_atomic_write(target, json.dumps(current, indent=2) + "\n")
+    ok(f"Configured Mouvadah MCP in {target} with mode 0600")
     return target
 
 
-def _locate_windsurf_config() -> Path | None:
-    # Explicit override wins (used by tests and power users with unusual
-    # installations).
-    override = os.environ.get("TASKABLE_WINDSURF_CONFIG")
-    if override:
-        return Path(override).expanduser()
-
-    if DEFAULT_WINDSURF_CONFIG.parent.is_dir():
-        return DEFAULT_WINDSURF_CONFIG
-    # Fall back to common alternates on unusual installs.
-    candidates = [
-        Path.home() / ".windsurf" / "mcp_config.json",
-        Path.home() / "Library" / "Application Support" / "Windsurf" / "mcp_config.json",
-    ]
-    for candidate in candidates:
-        if candidate.parent.is_dir():
-            return candidate
-    return None
-
-
-# ---- Next-steps summary --------------------------------------------------
-
-
-def print_summary(patched: Path | None) -> None:
-    step("All set")
-    print(f"  {COLOR_GREEN}✓{COLOR_RESET} .venv ready")
-    print(f"  {COLOR_GREEN}✓{COLOR_RESET} .env written")
-    if patched:
-        print(f"  {COLOR_GREEN}✓{COLOR_RESET} Windsurf MCP config merged ({patched})")
+def print_summary(
+    *,
+    credentials_file: Path,
+    mcp_config: Path | None,
+) -> None:
+    step("Ready")
+    print("Start the bare-metal stack:")
+    print(f"  {COLOR_DIM}make dev{COLOR_RESET}")
+    print()
+    print("Then:")
+    print("  1. Open http://localhost:5173")
+    print(f"  2. Copy TASKABLE_API_KEY from {credentials_file}")
+    print("  3. Paste it into “Local API key” and choose Continue locally")
+    if mcp_config:
+        print("  4. Restart Windsurf and run the Mouvadah get_all_projects tool")
     else:
-        print(f"  {COLOR_YELLOW}!{COLOR_RESET} Windsurf MCP config NOT updated (not found)")
+        print(
+            "  4. Configure your MCP client from mcp/mcp.json.example, "
+            "restart it, and run get_all_projects"
+        )
     print()
-    print("Next steps:")
-    print(f"  1. Start the API    : {COLOR_DIM}source .venv/bin/activate && "
-          f"uvicorn api.main:app --reload{COLOR_RESET}")
-    print(f"  2. Start the UI     : {COLOR_DIM}cd web && npm install && npm run dev{COLOR_RESET}")
-    print(f"  3. Seed demo data   : {COLOR_DIM}python3 scripts/seed_demo.py{COLOR_RESET}")
-    print(f"  4. Restart Windsurf : so it loads the new MCP server block")
+    print("Docker uses the same owner and database:")
+    print(
+        f"  {COLOR_DIM}docker compose -f docker/docker-compose.yml "
+        f"up --build{COLOR_RESET}"
+    )
+    print("  UI: http://localhost:3000  API: http://localhost:8000")
     print()
-
-
-# ---- Main ----------------------------------------------------------------
+    print(
+        "Re-running bootstrap is idempotent. To rotate the local MCP key, run "
+        f"`{venv_python()} -m api.local_setup --rotate-key "
+        f"--email <email> --name <name>`."
+    )
 
 
 def main() -> int:
-    print("\033[1mTaskable bootstrap\033[0m")
-    print(f"Repo root: {REPO_ROOT}")
-
+    print("\033[1mMouvadah authenticated local setup\033[0m")
+    print(f"Repository: {REPO_ROOT}")
     if not API_REQ.exists():
-        fatal(f"Missing {API_REQ}. Are you running from the repo root?")
+        fatal(f"Missing {API_REQ}; run bootstrap.py from a complete clone.")
 
+    credentials_file = Path(
+        os.getenv("TASKABLE_CREDENTIALS_FILE", DEFAULT_CREDENTIALS_FILE)
+    ).expanduser()
     ensure_venv()
-    api_key = prompt_api_key()
-    write_env(api_key)
-    patched = merge_windsurf_config(api_key)
-    print_summary(patched)
+    ensure_frontend()
+    email, name = prompt_identity()
+    write_local_env(credentials_file)
+    provision_local_owner(
+        email=email,
+        name=name,
+        credentials_file=credentials_file,
+    )
+    mcp_config = merge_windsurf_config(credentials_file)
+    print_summary(
+        credentials_file=credentials_file,
+        mcp_config=mcp_config,
+    )
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
