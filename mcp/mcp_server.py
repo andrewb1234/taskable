@@ -39,6 +39,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import stat
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
@@ -52,7 +54,36 @@ load_dotenv()
 load_dotenv("../.env")
 
 API_URL = os.getenv("TASKABLE_API_URL", "http://localhost:8000/api/v1").rstrip("/")
-AGENT_API_KEY = os.getenv("TASKABLE_API_KEY", os.getenv("AGENT_API_KEY", ""))
+DEFAULT_CREDENTIALS_FILE = (
+    Path.home() / ".config" / "mouvadah" / "credentials.env"
+)
+
+
+def _load_api_key() -> str:
+    direct_key = os.getenv("TASKABLE_API_KEY", "").strip()
+    if direct_key:
+        return direct_key
+
+    credentials_file = Path(
+        os.getenv("TASKABLE_CREDENTIALS_FILE", DEFAULT_CREDENTIALS_FILE)
+    ).expanduser()
+    if not credentials_file.exists():
+        return ""
+    if (
+        os.name == "posix"
+        and stat.S_IMODE(credentials_file.stat().st_mode) & 0o077
+    ):
+        raise RuntimeError(
+            f"{credentials_file} must be owner-only; run "
+            f"`chmod 600 {credentials_file}`."
+        )
+    for line in credentials_file.read_text(encoding="utf-8").splitlines():
+        if line.startswith("TASKABLE_API_KEY="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+API_KEY = _load_api_key()
 
 VALID_TICKET_STATUSES = {"TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"}
 VALID_TICKET_ASSIGNEES = {"HUMAN", "AGENT", "UNASSIGNED"}
@@ -75,7 +106,7 @@ server: Server = Server(
 
 def _headers() -> dict[str, str]:
     return {
-        "Authorization": f"Bearer {AGENT_API_KEY}",
+        "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
         "Accept": "application/json, text/plain;q=0.9, */*;q=0.5",
     }
@@ -1195,6 +1226,11 @@ async def amain() -> None:
 
 
 def main() -> None:
+    if not API_KEY:
+        raise SystemExit(
+            "TASKABLE_API_KEY is missing. Run `python3 bootstrap.py`, set "
+            "TASKABLE_API_KEY, or set TASKABLE_CREDENTIALS_FILE."
+        )
     asyncio.run(amain())
 
 

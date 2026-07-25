@@ -11,23 +11,19 @@ The full key is hashed (SHA-256) and compared against stored hashes.
 
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional
+from typing import Annotated
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import Session, select
 
-from api.config import Settings, get_settings
+from api.api_keys import hash_api_key
 from api.dependencies import SessionDep, SettingsDep
 from api.models.entities import ApiKey, User
 
 COOKIE_NAME = "session"
 TOKEN_EXPIRY_DAYS = 30
-
-KEY_PREFIX = "taskable_"
-KEY_RANDOM_LENGTH = 32  # bytes of entropy -> ~43 base64 chars
 
 
 def create_jwt(user_id: int, email: str, secret: str) -> str:
@@ -47,11 +43,6 @@ def decode_jwt(token: str, secret: str) -> dict | None:
         return jwt.decode(token, secret, algorithms=["HS256"])
     except jwt.PyJWTError:
         return None
-
-
-def hash_api_key(raw_key: str) -> str:
-    """SHA-256 hash of the raw key for storage/lookup."""
-    return hashlib.sha256(raw_key.encode()).hexdigest()
 
 
 def verify_api_key(raw_key: str, session: Session) -> User | None:

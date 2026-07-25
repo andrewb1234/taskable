@@ -2,7 +2,8 @@
 
 ## Base Configuration
 * **Base URL:** `http://localhost:8000/api/v1`
-* **Auth:** `Authorization: Bearer <AGENT_API_KEY>` (Agent only)
+* **Auth:** HttpOnly session cookie for the UI or
+  `Authorization: Bearer <TASKABLE_API_KEY>` for MCP/agent callers
 * **Format:** `application/json`
 
 ## Real-Time Synchronization

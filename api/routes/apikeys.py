@@ -7,15 +7,15 @@ is shown for identification.
 
 from __future__ import annotations
 
-import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional
+from datetime import datetime
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import select
 
-from api.auth import KEY_PREFIX, KEY_RANDOM_LENGTH, CurrentUser, hash_api_key
+from api.api_keys import issue_api_key
+from api.auth import CurrentUser
 from api.dependencies import SessionDep
 from api.models.entities import ApiKey
 
@@ -39,12 +39,6 @@ class ApiKeyOut(BaseModel):
 
 class ApiKeyCreated(ApiKeyOut):
     key: str  # full key, shown once
-
-
-def _generate_key() -> str:
-    """Generate a random API key: taskable_<random43>."""
-    random_part = secrets.token_urlsafe(KEY_RANDOM_LENGTH)
-    return f"{KEY_PREFIX}{random_part}"
 
 
 def _to_out(api_key: ApiKey) -> ApiKeyOut:
@@ -80,26 +74,12 @@ async def create_api_key(
     user: CurrentUser,
 ) -> ApiKeyCreated:
     """Create a new API key. The full key is returned only once."""
-    raw_key = _generate_key()
-    key_hash = hash_api_key(raw_key)
-    key_prefix = raw_key[:12]
-
-    expires_at = None
-    if payload.expires_in_days is not None:
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            days=payload.expires_in_days
-        )
-
-    api_key = ApiKey(
+    api_key, raw_key = issue_api_key(
+        session,
         user_id=user.id,
         name=payload.name,
-        key_prefix=key_prefix,
-        key_hash=key_hash,
-        expires_at=expires_at,
+        expires_in_days=payload.expires_in_days,
     )
-    session.add(api_key)
-    session.commit()
-    session.refresh(api_key)
 
     return ApiKeyCreated(
         id=api_key.id,

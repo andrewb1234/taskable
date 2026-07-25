@@ -15,7 +15,8 @@ pip install -r mcp/requirements.txt
 ## Run locally (smoke test)
 
 ```bash
-AGENT_API_KEY=<same as .env> TASKABLE_API_URL=http://localhost:8000/api/v1 \
+TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env \
+  TASKABLE_API_URL=http://localhost:8000/api/v1 \
   python mcp/mcp_server.py
 ```
 
@@ -23,9 +24,10 @@ Stdio input/output is MCP protocol; use an MCP-aware client to interact.
 
 ## Windsurf configuration
 
-Add the contents of `mcp.json.example` to your Windsurf MCP config
-(typically `~/.codeium/windsurf/mcp_config.json`), then restart Windsurf. The
-key **must** match the one in the FastAPI process's `.env`.
+Run `python3 bootstrap.py` to configure Windsurf automatically, or add the
+contents of `mcp.json.example` to its MCP config. The server reads a per-user
+database-backed key from `TASKABLE_API_KEY` or from the owner-only
+`TASKABLE_CREDENTIALS_FILE`; the backend never shares a static bypass secret.
 
 ## Exposed Tools
 
@@ -53,6 +55,7 @@ key **must** match the one in the FastAPI process's `.env`.
 ## Notes
 
 - Transport is `stdio`; no network ports are opened by this process.
-- Every HTTP call injects the static `Authorization: Bearer <AGENT_API_KEY>`
-  header, satisfying the `/agent/*` route guard.
+- Every HTTP call injects the authenticated user's
+  `Authorization: Bearer <TASKABLE_API_KEY>` header. The key is revocable and
+  inherits only its owning user's workspace memberships.
 - Error payloads from the API bubble up verbatim so the LLM can self-correct.

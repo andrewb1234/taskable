@@ -71,7 +71,14 @@ def live_api(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str
         pytest.skip(f"Expected interpreter not found at {VENV_PYTHON}")
 
     port = _find_free_port()
-    db_path = tmp_path_factory.mktemp("taskable-int") / "live.db"
+    temp_dir = tmp_path_factory.mktemp("taskable-int")
+    db_path = temp_dir / "live.db"
+    credentials_file = temp_dir / "credentials.env"
+    credentials_file.write_text(
+        f"TASKABLE_API_KEY={TEST_AGENT_KEY}\n",
+        encoding="utf-8",
+    )
+    credentials_file.chmod(0o600)
     env = {
         **os.environ,
         "DATABASE_URL": f"sqlite:///{db_path}",
@@ -95,7 +102,11 @@ def live_api(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str
     base = f"http://127.0.0.1:{port}"
     try:
         _wait_for_health(f"{base}/healthz")
-        yield {"base_url": f"{base}/api/v1", "db_path": str(db_path)}
+        yield {
+            "base_url": f"{base}/api/v1",
+            "db_path": str(db_path),
+            "credentials_file": str(credentials_file),
+        }
     finally:
         proc.terminate()
         try:
@@ -142,10 +153,14 @@ class MCPClient:
         return json.loads(line.decode())
 
 
-async def _spawn_mcp(api_url: str) -> asyncio.subprocess.Process:
+async def _spawn_mcp(
+    api_url: str,
+    credentials_file: str,
+) -> asyncio.subprocess.Process:
     env = {
         **os.environ,
-        "TASKABLE_API_KEY": TEST_AGENT_KEY,
+        "TASKABLE_API_KEY": "",
+        "TASKABLE_CREDENTIALS_FILE": credentials_file,
         "TASKABLE_API_URL": api_url,
         "PYTHONUNBUFFERED": "1",
     }
@@ -223,7 +238,10 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
         ).json()
 
     # Now drive the MCP server.
-    proc = await _spawn_mcp(live_api["base_url"])
+    proc = await _spawn_mcp(
+        live_api["base_url"],
+        live_api["credentials_file"],
+    )
     try:
         client = MCPClient(proc)
         init_response = await _initialize(client)
@@ -350,7 +368,10 @@ async def test_mcp_simulator_rejects_bad_status(live_api: dict[str, str]) -> Non
     re-checks the status for the case where a caller has a permissive SDK.
     Either rejection path is acceptable; both keep bad data out of the DB.
     """
-    proc = await _spawn_mcp(live_api["base_url"])
+    proc = await _spawn_mcp(
+        live_api["base_url"],
+        live_api["credentials_file"],
+    )
     try:
         client = MCPClient(proc)
         await _initialize(client)
@@ -389,7 +410,10 @@ async def test_mcp_simulator_creation_flow(live_api: dict[str, str]) -> None:
     -> create_ticket. Asserts each MCP response parses correctly AND that the
     resulting DB rows exist with the expected parent/child linkage.
     """
-    proc = await _spawn_mcp(live_api["base_url"])
+    proc = await _spawn_mcp(
+        live_api["base_url"],
+        live_api["credentials_file"],
+    )
     try:
         client = MCPClient(proc)
         await _initialize(client)
@@ -510,7 +534,10 @@ async def test_mcp_simulator_knowledge_flow(live_api: dict[str, str]) -> None:
     RAW child, a listed outline, a drilled-down read, and an update that
     promotes SUMMARY → PRD. Persistence is verified against the live SQLite.
     """
-    proc = await _spawn_mcp(live_api["base_url"])
+    proc = await _spawn_mcp(
+        live_api["base_url"],
+        live_api["credentials_file"],
+    )
     try:
         client = MCPClient(proc)
         await _initialize(client)
@@ -617,3 +644,96 @@ async def test_mcp_simulator_knowledge_flow(live_api: dict[str, str]) -> None:
         assert row == ("RAW", summary_id)
     finally:
         conn.close()
+
+
+@pytest.mark.integration
+async def test_fresh_local_setup_reaches_authenticated_mcp_operation(
+    tmp_path: Path,
+) -> None:
+    """Prove the documented clean install from CLI provisioning through MCP."""
+    port = _find_free_port()
+    database_path = tmp_path / "state" / "taskable.db"
+    credentials_file = tmp_path / "config" / "credentials.env"
+    env = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite:///{database_path}",
+        "FRONTEND_URL": "http://localhost:5173",
+        "LOCAL_AUTH_ENABLED": "true",
+        "JWT_SECRET": "fresh-local-setup-secret-at-least-32-bytes",
+        "MIGRATION_MODE": "upgrade",
+        "PYTHONUNBUFFERED": "1",
+    }
+    setup = subprocess.run(
+        [
+            str(VENV_PYTHON),
+            "-m",
+            "api.local_setup",
+            "--email",
+            "fresh-owner@example.com",
+            "--name",
+            "Fresh Owner",
+            "--credentials-file",
+            str(credentials_file),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert setup.returncode == 0, setup.stderr
+
+    api_proc = subprocess.Popen(
+        [
+            str(VENV_PYTHON),
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    base = f"http://127.0.0.1:{port}"
+    mcp_proc: asyncio.subprocess.Process | None = None
+    try:
+        _wait_for_health(f"{base}/healthz")
+        mcp_proc = await _spawn_mcp(
+            f"{base}/api/v1",
+            str(credentials_file),
+        )
+        client = MCPClient(mcp_proc)
+        await _initialize(client)
+        await client.send(
+            "tools/call",
+            {
+                "name": "create_project",
+                "arguments": {
+                    "name": "First authenticated project",
+                    "description": "Created through the fresh-install MCP path.",
+                },
+            },
+        )
+        payload = await client.recv()
+        text = payload["result"]["content"][0]["text"]
+        assert text.startswith("Created project #"), text
+    finally:
+        if mcp_proc is not None:
+            mcp_proc.terminate()
+            try:
+                await asyncio.wait_for(mcp_proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                mcp_proc.kill()
+        api_proc.terminate()
+        try:
+            api_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            api_proc.kill()

@@ -18,12 +18,14 @@ services:
     container_name: taskable-api
     restart: unless-stopped
     environment:
-      AGENT_API_KEY: ${AGENT_API_KEY:?Set AGENT_API_KEY in .env}
       GITHUB_PAT: ${GITHUB_PAT:-}
       DATABASE_URL: sqlite:////app/data/taskable.db
       MIGRATION_MODE: upgrade
+      LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
+      JWT_SECRET: ${JWT_SECRET:?Run python3 bootstrap.py first}
+      FRONTEND_URL: http://localhost:3000
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       # ~ is not expanded by docker-compose; rely on $HOME for portability.
       - ${TASKABLE_DATA_DIR:-${HOME}/.taskable}:/app/data
@@ -44,7 +46,7 @@ services:
     container_name: taskable-web
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
     depends_on:
       api:
         condition: service_healthy

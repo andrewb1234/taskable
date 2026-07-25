@@ -38,16 +38,16 @@ The current authenticated flow uses a per-user Mouvadah API key:
 1. Sign in through the web application.
 2. Open the profile page and create an API key.
 3. Put the returned one-time value in the MCP process as
-   `TASKABLE_API_KEY` (the legacy `AGENT_API_KEY` variable is also read).
+   `TASKABLE_API_KEY`, or put it in the owner-only credentials file selected
+   by `TASKABLE_CREDENTIALS_FILE`.
 4. Revoke or replace the key from the profile page when needed.
 
-## Zero-Config Setup
+For a loopback-only local install, `bootstrap.py` creates the first local owner
+and per-user API key before the UI starts. The browser exchanges that key for
+an HttpOnly session and does not store it. Local auth is disabled by default
+and is rejected for non-loopback or HTTPS origins.
 
-> **Alpha limitation:** `bootstrap.py` still provisions the legacy shared
-> `AGENT_API_KEY`; it does not provision Google OAuth or a database-backed
-> per-user API key. It is not a complete fresh-install path for the current
-> authenticated application. This is tracked as a release blocker in the
-> company and security blueprints.
+## Authenticated ten-minute setup
 
 From a clean clone:
 
@@ -57,25 +57,29 @@ python3 bootstrap.py
 
 This script will:
 
-1. Create `.venv/` and install all backend + MCP dependencies
-2. Generate a legacy `AGENT_API_KEY` (or accept one you paste in)
-3. Write `.env` at the repo root
-4. Detect `~/.codeium/windsurf/mcp_config.json` and merge in a `taskable` server block with absolute paths — preserving your existing entries
-5. Print the next-step commands
+1. Create `.venv/` and install the pinned API, MCP, and frontend dependencies.
+2. Write an owner-only `.env` with a strong local JWT secret and
+   `LOCAL_AUTH_ENABLED=true`.
+3. Apply the ordered Alembic migrations.
+4. Create or reuse a local owner, personal workspace, and revocable per-user
+   API key.
+5. Store the full key in `~/.config/mouvadah/credentials.env` with mode 0600.
+6. Configure Windsurf MCP, when detected, to read that credentials file
+   without copying the key into its JSON.
+7. Print the bare-metal and Docker start commands plus the login/MCP
+   verification.
 
-If you'd rather wire things up manually, follow the *Quick Start (local dev)* section below.
+Re-running the command reuses the same owner and active key. Rotation is
+explicit through `python -m api.local_setup --rotate-key`.
 
 ## Quick Start (local dev, no Docker)
+
+The bootstrap path above is recommended. To run each component after setup:
 
 ### 1. Backend
 
 ```bash
-python3 -m venv .venv
 source .venv/bin/activate
-pip install -r api/requirements.txt
-
-cp .env.example .env       # then edit AGENT_API_KEY (see explanation above)
-
 uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -104,16 +108,16 @@ Pick **one** of three install styles:
 
 ```bash
 # Option A — same venv as the API (simplest)
-pip install -r mcp/requirements.txt
-TASKABLE_API_KEY=<key-created-in-profile> python mcp/mcp_server.py
+TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env \
+  python mcp/mcp_server.py
 
 # Option B — global isolated install via pipx (recommended for IDE use)
 pipx install ./mcp
-AGENT_API_KEY=<same as .env> taskable-mcp
+TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env taskable-mcp
 
 # Option C — uv tool (if you live in uv-land)
 uv tool install ./mcp
-AGENT_API_KEY=<same as .env> taskable-mcp
+TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env taskable-mcp
 ```
 
 Options B and C produce a `taskable-mcp` console script on your `$PATH` so the Windsurf MCP config can use a stable command instead of an absolute venv-relative Python path. Hook it into Windsurf by copying [`mcp/mcp.json.example`](./mcp/mcp.json.example) into your Windsurf MCP config (typically `~/.codeium/windsurf/mcp_config.json`) — or run `python3 bootstrap.py` to do it automatically.
@@ -121,12 +125,13 @@ Options B and C produce a `taskable-mcp` console script on your `$PATH` so the W
 ## Quick Start (Docker)
 
 ```bash
-cp .env.example .env       # fill in AGENT_API_KEY
+python3 bootstrap.py
 docker compose -f docker/docker-compose.yml up --build
 ```
 
 - API: `http://localhost:8000`
 - UI: `http://localhost:3000`
+- Both published ports are loopback-only.
 - SQLite persisted on the **host** at `~/.taskable/taskable.db` via a bind mount (back up, copy, or inspect with any desktop tool — no `docker exec` needed).
 
 The MCP server is **not** containerized — it runs on the host via stdio per `docs/deployment.md`, and points at `http://localhost:8000/api/v1` via the published API port.
@@ -148,7 +153,13 @@ cd web && npx playwright install chromium  # one-time
 cd web && npm run test:e2e
 ```
 
-The pytest suite covers CRUD, state transitions, agent endpoints, and SSE broadcasting against an isolated in-memory SQLite. The `test_mcp_simulator.py` module spawns a real `uvicorn` + `mcp_server.py` subprocess pair and exercises the full JSON-RPC handshake against a temp SQLite — proving the MCP wire protocol end-to-end. The Playwright spec then proves that an `agent`-side PATCH propagates to the live React DOM in under one second via SSE.
+The pytest suite covers CRUD, state transitions, local-owner provisioning,
+agent endpoints, and SSE broadcasting against isolated databases. The
+`test_mcp_simulator.py` module also proves the complete fresh-install path:
+run local setup, start a real API, load the generated credentials file in the
+MCP subprocess, complete JSON-RPC initialization, and create an authenticated
+project. Playwright verifies local-key browser sign-in and that agent updates
+propagate to the live React DOM via SSE.
 
 Quick aliases via the `Makefile`:
 

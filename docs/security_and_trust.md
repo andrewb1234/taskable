@@ -32,10 +32,18 @@ evidence support.
   creation, and are stored as SHA-256 hashes.
 - API keys can expire and be revoked.
 - Authenticated requests resolve an actual user record.
+- Loopback local mode provisions a real owner, personal workspace, and
+  revocable per-user key instead of disabling auth or sharing a backend bypass
+  secret.
+- The local browser exchanges that key for an HttpOnly session only when
+  `LOCAL_AUTH_ENABLED=true`; configured and request origins must be loopback
+  and cross-origin exchanges are rejected.
+- Local credentials are written atomically to an owner-only `0600` file. MCP
+  can read that file without copying the raw key into client JSON.
 - Production OAuth callbacks derive from the configured public origin rather
   than the request Host.
 - Production startup rejects a default or short JWT secret and missing Google
-  OAuth credentials when `FRONTEND_URL` uses HTTPS.
+  OAuth credentials when `FRONTEND_URL` uses HTTPS, and rejects local auth.
 
 ### Authorization and tenancy
 
@@ -66,7 +74,7 @@ evidence support.
 
 ### Verification
 
-- 92 backend tests pass.
+- 111 backend and MCP integration tests pass.
 - The suite includes concurrent claim, expiry, dependency, cascade, state,
   knowledge, cross-workspace read/write/delete isolation, role enforcement,
   tenant-filtered events, safe legacy adoption, OAuth hardening, and MCP
@@ -74,8 +82,9 @@ evidence support.
   exercised against ephemeral PostgreSQL 17.
 - The frontend TypeScript and production build pass on the upgraded Vite 8
   toolchain.
-- Two authenticated browser-level realtime scenarios pass against an isolated
-  migration-built database.
+- Three authenticated Chromium scenarios pass against an isolated
+  migration-built database: local-key-to-HttpOnly-session exchange plus two
+  realtime/SSE behaviors.
 - GitHub workflows cover the test/build path on Python 3.12 and 3.14,
   dependency review, Python and npm vulnerability audits, complete-history
   secret scanning, and CodeQL for Python and JavaScript/TypeScript.
@@ -158,6 +167,25 @@ Production redirects now derive from validated `FRONTEND_URL` configuration.
 Loopback request ports remain available only for local development, and
 focused tests cover spoofed Hosts, invalid public URLs, state-cookie cleanup,
 and production secret requirements.
+
+### Resolved high: stale shared-secret onboarding
+
+The bootstrap path no longer creates `AGENT_API_KEY` or places a shared bypass
+secret in the backend environment. It now installs the pinned runtimes,
+generates an owner-only local JWT configuration, migrates the database,
+creates or reuses a local owner and personal workspace, issues a revocable
+per-user API key, stores that key in a permission-restricted credentials file,
+and configures detected MCP clients to reference the file. Re-running setup is
+idempotent; key rotation is explicit and revokes the prior bootstrap key.
+
+Residual risk:
+
+- local API keys currently inherit their owning user's permissions until
+  scoped credentials ship in ticket #83;
+- the credentials file is intentionally decryptable by its owner and depends
+  on host account/filesystem security; and
+- Windows permission semantics are not part of the verified macOS/Linux
+  community path.
 
 ### Resolved high: ordered migration and deployment gate
 

@@ -1,7 +1,7 @@
 {
   "_comment": "Pick option A (pipx/uv install) for a stable console script, or option B (venv) when you don't want to install globally. The bootstrap.py script writes whichever one suits your environment.",
   "mcpServers": {
-    "taskable": {
+    "mouvadah": {
       "// Option A": "After 'pipx install ./mcp' or 'uv tool install ./mcp'",
       "command": "taskable-mcp",
       "args": [],
@@ -11,8 +11,8 @@
       "// args": ["/absolute/path/to/taskable/mcp/mcp_server.py"],
 
       "env": {
-        "TASKABLE_API_URL": "https://taskable-6yik.onrender.com/api/v1",
-        "TASKABLE_API_KEY": "<paste your per-user API key from Profile > API Keys>"
+        "TASKABLE_API_URL": "http://localhost:8000/api/v1",
+        "TASKABLE_CREDENTIALS_FILE": "/absolute/path/to/.config/mouvadah/credentials.env"
       }
     }
   }
