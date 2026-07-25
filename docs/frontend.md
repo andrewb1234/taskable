@@ -44,8 +44,3 @@
 ## Styling Guidelines
 * Utilize `shadcn/ui` for complex interactives (Dialog, Select, Dropdown).
 * Optimize layout for desktop, favoring high information density over excessive whitespace.
-* Follow [`ui_design_system.md`](ui_design_system.md) for semantic tokens,
-  brand components, ticket/actor states, focus treatment, motion, and
-  reduced-motion behavior.
-* Use raw palette utilities only for genuinely local illustrations. Product
-  state and reusable surfaces must use documented semantic tokens.

@@ -4,228 +4,73 @@
 
 @layer base {
   :root {
-    color-scheme: light;
-
-    /* Application surfaces: warm, calm, and dense rather than stark white. */
-    --background: 40 20% 97%;
-    --foreground: 222 22% 12%;
-    --surface: 40 24% 99%;
-    --surface-foreground: 222 22% 12%;
-    --surface-elevated: 40 30% 100%;
-    --surface-subtle: 38 18% 94%;
-    --card: var(--surface);
-    --card-foreground: var(--surface-foreground);
-    --popover: var(--surface-elevated);
-    --popover-foreground: var(--surface-foreground);
-    --primary: 222 24% 14%;
-    --primary-foreground: 40 25% 97%;
-    --secondary: 38 16% 92%;
-    --secondary-foreground: 222 20% 17%;
-    --muted: 38 14% 92%;
-    --muted-foreground: 220 9% 42%;
-    --accent: 39 24% 88%;
-    --accent-foreground: 222 23% 16%;
-    --destructive: 3 67% 45%;
-    --destructive-foreground: 40 25% 98%;
-    --success: 148 42% 34%;
-    --success-foreground: 145 40% 96%;
-    --warning: 37 75% 42%;
-    --warning-foreground: 40 30% 10%;
-    --border: 36 12% 82%;
-    --input: 36 12% 78%;
-    --ring: 38 67% 42%;
-
-    /* Brand palette: stable across marketing and product surfaces. */
-    --brand-ink: 225 19% 7%;
-    --brand-paper: 40 28% 96%;
-    --brand-sandstone: 35 25% 85%;
-    --brand-brass: 38 67% 45%;
-    --brand-brass-foreground: 225 19% 7%;
-
-    /* Ticket states use three channels: background, text, and border. */
-    --status-todo: 218 13% 91%;
-    --status-todo-foreground: 220 10% 29%;
-    --status-todo-border: 218 10% 72%;
-    --status-progress: 210 54% 91%;
-    --status-progress-foreground: 214 59% 31%;
-    --status-progress-border: 212 45% 65%;
-    --status-blocked: 5 62% 92%;
-    --status-blocked-foreground: 2 58% 34%;
-    --status-blocked-border: 4 49% 67%;
-    --status-review: 42 67% 89%;
-    --status-review-foreground: 35 72% 27%;
-    --status-review-border: 39 57% 58%;
-    --status-done: 145 39% 89%;
-    --status-done-foreground: 151 49% 25%;
-    --status-done-border: 147 38% 57%;
-
-    /* Actor states deliberately do not reuse ticket-state colors. */
-    --actor-human: 198 47% 90%;
-    --actor-human-foreground: 203 55% 28%;
-    --actor-human-border: 199 39% 61%;
-    --actor-agent: 275 32% 91%;
-    --actor-agent-foreground: 275 42% 31%;
-    --actor-agent-border: 275 30% 65%;
-    --actor-unassigned: 218 12% 91%;
-    --actor-unassigned-foreground: 220 9% 39%;
-    --actor-unassigned-border: 218 9% 70%;
-
-    --radius: 0.625rem;
-    --motion-duration-fast: 120ms;
-    --motion-duration-standard: 180ms;
-    --motion-duration-slow: 360ms;
-    --motion-duration-trace: 900ms;
-    --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
   }
 
   .dark {
-    color-scheme: dark;
-    --background: 225 17% 8%;
-    --foreground: 40 20% 94%;
-    --surface: 225 16% 10%;
-    --surface-foreground: 40 20% 94%;
-    --surface-elevated: 225 15% 13%;
-    --surface-subtle: 224 14% 15%;
-    --card: var(--surface);
-    --card-foreground: var(--surface-foreground);
-    --popover: var(--surface-elevated);
-    --popover-foreground: var(--surface-foreground);
-    --primary: 40 22% 94%;
-    --primary-foreground: 225 20% 10%;
-    --secondary: 224 13% 17%;
-    --secondary-foreground: 40 18% 92%;
-    --muted: 224 13% 15%;
-    --muted-foreground: 38 8% 65%;
-    --accent: 38 18% 19%;
-    --accent-foreground: 40 22% 94%;
-    --destructive: 3 58% 49%;
-    --destructive-foreground: 40 25% 98%;
-    --success: 148 39% 42%;
-    --success-foreground: 145 40% 96%;
-    --warning: 38 70% 50%;
-    --warning-foreground: 225 20% 8%;
-    --border: 224 11% 23%;
-    --input: 224 10% 28%;
-    --ring: 39 63% 54%;
-
-    --status-todo: 220 10% 18%;
-    --status-todo-foreground: 218 12% 78%;
-    --status-todo-border: 218 9% 36%;
-    --status-progress: 214 34% 20%;
-    --status-progress-foreground: 210 58% 78%;
-    --status-progress-border: 212 43% 43%;
-    --status-blocked: 3 37% 20%;
-    --status-blocked-foreground: 5 67% 80%;
-    --status-blocked-border: 4 48% 45%;
-    --status-review: 38 38% 19%;
-    --status-review-foreground: 42 72% 76%;
-    --status-review-border: 39 54% 43%;
-    --status-done: 148 31% 18%;
-    --status-done-foreground: 145 44% 75%;
-    --status-done-border: 147 36% 40%;
-
-    --actor-human: 201 31% 19%;
-    --actor-human-foreground: 198 50% 76%;
-    --actor-human-border: 199 38% 43%;
-    --actor-agent: 276 27% 20%;
-    --actor-agent-foreground: 274 43% 80%;
-    --actor-agent-border: 275 31% 45%;
-    --actor-unassigned: 220 10% 18%;
-    --actor-unassigned-foreground: 218 12% 73%;
-    --actor-unassigned-border: 218 9% 36%;
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 6.5%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 12%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
   }
+}
 
-  [data-surface="marketing"] {
-    color-scheme: dark;
-    --background: var(--brand-ink);
-    --foreground: var(--brand-paper);
-    --surface: 225 17% 9%;
-    --surface-foreground: var(--brand-paper);
-    --surface-elevated: 225 15% 12%;
-    --surface-subtle: 225 14% 15%;
-    --card: var(--surface);
-    --card-foreground: var(--surface-foreground);
-    --popover: var(--surface-elevated);
-    --popover-foreground: var(--surface-foreground);
-    --primary: var(--brand-paper);
-    --primary-foreground: var(--brand-ink);
-    --secondary: 225 12% 17%;
-    --secondary-foreground: var(--brand-paper);
-    --muted: 225 12% 15%;
-    --muted-foreground: 38 9% 66%;
-    --accent: 38 28% 19%;
-    --accent-foreground: var(--brand-paper);
-    --border: 39 12% 28%;
-    --input: 39 10% 32%;
-    --ring: 39 66% 54%;
-  }
-
+@layer base {
   * {
     @apply border-border;
   }
-
   html,
   body,
   #root {
     height: 100%;
     margin: 0;
   }
-
   body {
-    @apply bg-background font-sans text-foreground antialiased;
+    @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
-    text-rendering: optimizeLegibility;
-  }
-
-  ::selection {
-    background: hsl(var(--brand-brass) / 0.28);
-  }
-
-  :where(a, button, input, textarea, select, [role="button"]):focus-visible {
-    outline: 2px solid hsl(var(--ring));
-    outline-offset: 2px;
-  }
-}
-
-@layer utilities {
-  .focus-ring {
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
-  }
-
-  .technical-label {
-    @apply font-mono text-[0.6875rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground;
-  }
-
-  .transition-fast {
-    transition-duration: var(--motion-duration-fast);
-  }
-
-  .motion-enter {
-    animation: mouvadah-enter var(--motion-duration-slow)
-      var(--motion-ease-standard) both;
-    animation-delay: var(--motion-delay, 0ms);
-  }
-
-  .motion-trace {
-    stroke-dasharray: 1;
-    stroke-dashoffset: 1;
-    animation: mouvadah-trace var(--motion-duration-trace)
-      var(--motion-ease-standard) both;
-    animation-delay: var(--motion-delay, 0ms);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .motion-enter,
-    .motion-trace {
-      animation: none !important;
-      opacity: 1 !important;
-      transform: none !important;
-      stroke-dashoffset: 0 !important;
-    }
-
-    .motion-continuous {
-      animation: none !important;
-    }
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Helvetica Neue",
+      Arial,
+      sans-serif;
   }
 }
 

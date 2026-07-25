@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from "react";
-import { MouvadahLockup } from "@/components/brand/mouvadah-brand";
 import { useAuth } from "@/context/AuthContext";
 
 export function LoginPage() {
@@ -26,9 +25,23 @@ export function LoginPage() {
     <div className="flex h-screen w-screen items-center justify-center bg-background">
       <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-8 px-6">
         <div className="flex flex-col items-center gap-2">
-          <h1>
-            <MouvadahLockup size="lg" />
-          </h1>
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight">mouvadah</h1>
           <p className="text-center text-sm text-muted-foreground">
             Co-pilot workspace for human-agent collaboration
           </p>

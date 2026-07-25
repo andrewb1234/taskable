@@ -11,22 +11,14 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-secondary text-secondary-foreground",
         outline: "text-foreground",
-        todo:
-          "border-status-todo-border bg-status-todo text-status-todo-foreground",
-        inprogress:
-          "border-status-progress-border bg-status-progress text-status-progress-foreground",
-        blocked:
-          "border-status-blocked-border bg-status-blocked text-status-blocked-foreground",
-        review:
-          "border-status-review-border bg-status-review text-status-review-foreground",
-        done:
-          "border-status-done-border bg-status-done text-status-done-foreground",
-        human:
-          "border-actor-human-border bg-actor-human text-actor-human-foreground",
-        agent:
-          "border-actor-agent-border bg-actor-agent text-actor-agent-foreground",
-        unassigned:
-          "border-actor-unassigned-border bg-actor-unassigned text-actor-unassigned-foreground",
+        todo: "border-transparent bg-muted text-muted-foreground",
+        inprogress: "border-transparent bg-blue-500/20 text-blue-300",
+        blocked: "border-transparent bg-red-500/20 text-red-300",
+        review: "border-transparent bg-amber-500/20 text-amber-200",
+        done: "border-transparent bg-emerald-500/20 text-emerald-300",
+        human: "border-transparent bg-sky-500/20 text-sky-200",
+        agent: "border-transparent bg-fuchsia-500/20 text-fuchsia-200",
+        unassigned: "border-transparent bg-muted text-muted-foreground",
       },
     },
     defaultVariants: {
