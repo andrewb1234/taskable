@@ -56,18 +56,37 @@ export function WorkspaceMembersSection({
   >({});
   const [busy, setBusy] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [loadingWorkspaceIds, setLoadingWorkspaceIds] = useState<number[]>([]);
+  const [loadErrors, setLoadErrors] = useState<Record<number, string | null>>(
+    {},
+  );
 
   const loadWorkspace = useCallback(
     async (workspaceId: number) => {
-      const [memberRows, invitationRows] = await Promise.all([
-        listWorkspaceMembers(workspaceId),
-        listWorkspaceInvitations(workspaceId),
-      ]);
-      setMembers((current) => ({ ...current, [workspaceId]: memberRows }));
-      setInvitations((current) => ({
-        ...current,
-        [workspaceId]: invitationRows,
-      }));
+      setLoadingWorkspaceIds((current) => [...current, workspaceId]);
+      setLoadErrors((current) => ({ ...current, [workspaceId]: null }));
+      try {
+        const [memberRows, invitationRows] = await Promise.all([
+          listWorkspaceMembers(workspaceId),
+          listWorkspaceInvitations(workspaceId),
+        ]);
+        setMembers((current) => ({ ...current, [workspaceId]: memberRows }));
+        setInvitations((current) => ({
+          ...current,
+          [workspaceId]: invitationRows,
+        }));
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to load workspace members";
+        setLoadErrors((current) => ({ ...current, [workspaceId]: message }));
+        throw error;
+      } finally {
+        setLoadingWorkspaceIds((current) =>
+          current.filter((id) => id !== workspaceId),
+        );
+      }
     },
     [],
   );
@@ -189,21 +208,37 @@ export function WorkspaceMembersSection({
   }
 
   async function copyInvite(invitation: WorkspaceInvitationCreated) {
-    await navigator.clipboard.writeText(invitation.accept_url);
-    setCopiedId(invitation.id);
-    window.setTimeout(() => setCopiedId(null), 2000);
+    try {
+      await navigator.clipboard.writeText(invitation.accept_url);
+      setCopiedId(invitation.id);
+      window.setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      onError(
+        "Clipboard access was denied. Select the one-time invitation link and copy it manually.",
+      );
+    }
   }
 
   return (
-    <section className="space-y-4">
+    <section aria-labelledby="workspace-members-heading" className="space-y-4">
       <div>
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <h2
+          id="workspace-members-heading"
+          className="flex items-center gap-2 text-sm font-semibold"
+        >
           <Users className="h-4 w-4" />
-          Workspace Members
+          Workspace access
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Owners can invite people, assign access, remove members, and transfer
           ownership. Invitation links are shown once; send them securely.
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          <strong className="text-foreground">Admin</strong> manages workspace
+          operations, <strong className="text-foreground">Member</strong> can
+          contribute, and <strong className="text-foreground">Viewer</strong>{" "}
+          has read-only access. Ownership transfer requires the exact workspace
+          slug.
         </p>
       </div>
 
@@ -216,10 +251,13 @@ export function WorkspaceMembersSection({
             new Date(invitation.expires_at).getTime() > Date.now(),
         );
         const createdInvitation = created[workspace.id];
+        const loadingWorkspace = loadingWorkspaceIds.includes(workspace.id);
+        const loadError = loadErrors[workspace.id];
         return (
           <div
             key={workspace.id}
-            className="space-y-4 rounded-lg border border-border bg-card p-4"
+            aria-busy={loadingWorkspace}
+            className="space-y-4 rounded-sm border border-border bg-card p-4"
           >
             <div>
               <p className="text-sm font-semibold">{workspace.name}</p>
@@ -227,6 +265,24 @@ export function WorkspaceMembersSection({
                 <code>{workspace.slug}</code> · Owner controls
               </p>
             </div>
+
+            {loadError && (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-foreground"
+              >
+                <span className="min-w-0 flex-1">{loadError}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void loadWorkspace(workspace.id).catch(() => undefined)
+                  }
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
 
             <div className="grid gap-2 sm:grid-cols-[1fr_8rem_auto]">
               <Input
@@ -239,7 +295,7 @@ export function WorkspaceMembersSection({
                     [workspace.id]: event.target.value,
                   }))
                 }
-                className="h-8 text-sm"
+                className="min-h-10 text-sm"
                 aria-label={`Invite email for ${workspace.name}`}
               />
               <select
@@ -250,7 +306,7 @@ export function WorkspaceMembersSection({
                     [workspace.id]: event.target.value as HumanRole,
                   }))
                 }
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                className="min-h-10 rounded-sm border border-input bg-background px-2 text-xs"
                 aria-label={`Invitation role for ${workspace.name}`}
               >
                 <option value="ADMIN">Admin</option>
@@ -275,8 +331,12 @@ export function WorkspaceMembersSection({
             </div>
 
             {createdInvitation && (
-              <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3">
-                <p className="text-xs font-medium text-green-700 dark:text-green-400">
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-sm border border-success/40 bg-success/10 p-3"
+              >
+                <p className="text-xs font-medium text-success">
                   Copy this invitation link now. It will not be shown again.
                 </p>
                 <div className="mt-2 flex gap-2">
@@ -287,7 +347,7 @@ export function WorkspaceMembersSection({
                     size="icon"
                     variant="outline"
                     className="h-7 w-7"
-                    onClick={() => copyInvite(createdInvitation)}
+                    onClick={() => void copyInvite(createdInvitation)}
                     aria-label="Copy invitation link"
                   >
                     {copiedId === createdInvitation.id ? (
@@ -308,7 +368,7 @@ export function WorkspaceMembersSection({
                 return (
                   <div
                     key={member.user_id}
-                    className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center"
+                    className="flex flex-col gap-2 rounded-sm border border-border p-3 sm:flex-row sm:items-center"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
@@ -336,7 +396,7 @@ export function WorkspaceMembersSection({
                               event.target.value as HumanRole,
                             )
                           }
-                          className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                          className="min-h-10 rounded-sm border border-input bg-background px-2 text-xs"
                           aria-label={`Role for ${member.name}`}
                         >
                           <option value="ADMIN">Admin</option>
@@ -371,6 +431,16 @@ export function WorkspaceMembersSection({
                 );
               })}
             </div>
+
+            {loadingWorkspace && workspaceMembers.length === 0 && (
+              <div
+                role="status"
+                className="flex items-center gap-2 py-3 text-xs text-muted-foreground"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                Loading members and invitations…
+              </div>
+            )}
 
             {pendingInvitations.length > 0 && (
               <div className="space-y-2">

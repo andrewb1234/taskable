@@ -12,7 +12,11 @@ import {
   AlertCircle,
   Loader2,
   ShieldCheck,
+  LogOut,
+  UserRound,
 } from "lucide-react";
+import { MouvadahLockup } from "@/components/brand/mouvadah-brand";
+import { TechnicalLabel } from "@/components/ui/technical-label";
 import { useAuth } from "@/context/AuthContext";
 import {
   listApiKeys,
@@ -45,6 +49,23 @@ interface ProfilePageProps {
   onInvitationHandled?: () => void;
   onInvitationTerminalFailure?: () => void;
   onInvitationSwitchAccount?: () => Promise<void>;
+}
+
+const profileSections = [
+  ["identity", "Identity"],
+  ["workspace-access", "Workspace access"],
+  ["agent-credentials", "Agent credentials"],
+  ["browser-sessions", "Browser sessions"],
+  ["data-recovery", "Data & recovery"],
+] as const;
+
+function jumpToProfileSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+    block: "start",
+  });
 }
 
 export function ProfilePage({
@@ -306,10 +327,18 @@ export function ProfilePage({
     }
   }
 
-  function copyKey(key: string) {
-    navigator.clipboard.writeText(key);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  async function copyKey(key: string) {
+    try {
+      await navigator.clipboard.writeText(key);
+      setCopied(true);
+      setError(null);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      setError(
+        "Clipboard access was denied. Select the one-time key and copy it manually before dismissing it.",
+      );
+    }
   }
 
   function formatDate(dateStr: string | null): string {
@@ -356,53 +385,126 @@ export function ProfilePage({
     "Unknown workspace";
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-background">
-      {/* Header */}
-      <header className="flex items-center gap-3 border-b border-border px-6 py-4">
-        <Button variant="ghost" size="icon" onClick={onBack} aria-label="Back">
+    <div className="flex h-dvh w-full min-w-0 flex-col overflow-hidden bg-background">
+      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-3 sm:px-6">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onBack}
+          aria-label="Back to workspace"
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <h1 className="text-lg font-semibold">Profile & Settings</h1>
+        <div className="min-w-0 flex-1">
+          <TechnicalLabel>Trust administration</TechnicalLabel>
+          <h1 className="truncate text-base font-semibold sm:text-lg">
+            Profile & Settings
+          </h1>
+        </div>
+        <div className="hidden sm:block">
+          <MouvadahLockup size="sm" />
+        </div>
       </header>
 
-      <div className="flex-1 overflow-auto">
-        <div className="mx-auto max-w-3xl space-y-8 px-6 py-8">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-10 lg:py-10">
+          <aside className="self-start lg:sticky lg:top-6">
+            <p className="technical-label mb-3">Account surfaces</p>
+            <nav
+              aria-label="Profile settings sections"
+              className="grid grid-cols-2 gap-1 rounded-sm border border-border bg-card p-2 sm:grid-cols-3 lg:grid-cols-1"
+            >
+              {profileSections.map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => jumpToProfileSection(id)}
+                  className="focus-ring transition-fast min-h-10 rounded-sm px-3 text-left text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+            <div className="mt-3 hidden rounded-sm border border-border bg-surface-subtle p-3 text-xs leading-relaxed text-muted-foreground lg:block">
+              Security scope, expiry, role, and recovery consequences remain
+              visible before you act.
+            </div>
+          </aside>
+
+          <div className="min-w-0 space-y-10">
           {/* User info */}
-          <section className="flex items-center gap-4">
-            {user?.avatar_url ? (
-              <img
-                src={user.avatar_url}
-                alt={user.name}
-                className="h-16 w-16 rounded-full"
-              />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-xl font-medium text-primary-foreground">
-                {user?.name?.charAt(0).toUpperCase() ?? "?"}
+          <section
+            id="identity"
+            aria-labelledby="identity-heading"
+            className="scroll-mt-6 rounded-sm border border-border bg-card p-5 sm:p-6"
+          >
+            <div className="flex min-w-0 items-center gap-4">
+              {user?.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt=""
+                  className="h-14 w-14 shrink-0 rounded-full"
+                />
+              ) : (
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-medium text-primary-foreground">
+                  {user?.name?.charAt(0).toUpperCase() ?? "?"}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <UserRound
+                    className="h-4 w-4 text-brand-brass"
+                    aria-hidden
+                  />
+                  <h2 id="identity-heading" className="text-sm font-semibold">
+                    Identity
+                  </h2>
+                </div>
+                <p className="mt-2 truncate text-lg font-semibold">
+                  {user?.name}
+                </p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {user?.email}
+                </p>
               </div>
-            )}
-            <div>
-              <p className="text-lg font-semibold">{user?.name}</p>
-              <p className="text-sm text-muted-foreground">{user?.email}</p>
             </div>
           </section>
 
           {invitationNotice && (
-            <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-700 dark:text-green-400">
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-sm border border-success/40 bg-success/10 p-3 text-xs text-success"
+            >
               {invitationNotice}
             </div>
           )}
 
           {pendingInvitationToken && !invitationNotice && (
-            <div className="space-y-3 rounded-md border border-primary/30 bg-primary/5 p-4">
+            <section
+              aria-labelledby="invitation-heading"
+              className="space-y-3 rounded-sm border border-brand-brass/40 bg-brand-brass/10 p-4"
+            >
               <div>
-                <p className="text-sm font-semibold">Workspace invitation</p>
+                <p className="technical-label">Pending access request</p>
+                <h2
+                  id="invitation-heading"
+                  className="mt-2 text-sm font-semibold"
+                >
+                  Workspace invitation for {user?.email}
+                </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Accept only if you expected this invitation. It is bound to
-                  your signed-in email and can be used once.
+                  The invitation is bound to this signed-in email and can be
+                  used once. Its workspace and role are confirmed by the server
+                  when you accept; the invitation secret is never displayed.
                 </p>
               </div>
               {invitationError && (
-                <p className="text-xs text-destructive-foreground/80">
+                <p
+                  role="alert"
+                  aria-live="assertive"
+                  className="text-xs text-destructive-foreground"
+                >
                   {invitationError}
                 </p>
               )}
@@ -436,26 +538,35 @@ export function ProfilePage({
                   Dismiss
                 </Button>
               </div>
-            </div>
+            </section>
           )}
 
           {/* MCP Setup */}
-          <section className="rounded-lg border border-border bg-card p-5">
-            <div className="flex items-start justify-between gap-4">
+          <section
+            id="agent-credentials"
+            aria-labelledby="agent-credentials-heading"
+            className="scroll-mt-6 rounded-sm border border-border bg-card p-5"
+          >
+            <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
               <div>
-                <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <h2
+                  id="agent-credentials-heading"
+                  className="flex items-center gap-2 text-sm font-semibold"
+                >
                   <Terminal className="h-4 w-4" />
-                  MCP Server Configuration
+                  Agent credentials
                 </h2>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Connect your AI coding assistant (Claude, Windsurf, Cursor, etc.)
-                  to mouvadah. You'll need an API key first.
+                  Create scoped credentials, then configure an MCP client. New
+                  secrets are visible once and should be stored with owner-only
+                  file permissions.
                 </p>
               </div>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setMcpOpen(true)}
+                className="self-start"
               >
                 <Terminal className="mr-1.5 h-3.5 w-3.5" />
                 Setup Guide
@@ -464,9 +575,15 @@ export function ProfilePage({
           </section>
 
           {/* API Keys */}
-          <section className="space-y-4">
+          <section
+            aria-labelledby="api-keys-heading"
+            className="space-y-4"
+          >
             <div className="flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <h2
+                id="api-keys-heading"
+                className="flex items-center gap-2 text-sm font-semibold"
+              >
                 <KeyRound className="h-4 w-4" />
                 API Keys
               </h2>
@@ -481,11 +598,14 @@ export function ProfilePage({
               className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2"
             >
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                <label
+                  htmlFor="new-key-name"
+                  className="mb-1 block text-xs font-medium text-muted-foreground"
+                >
                   Key name
                 </label>
                 <Input
-                  autoFocus
+                  id="new-key-name"
                   placeholder="e.g. Claude Desktop, Windsurf, CI bot"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
@@ -493,10 +613,14 @@ export function ProfilePage({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                <label
+                  htmlFor="new-key-workspace"
+                  className="mb-1 block text-xs font-medium text-muted-foreground"
+                >
                   Workspace
                 </label>
                 <select
+                  id="new-key-workspace"
                   value={newKeyWorkspaceId}
                   onChange={(event) => {
                     setNewKeyWorkspaceId(event.target.value);
@@ -512,10 +636,14 @@ export function ProfilePage({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                <label
+                  htmlFor="new-key-access"
+                  className="mb-1 block text-xs font-medium text-muted-foreground"
+                >
                   Access
                 </label>
                 <select
+                  id="new-key-access"
                   value={newKeyAccess}
                   onChange={(event) =>
                     setNewKeyAccess(event.target.value as "read" | "read-write")
@@ -527,10 +655,14 @@ export function ProfilePage({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                <label
+                  htmlFor="new-key-expiry"
+                  className="mb-1 block text-xs font-medium text-muted-foreground"
+                >
                   Expires (days)
                 </label>
                 <Input
+                  id="new-key-expiry"
                   type="number"
                   min="1"
                   max="365"
@@ -590,15 +722,20 @@ export function ProfilePage({
 
             {/* Newly created key banner */}
             {newlyCreatedKey && (
-              <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-sm border border-success/40 bg-success/10 p-4"
+              >
                 <div className="flex items-start gap-2">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
                   <div className="flex-1">
-                    <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                    <p className="text-sm font-semibold text-success">
                       API key created — copy it now!
                     </p>
-                    <p className="mt-0.5 text-xs text-green-600 dark:text-green-500">
-                      This key won't be shown again. Store it securely.
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      This secret will not be shown again. Store it in a file
+                      readable only by its owner (<code>0600</code>).
                     </p>
                     <div className="mt-2 flex items-center gap-2">
                       <code className="flex-1 truncate rounded bg-green-500/10 px-2 py-1.5 text-xs font-mono">
@@ -608,7 +745,10 @@ export function ProfilePage({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 shrink-0"
-                        onClick={() => copyKey(newlyCreatedKey.key)}
+                        onClick={() => void copyKey(newlyCreatedKey.key)}
+                        aria-label={
+                          copied ? "API key copied" : "Copy new API key"
+                        }
                       >
                         {copied ? (
                           <Check className="h-3.5 w-3.5 text-green-600" />
@@ -641,9 +781,31 @@ export function ProfilePage({
 
             {/* Error */}
             {error && (
-              <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-foreground/80">
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-foreground"
+              >
                 <AlertCircle className="h-4 w-4 shrink-0" />
-                {error}
+                <span className="min-w-0 flex-1">{error}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setError(null);
+                    void Promise.all([fetchKeys(), fetchAccessData()]).catch(
+                      (err) =>
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : "Failed to refresh account data",
+                        ),
+                    );
+                  }}
+                >
+                  Retry
+                </Button>
               </div>
             )}
 
@@ -728,19 +890,28 @@ export function ProfilePage({
             )}
           </section>
 
-          {user && (
-            <WorkspaceMembersSection
-              workspaces={workspaces}
-              currentUserId={user.id}
-              onWorkspacesChanged={fetchAccessData}
-              onError={setError}
-            />
-          )}
+          <div id="workspace-access" className="scroll-mt-6">
+            {user && (
+              <WorkspaceMembersSection
+                workspaces={workspaces}
+                currentUserId={user.id}
+                onWorkspacesChanged={fetchAccessData}
+                onError={setError}
+              />
+            )}
+          </div>
 
           {/* Data recovery */}
-          <section className="space-y-4">
+          <section
+            id="data-recovery"
+            aria-labelledby="data-recovery-heading"
+            className="scroll-mt-6 space-y-4"
+          >
             <div>
-              <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <h2
+                id="data-recovery-heading"
+                className="flex items-center gap-2 text-sm font-semibold"
+              >
                 <Download className="h-4 w-4" />
                 Data & Recovery
               </h2>
@@ -752,7 +923,11 @@ export function ProfilePage({
             </div>
 
             {recoveryNotice && (
-              <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-700 dark:text-green-400">
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-sm border border-success/40 bg-success/10 p-3 text-xs text-success"
+              >
                 {recoveryNotice}
               </div>
             )}
@@ -848,9 +1023,16 @@ export function ProfilePage({
           </section>
 
           {/* Browser sessions */}
-          <section className="space-y-4">
+          <section
+            id="browser-sessions"
+            aria-labelledby="browser-sessions-heading"
+            className="scroll-mt-6 space-y-4"
+          >
             <div>
-              <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <h2
+                id="browser-sessions-heading"
+                className="flex items-center gap-2 text-sm font-semibold"
+              >
                 <ShieldCheck className="h-4 w-4" />
                 Browser Sessions
               </h2>
@@ -889,15 +1071,34 @@ export function ProfilePage({
                   </Button>
                 </div>
               ))}
+              {browserSessions.length === 0 && (
+                <div className="rounded-sm border border-dashed border-border p-5 text-sm text-muted-foreground">
+                  No active browser sessions were returned. Refresh account
+                  data or sign in again if this state is unexpected.
+                </div>
+              )}
             </div>
           </section>
 
           {/* Sign out */}
-          <section className="pt-4">
+          <section className="rounded-sm border border-border bg-card p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-sm font-semibold">
+                  <LogOut className="h-4 w-4" aria-hidden />
+                  Sign out
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  End this browser session without changing other sessions or
+                  agent credentials.
+                </p>
+              </div>
             <Button variant="outline" onClick={logout}>
               Sign out
             </Button>
+            </div>
           </section>
+          </div>
         </div>
       </div>
 

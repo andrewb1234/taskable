@@ -67,6 +67,10 @@ export default defineConfig({
         LOCAL_AUTH_ENABLED: "true",
         FRONTEND_URL: "http://127.0.0.1:5173",
         MIGRATION_MODE: "check",
+        // Browser specs create an isolated session per test. Keep this test
+        // harness from exercising the production auth limiter; the backend
+        // suite covers limiter behavior directly.
+        AUTH_RATE_LIMIT: "100",
       },
     },
     {
