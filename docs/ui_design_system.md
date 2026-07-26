@@ -23,6 +23,9 @@ Three principles govern new work:
 3. **Motion explains change.** Animate a reveal, transition, or system trace
    only when it clarifies sequence. A static reduced-motion state must carry
    the same meaning.
+4. **Decision value sets hierarchy.** Current work, risk, ownership, evidence,
+   and the next action lead. Product explanation, full briefs, history, and
+   empty secondary states use progressive disclosure.
 
 ## Semantic tokens
 
@@ -90,6 +93,9 @@ with an actor-specific icon and label.
 
 Success, warning, and destructive semantics are separate from ticket and actor
 identity. Do not use a ticket-state color to confirm a destructive action.
+On a solid destructive background, use `text-destructive-foreground`. On a
+transparent, neutral, or lightly tinted surface, use `text-destructive`;
+`destructive-foreground` is not a general-purpose red text token.
 
 ## Typography
 
@@ -104,6 +110,11 @@ identity. Do not use a ticket-state color to confirm a destructive action.
 
 The system uses local platform fonts only. Do not add remote font requests or
 make interface availability depend on font loading.
+
+Technical labels are optional metadata, not decoration. Remove one when the
+following heading already communicates the same thing. Never render a category
+label such as “Control plane” as a status pill: pills are reserved for state,
+identity, or compact actionable metadata.
 
 ## Brand mark
 
@@ -153,6 +164,45 @@ an accessible name.
 Avoid a grid of unrelated floating cards. Group information by workflow and
 shared state.
 
+### Progressive disclosure
+
+Keep visible anything required to decide or act:
+
+- blocked or review work;
+- work in flight and ownership;
+- the next safe action;
+- stale or proposed knowledge when it requires review; and
+- a recorded handoff that can actually be resumed.
+
+Collapse or omit explanatory lifecycle tours, full briefs, aggregate ownership,
+archived counts, extended notes, and empty recovery panels. A collapsed summary
+must say what is inside; a secondary section with no action and no state should
+usually not render.
+
+Marketing examples follow the same rule. Show the resulting project state
+(outcome, owner, dependencies, evidence, blocker, and next action) before the
+process that produced it. Put process history behind a disclosure on narrow
+screens.
+
+## Accessibility and responsive floor
+
+- One visible `h1` per page or route state.
+- Skip links target a focusable main region on landing and application shells.
+- Native nested lists are preferred over ARIA tree roles unless the complete
+  tree keyboard interaction and roving focus model are implemented.
+- Mobile controls and touch targets are at least 44 by 44 CSS pixels. Dense
+  desktop variants may return to their documented component height at `sm` or
+  above.
+- Status labels may not overlap or leak from their container at 320–360 pixels
+  or 200% text size. When a pill no longer fits a metric card, remove the pill
+  treatment and use a plain label/count pair.
+- Authentication copy names enabled methods (“Google sign-in,” “API-key
+  sign-in”) rather than inferring hosted or local deployment from provider
+  flags.
+- Text below 12 CSS pixels is limited to nonessential identifiers or compact
+  metadata. User decisions, errors, controls, and state labels use 12 pixels or
+  larger.
+
 ## Motion
 
 Durations and easing are CSS variables:
@@ -174,6 +224,10 @@ Under `prefers-reduced-motion: reduce`, these utilities remove animation and
 render the complete static state. Never use motion as the only sign that work
 changed, failed, completed, or needs review.
 
+Reduced motion targets the application’s animation and transition utilities;
+do not use a global `*` rule that rewrites every duration. Browser-native
+focus, disclosure, and scrolling behavior must remain predictable.
+
 ## Extension checklist
 
 Before merging a new UI surface:
@@ -189,6 +243,11 @@ Before merging a new UI surface:
    light, dark, and marketing scopes when applicable and document its purpose.
 7. Reject page-local hex/HSL values, raw Tailwind palette colors for domain
    state, copied brand SVGs, and one-off focus styles.
+8. Lead with live state; move explanation and empty secondary panels behind
+   progressive disclosure or remove them.
+9. At 320–360 pixels, check the bounding box of badges, tab labels, dialog
+   chrome, and action rows inside their immediate containers. A document-width
+   assertion alone does not detect clipped descendants.
 
 ## Verification
 

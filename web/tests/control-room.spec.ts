@@ -1,4 +1,4 @@
-import { expect, request, test, type Page } from "@playwright/test";
+import { expect, request, test, type Page } from "./uiFixture";
 import { E2E_API_KEY } from "./authFixture";
 
 const API_URL = "http://127.0.0.1:8000/api/v1/";
@@ -18,7 +18,7 @@ function authenticatedApi() {
   });
 }
 
-test("Control Room composes project attention, continuity, and provenance", async ({
+test("Control Room prioritizes attention, work in flight, and recovery", async ({
   page,
 }) => {
   await authenticateBrowser(page);
@@ -53,6 +53,13 @@ test("Control Room composes project attention, continuity, and provenance", asyn
     data: {
       title: "Review verified artifact",
       status: "REVIEW",
+      assignee: "AGENT",
+    },
+  });
+  await api.post(`subprojects/${subproject.id}/tickets`, {
+    data: {
+      title: "Implement the release candidate",
+      status: "IN_PROGRESS",
       assignee: "AGENT",
     },
   });
@@ -97,13 +104,24 @@ test("Control Room composes project attention, continuity, and provenance", asyn
   await expect(
     page.getByRole("button", { name: /^Control Room Project state/ }),
   ).toHaveAttribute("aria-current", "page");
-  await expect(page.getByText(project.description)).toBeVisible();
+  await expect(
+    page
+      .locator('[aria-labelledby="control-room-title"]')
+      .getByText(project.description, { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("Needs your attention")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Work in flight", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Resolve release blocker")).toBeVisible();
+  await expect(page.getByText("Implement the release candidate")).toBeVisible();
   await expect(page.getByText("1 pending proposal")).toBeVisible();
   await expect(page.getByText("Verify the release train")).toBeVisible();
   await expect(
     page.getByText("Resume from the verified release evidence."),
   ).toBeVisible();
+  await expect(page.getByText("Agent continuity")).toHaveCount(0);
+  await expect(page.getByText("Bound outcome")).toHaveCount(0);
 
   await page.getByText("Resolve release blocker").click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -144,6 +162,27 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 800 });
+  await page.addInitScript(`
+    (() => {
+      const NativeEventSource = window.EventSource;
+      class ObservableEventSource extends NativeEventSource {
+        constructor(url, eventSourceInitDict) {
+          super(url, eventSourceInitDict);
+          this.addEventListener(
+            "ready",
+            () => {
+              window.__mouvadahSseReady = true;
+            },
+            { once: true },
+          );
+        }
+      }
+      Object.defineProperty(window, "EventSource", {
+        configurable: true,
+        value: ObservableEventSource,
+      });
+    })();
+  `);
   await authenticateBrowser(page);
   const api = await authenticatedApi();
   const suffix = Date.now();
@@ -159,6 +198,9 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
   ).json();
 
   await page.goto("/app");
+  await expect
+    .poll(() => page.evaluate("window.__mouvadahSseReady === true"))
+    .toBe(true);
   await page
     .getByRole("button", { name: "Open workspace navigation" })
     .click();
@@ -169,11 +211,16 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
   await expect(
     page.getByRole("heading", { name: "Control Room" }),
   ).toBeVisible();
-  // The heading renders before project resources and the EventSource have
-  // necessarily settled on slower CI runners. Wait for the initial work-state
-  // snapshot before publishing the event so this measures delivery latency,
-  // not connection startup.
-  await expect(page.getByText("No blocked or review work")).toBeVisible();
+  // The project resources and EventSource settle independently. The stream's
+  // ready event is awaited above so the mutation cannot race subscription;
+  // these assertions confirm both ticket and subproject state before
+  // publishing because ticket invalidation is scoped through that map.
+  await expect(page.getByText("Nothing needs attention")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Subproject map" })
+      .getByRole("button", { name: new RegExp(subproject.name) }),
+  ).toBeVisible();
   await api.post(`subprojects/${subproject.id}/tickets`, {
     data: {
       title: "New human review",
@@ -181,9 +228,7 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
       assignee: "HUMAN",
     },
   });
-  await expect(page.getByText("New human review")).toBeVisible({
-    timeout: 1_000,
-  });
+  await expect(page.getByText("New human review")).toBeVisible();
 
   const dimensions = (await page.evaluate(
     `({
@@ -192,4 +237,12 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
     })`,
   )) as { scrollWidth: number; clientWidth: number };
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+
+  const statusSummary = await page
+    .locator('dl[aria-label="Ticket status summary"] > div')
+    .filter({ hasText: "In Progress" })
+    .boundingBox();
+  expect(statusSummary).not.toBeNull();
+  expect(statusSummary!.x).toBeGreaterThanOrEqual(0);
+  expect(statusSummary!.x + statusSummary!.width).toBeLessThanOrEqual(360);
 });

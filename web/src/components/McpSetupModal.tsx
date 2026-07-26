@@ -126,7 +126,7 @@ export function McpSetupModal({ open, onOpenChange, apiKey }: McpSetupModalProps
               aria-label={copied ? "MCP configuration copied" : "Copy MCP configuration"}
             >
               {copied ? (
-                <Check className="h-3.5 w-3.5 text-green-500" />
+                <Check className="h-3.5 w-3.5 text-status-done-foreground" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
@@ -136,7 +136,7 @@ export function McpSetupModal({ open, onOpenChange, apiKey }: McpSetupModalProps
           {copyError && (
             <p
               role="alert"
-              className="text-xs text-destructive-foreground"
+              className="text-xs text-destructive"
             >
               Clipboard access was denied. Select the configuration text and
               copy it manually.
@@ -146,7 +146,7 @@ export function McpSetupModal({ open, onOpenChange, apiKey }: McpSetupModalProps
           {/* Warning */}
           {!apiKey && (
             <div className="flex items-start gap-2 rounded-sm border border-warning/40 bg-warning/10 p-3">
-              <X className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+              <X className="mt-0.5 h-4 w-4 shrink-0 text-status-review-foreground" />
               <p className="text-xs text-muted-foreground">
                 You need to create an API key first. Close this dialog, generate
                 a key, then reopen this dialog to get the full config.

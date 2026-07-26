@@ -234,13 +234,28 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html:focus-within {
     scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+  }
+
+  .animate-spin,
+  .animate-shimmer,
+  .animate-in,
+  .animate-out {
+    animation: none !important;
+  }
+
+  .transition-fast,
+  .transition-colors,
+  .transition-opacity,
+  .transition-transform {
+    transition-duration: 0ms !important;
+  }
+
+  [data-state="open"],
+  [data-state="closed"] {
+    animation: none !important;
+    transition: none !important;
   }
 }
 

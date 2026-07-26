@@ -1,11 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
-import { AppLayout } from "@/components/AppLayout";
-import { LoginPage } from "@/components/LoginPage";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { LandingPage } from "@/components/marketing/LandingPage";
-import { ProfilePage } from "@/components/ProfilePage";
 import { MouvadahLockup } from "@/components/brand/mouvadah-brand";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { WorkspaceProvider } from "@/context/WorkspaceContext";
+
+const AppLayout = lazy(() =>
+  import("@/components/AppLayout").then((module) => ({
+    default: module.AppLayout,
+  })),
+);
+const LoginPage = lazy(() =>
+  import("@/components/LoginPage").then((module) => ({
+    default: module.LoginPage,
+  })),
+);
+const ProfilePage = lazy(() =>
+  import("@/components/ProfilePage").then((module) => ({
+    default: module.ProfilePage,
+  })),
+);
 
 const INVITATION_STORAGE_KEY = "mouvadah.pending-invitation";
 type AppPath = "/" | "/app";
@@ -103,37 +116,41 @@ function AppInner() {
     if (path === "/") {
       return <LandingPage onOpenApp={() => navigate("/app")} />;
     }
-    return <LoginPage onBackToLanding={() => navigate("/")} />;
-  }
-
-  if (view === "profile") {
     return (
-      <ProfilePage
-        onBack={() => setView("workspace")}
-        pendingInvitationToken={invitationToken}
-        onInvitationHandled={() => {
-          window.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
-          setInvitationToken(null);
-        }}
-        onInvitationTerminalFailure={() => {
-          window.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
-        }}
-        onInvitationSwitchAccount={async () => {
-          if (invitationToken) {
-            window.sessionStorage.setItem(
-              INVITATION_STORAGE_KEY,
-              invitationToken,
-            );
-          }
-          await logout();
-        }}
-      />
+      <Suspense fallback={<RouteLoading />}>
+        <LoginPage onBackToLanding={() => navigate("/")} />
+      </Suspense>
     );
   }
 
   return (
     <WorkspaceProvider>
-      <AppLayout onNavigateProfile={() => setView("profile")} />
+      <Suspense fallback={<RouteLoading />}>
+        {view === "profile" ? (
+          <ProfilePage
+            onBack={() => setView("workspace")}
+            pendingInvitationToken={invitationToken}
+            onInvitationHandled={() => {
+              window.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
+              setInvitationToken(null);
+            }}
+            onInvitationTerminalFailure={() => {
+              window.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
+            }}
+            onInvitationSwitchAccount={async () => {
+              if (invitationToken) {
+                window.sessionStorage.setItem(
+                  INVITATION_STORAGE_KEY,
+                  invitationToken,
+                );
+              }
+              await logout();
+            }}
+          />
+        ) : (
+          <AppLayout onNavigateProfile={() => setView("profile")} />
+        )}
+      </Suspense>
     </WorkspaceProvider>
   );
 }

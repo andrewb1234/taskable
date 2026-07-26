@@ -57,6 +57,18 @@ From the repository root:
 
 Playwright starts an isolated FastAPI process and Vite server, authenticates a
 real browser session, writes through the API, and proves SSE-driven DOM updates.
+Every browser spec uses `web/tests/uiFixture.ts`; its automatic guard fails on
+uncaught page errors and `console.error` messages even when the visible
+assertion would otherwise pass. Cross-surface UI changes cover public landing,
+sign-in/provider combinations, Control Room state and handoffs, Kanban,
+Knowledge, profile, mobile drawer behavior, reduced motion, and local element
+containment at narrow widths.
+
+For responsive regressions, document `scrollWidth <= clientWidth` is necessary
+but not sufficient because an ancestor may clip an overflowing child. Tests for
+badges, dialog chrome, view tabs, and major proof panels compare each child
+bounding box with its immediate container or viewport.
+
 The PostgreSQL-only regression runs in its own disposable PostgreSQL 17
 container in CI; local execution requires an explicit `POSTGRES_TEST_URL` for
 the dedicated loopback `taskable_test` database.

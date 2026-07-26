@@ -109,7 +109,7 @@ export function TicketModal({ ticketId, onClose, lastEvent }: Props) {
         {!ticket.data && ticket.error && (
           <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
             <AlertCircle
-              className="h-6 w-6 text-destructive-foreground"
+              className="h-6 w-6 text-destructive"
               aria-hidden
             />
             <div>
@@ -251,7 +251,7 @@ function TicketBody({
             {dirty && (
               <span
                 role="status"
-                className="border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning"
+                className="border border-status-review-border bg-status-review px-2 py-0.5 text-xs font-semibold text-status-review-foreground"
               >
                 Unsaved changes
               </span>
@@ -326,7 +326,7 @@ function TicketBody({
           {actionError && (
             <p
               role="alert"
-              className="flex items-center gap-2 border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-foreground"
+              className="flex items-center gap-2 border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
             >
               <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
               {actionError}

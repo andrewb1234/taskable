@@ -292,7 +292,7 @@ export function KnowledgePanel({ projectId, lastEvent }: Props) {
           )}
           {nodes.error && (
             <div className="space-y-2 px-2 py-2" role="alert">
-              <p className="text-xs text-destructive-foreground">
+              <p className="text-xs text-destructive">
                 {nodes.error.message}
               </p>
               <Button size="sm" variant="outline" onClick={nodes.refetch}>
@@ -555,7 +555,7 @@ function ContextTrailPanel({
       </form>
 
       {error && (
-        <p className="mt-2 text-xs text-destructive-foreground" role="alert">
+        <p className="mt-2 text-xs text-destructive" role="alert">
           {error}
         </p>
       )}
@@ -668,7 +668,6 @@ function TreeBranch(props: TreeBranchProps) {
   return (
     <ul
       className="space-y-0.5"
-      role={props.depth === 0 ? "tree" : "group"}
       aria-label={props.depth === 0 ? "Knowledge hierarchy" : undefined}
     >
       {siblings.map((node) => {
@@ -687,9 +686,6 @@ function TreeBranch(props: TreeBranchProps) {
                   : "hover:bg-accent/40",
               )}
               style={{ marginLeft: `${Math.min(props.depth, 6) * 10}px` }}
-              role="treeitem"
-              aria-selected={isSelected}
-              aria-expanded={hasChildren ? isExpanded : undefined}
             >
               <button
                 type="button"
@@ -849,7 +845,7 @@ function NewNodeForm({
         </Select>
       </label>
       {error && (
-        <p className="text-destructive-foreground" role="alert">
+        <p className="text-destructive" role="alert">
           {error}
         </p>
       )}
@@ -1128,7 +1124,7 @@ function NodeEditor({
             size="sm"
             onClick={remove}
             disabled={deleting || remoteDeleted}
-            className="text-destructive-foreground/80"
+            className="text-destructive"
           >
             <Trash2 className="mr-1 h-3.5 w-3.5" />
             Delete
@@ -1198,7 +1194,7 @@ function NodeEditor({
       )}
       {error && (
         <p
-          className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive-foreground sm:px-6"
+          className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive sm:px-6"
           role="alert"
         >
           {error}
@@ -1244,7 +1240,7 @@ function NodeEditor({
                       "group inline-flex min-h-7 max-w-[260px] items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] transition-colors",
                       ref.target
                         ? "cursor-pointer border-border bg-card hover:border-primary/50 hover:bg-accent/60"
-                        : "cursor-not-allowed border-destructive/30 bg-destructive/10 text-destructive-foreground",
+                        : "cursor-not-allowed border-destructive/30 bg-destructive/10 text-destructive",
                     )}
                   >
                     {ref.target ? (
@@ -1477,7 +1473,7 @@ function ProposalsSection({
           className="mb-2 flex items-center justify-between gap-2"
           role="alert"
         >
-          <p className="text-xs text-destructive-foreground">{error}</p>
+          <p className="text-xs text-destructive">{error}</p>
           <Button size="sm" variant="outline" onClick={() => void load()}>
             Retry
           </Button>
@@ -1509,7 +1505,7 @@ function ProposalsSection({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-6 px-2 text-[10px] text-destructive-foreground/80 hover:bg-destructive/20"
+                className="h-6 px-2 text-xs text-destructive hover:bg-destructive/20"
                 disabled={reviewing === p.id}
                 onClick={() => void handleReview(p.id, "reject")}
               >

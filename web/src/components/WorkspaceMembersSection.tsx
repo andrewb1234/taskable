@@ -269,7 +269,7 @@ export function WorkspaceMembersSection({
             {loadError && (
               <div
                 role="alert"
-                className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-foreground"
+                className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
               >
                 <span className="min-w-0 flex-1">{loadError}</span>
                 <Button
@@ -336,7 +336,7 @@ export function WorkspaceMembersSection({
                 aria-live="polite"
                 className="rounded-sm border border-success/40 bg-success/10 p-3"
               >
-                <p className="text-xs font-medium text-success">
+                <p className="text-xs font-medium text-status-done-foreground">
                   Copy this invitation link now. It will not be shown again.
                 </p>
                 <div className="mt-2 flex gap-2">
@@ -414,7 +414,7 @@ export function WorkspaceMembersSection({
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive-foreground"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
                           disabled={isBusy}
                           onClick={() => remove(workspace.id, member)}
                           aria-label={`Remove ${member.name}`}

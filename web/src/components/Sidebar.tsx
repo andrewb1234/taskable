@@ -107,14 +107,11 @@ export function Sidebar({
 
   return (
     <aside className="flex h-full w-full min-w-0 flex-col border-r border-border bg-card">
-      <header className="border-b border-border px-4 pb-4 pt-5">
-        <div className="flex items-center justify-between">
+      <header className="border-b border-border px-4 pb-4 pt-5 max-md:pr-14">
+        <div className="flex min-w-0 items-center">
           <h1>
             <MouvadahLockup size="sm" />
           </h1>
-          <span className="rounded-full border border-brand-brass/40 bg-brand-brass/10 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-brand-brass">
-            Control plane
-          </span>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           Projects, execution, and durable context in one accountable workspace.
@@ -137,7 +134,7 @@ export function Sidebar({
               </div>
             )}
             {projects.error && (
-              <p className="px-2 py-2 text-xs text-destructive-foreground/80">
+              <p className="px-2 py-2 text-xs text-destructive">
                 {projects.error.message}
               </p>
             )}
@@ -158,7 +155,7 @@ export function Sidebar({
                     )}
                   >
                     <button
-                      className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-sm"
+                      className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-sm md:min-h-0"
                       onClick={() => {
                         setActiveProjectId(project.id, project.name);
                         onNavigate?.();
@@ -170,7 +167,7 @@ export function Sidebar({
                     </button>
                     <button
                       type="button"
-                      className="h-7 w-7 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground md:opacity-0 md:group-hover:opacity-100"
+                      className="h-11 w-11 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive md:h-7 md:w-7 md:opacity-0 md:group-hover:opacity-100"
                       aria-label={`Delete ${project.name}`}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -217,7 +214,7 @@ export function Sidebar({
           </div>
           <button
             type="button"
-            className="h-7 w-7 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="h-11 w-11 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:h-7 md:w-7"
             aria-label="Profile & settings"
             onClick={() => {
               onNavigate?.();
@@ -228,7 +225,7 @@ export function Sidebar({
           </button>
           <button
             type="button"
-            className="h-7 w-7 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="h-11 w-11 shrink-0 rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:h-7 md:w-7"
             aria-label="Sign out"
             onClick={logout}
           >
@@ -323,12 +320,12 @@ function SubprojectList({
               className={cn(
                 "group flex items-center gap-1 pr-1 transition-colors",
                 activeSubprojectId === sub.id
-                  ? "bg-primary/10 text-primary-foreground"
+                  ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-accent/40",
               )}
             >
               <button
-                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-xs"
+                className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-xs md:min-h-0"
                 onClick={() => {
                   onSelect(sub.id, sub.name);
                   onNavigate?.();
@@ -343,7 +340,7 @@ function SubprojectList({
               </button>
               <button
                 type="button"
-                className="h-6 w-6 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive-foreground md:opacity-0 md:group-hover:opacity-100"
+                className="h-11 w-11 shrink-0 rounded text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/20 hover:text-destructive md:h-6 md:w-6 md:opacity-0 md:group-hover:opacity-100"
                 aria-label={`Delete ${sub.name}`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -370,11 +367,13 @@ function NewProjectButton({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       await createProject({
         name: name.trim(),
@@ -384,6 +383,10 @@ function NewProjectButton({ onCreated }: { onCreated: () => void }) {
       setDesc("");
       setExpanded(false);
       onCreated();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Project creation failed.",
+      );
     } finally {
       setSaving(false);
     }
@@ -410,17 +413,24 @@ function NewProjectButton({ onCreated }: { onCreated: () => void }) {
     >
       <Input
         autoFocus
+        aria-label="Project name"
         placeholder="Project name"
         value={name}
         onChange={(e) => setName(e.target.value)}
         className="h-8 text-xs"
       />
       <Textarea
+        aria-label="Project description"
         placeholder="Description (optional)"
         value={desc}
         onChange={(e) => setDesc(e.target.value)}
         className="min-h-[60px] text-xs"
       />
+      {error && (
+        <p className="text-destructive" role="alert">
+          {error}
+        </p>
+      )}
       <div className="flex justify-end gap-1">
         <Button
           type="button"
@@ -449,11 +459,13 @@ function NewSubprojectButton({
   const [name, setName] = useState("");
   const [brief, setBrief] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       await createSubproject(projectId, {
         name: name.trim(),
@@ -463,6 +475,10 @@ function NewSubprojectButton({
       setBrief("");
       setExpanded(false);
       onCreated();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Subproject creation failed.",
+      );
     } finally {
       setSaving(false);
     }
@@ -489,17 +505,24 @@ function NewSubprojectButton({
     >
       <Input
         autoFocus
+        aria-label="Subproject name"
         placeholder="Subproject"
         value={name}
         onChange={(e) => setName(e.target.value)}
         className="h-7 text-xs"
       />
       <Textarea
+        aria-label="Subproject context brief"
         placeholder="Context brief for the agent"
         value={brief}
         onChange={(e) => setBrief(e.target.value)}
         className="min-h-[60px] text-xs"
       />
+      {error && (
+        <p className="text-destructive" role="alert">
+          {error}
+        </p>
+      )}
       <div className="flex justify-end gap-1">
         <Button
           type="button"
