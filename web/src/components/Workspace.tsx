@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { KanbanSquare, Loader2, Network } from "lucide-react";
+import { Gauge, KanbanSquare, Loader2, Network } from "lucide-react";
 import { useAsync } from "@/hooks/useAsync";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { getSubproject } from "@/lib/api";
@@ -7,6 +7,7 @@ import type { SSEPayload, SubprojectDetail } from "@/types";
 import { SubprojectHeader } from "@/components/SubprojectHeader";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { KnowledgePanel } from "@/components/KnowledgePanel";
+import { ControlRoom } from "@/components/ControlRoom";
 import { ResizableSplit } from "@/components/ui/resizable-split";
 import { cn } from "@/lib/utils";
 
@@ -75,7 +76,14 @@ export function Workspace({ lastEvent }: Props) {
             </>
           )}
         </div>
-        <nav className="grid grid-cols-2 gap-2" aria-label="Workspace views">
+        <nav className="grid grid-cols-3 gap-2" aria-label="Workspace views">
+          <ViewTab
+            active={view === "control"}
+            onClick={() => setView("control")}
+            icon={<Gauge className="h-4 w-4" />}
+            label="Control Room"
+            description="Project state and attention"
+          />
           <ViewTab
             active={view === "knowledge"}
             onClick={() => setView("knowledge")}
@@ -100,6 +108,12 @@ export function Workspace({ lastEvent }: Props) {
         <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
           Open workspace navigation and select a project to get started.
         </div>
+      ) : view === "control" ? (
+        <ControlRoom
+          key={activeProjectId}
+          projectId={activeProjectId}
+          lastEvent={lastEvent}
+        />
       ) : view === "knowledge" ? (
         <KnowledgePanel projectId={activeProjectId} lastEvent={lastEvent} />
       ) : activeSubprojectId == null ? (
@@ -162,6 +176,7 @@ function ViewTab({
     <button
       type="button"
       onClick={onClick}
+      aria-current={active ? "page" : undefined}
       className={cn(
         "flex min-w-0 items-center gap-2 border px-3 py-2 text-left transition-colors",
         active
