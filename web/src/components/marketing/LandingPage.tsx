@@ -8,49 +8,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { MouvadahLockup } from "@/components/brand/mouvadah-brand";
+import { ClaimWorkflow } from "@/components/marketing/ClaimWorkflow";
 import { TechnicalLabel } from "@/components/ui/technical-label";
-
-const lifecycle = [
-  { code: "01", label: "Intent", detail: "A bounded outcome" },
-  { code: "02", label: "Safe claim", detail: "Dependencies satisfied" },
-  { code: "03", label: "Execution", detail: "One accountable worker" },
-  { code: "04", label: "Evidence", detail: "Checks and source refs" },
-  { code: "05", label: "Review", detail: "Human judgment stays visible" },
-  { code: "06", label: "Handoff", detail: "Recoverable project state" },
-] as const;
-
-const projectProof = [
-  {
-    label: "Outcome",
-    value: "Ship the authenticated project workbench",
-    detail: "Bound to one reviewable ticket",
-  },
-  {
-    label: "Ownership",
-    value: "One agent · lease active",
-    detail: "The second worker sees that the ticket is already claimed",
-  },
-  {
-    label: "Dependencies",
-    value: "Prerequisites complete",
-    detail: "Only ready work can be claimed",
-  },
-  {
-    label: "Evidence",
-    value: "Tests · source refs · pull request",
-    detail: "The delivery record stays outside the transcript",
-  },
-  {
-    label: "Blocker",
-    value: "Human review required",
-    detail: "The reason and owner remain visible",
-  },
-  {
-    label: "Next safe action",
-    value: "Review evidence, then merge",
-    detail: "A new session can resume from this state",
-  },
-] as const;
 
 const narratives = [
   {
@@ -78,86 +37,6 @@ const narratives = [
     copy: "Leases, targeted realtime updates, and scoped context help the next person or agent resume from verified state.",
   },
 ] as const;
-
-function ProjectProof() {
-  return (
-    <figure
-      id="project-proof"
-      data-testid="landing-project-proof"
-      className="relative overflow-hidden border border-border bg-surface"
-      aria-labelledby="lifecycle-title"
-    >
-      <div className="border-b border-border p-5 sm:p-7">
-        <div>
-          <TechnicalLabel>Guided execution example</TechnicalLabel>
-          <h2
-            id="lifecycle-title"
-            className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight sm:text-3xl"
-          >
-            Two agents choose the same ticket. Mouvadah keeps one accountable
-            path.
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            The first atomic claim wins. Everyone else sees the owner,
-            dependencies, evidence, blocker, and next safe action—without
-            reconstructing state from an agent transcript.
-          </p>
-        </div>
-      </div>
-
-      <div className="p-5 sm:p-7">
-        <TechnicalLabel>What the project knows now</TechnicalLabel>
-        <dl className="mt-4 grid gap-px border border-border bg-border sm:grid-cols-2">
-          {projectProof.map((item) => (
-            <div
-              key={item.label}
-              className="min-w-0 bg-surface p-4"
-              data-testid={`proof-${item.label.toLowerCase().replaceAll(" ", "-")}`}
-            >
-              <dt className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-brand-brass">
-                {item.label}
-              </dt>
-              <dd className="mt-2 text-sm font-semibold">{item.value}</dd>
-              <dd className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {item.detail}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-
-      <figcaption className="border-t border-border">
-        <details className="group">
-          <summary className="focus-ring flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-semibold marker:content-none sm:px-7">
-            How this state was reached
-            <span className="text-xs font-normal text-muted-foreground group-open:hidden">
-              Show
-            </span>
-            <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
-              Hide
-            </span>
-          </summary>
-        <ol
-            className="relative grid gap-px border-t border-border bg-border p-px sm:grid-cols-3 xl:grid-cols-6"
-          aria-label="Execution lifecycle"
-        >
-          {lifecycle.map((item) => (
-            <li key={item.label} className="bg-surface p-3">
-              <span className="font-mono text-[0.65rem] text-brand-brass">
-                {item.code}
-              </span>
-              <span className="ml-2 text-xs font-semibold">{item.label}</span>
-              <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">
-                {item.detail}
-              </span>
-            </li>
-          ))}
-        </ol>
-        </details>
-      </figcaption>
-    </figure>
-  );
-}
 
 export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
   const openApp = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -204,7 +83,7 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
         <section className="mx-auto grid max-w-[1440px] gap-12 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[0.72fr_1.28fr] lg:px-12 lg:py-20">
           <div className="motion-enter">
             <TechnicalLabel>Shared project state</TechnicalLabel>
-            <h1 className="mt-8 max-w-4xl text-[clamp(3.4rem,8vw,7.5rem)] font-semibold leading-[0.84] tracking-[-0.075em]">
+            <h1 className="mt-8 max-w-4xl text-[clamp(3.4rem,7vw,6rem)] font-semibold leading-[0.88] tracking-[-0.04em]">
               What are
               <br />
               you doing?
@@ -227,10 +106,10 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </a>
               <a
-                href="#project-proof"
+                href="#claim-workflow"
                 className="focus-ring transition-fast inline-flex items-center justify-center gap-3 rounded-sm border border-border px-5 py-3.5 text-sm font-semibold hover:border-brand-brass hover:text-brand-brass"
               >
-                See an example project state
+                Watch the claim resolve
               </a>
             </div>
             <a
@@ -245,7 +124,7 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
             className="motion-enter"
             style={{ "--motion-delay": "120ms" } as CSSProperties}
           >
-            <ProjectProof />
+            <ClaimWorkflow />
           </div>
         </section>
 
