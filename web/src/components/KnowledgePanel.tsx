@@ -912,7 +912,7 @@ function NodeEditor({
 
   const resolvedRefs = useMemo(
     () =>
-      sourceRefsText
+      baseline.sourceRefsText
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
@@ -935,7 +935,7 @@ function NodeEditor({
             target: target ?? null,
           };
         }),
-    [sourceRefsText, nodeById],
+    [baseline.sourceRefsText, nodeById],
   );
 
   const dirty =

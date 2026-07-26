@@ -232,6 +232,9 @@ test("Knowledge workbench preserves provenance, history, review, and mutations",
     ].join("\n"),
   );
   await expect(page.getByText("Unsaved draft")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "https://example.com/release-proof" }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Save", exact: true }).last().click();
   await expect(page.getByText("Unsaved draft")).toHaveCount(0);
   await expect(
