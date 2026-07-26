@@ -115,7 +115,11 @@ export function Workspace({ lastEvent }: Props) {
           lastEvent={lastEvent}
         />
       ) : view === "knowledge" ? (
-        <KnowledgePanel projectId={activeProjectId} lastEvent={lastEvent} />
+        <KnowledgePanel
+          key={activeProjectId}
+          projectId={activeProjectId}
+          lastEvent={lastEvent}
+        />
       ) : activeSubprojectId == null ? (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
           Select a subproject from the sidebar to open the Kanban board.

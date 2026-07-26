@@ -24,9 +24,14 @@ test("desktop shell keeps planning, execution, and profile discoverable", async 
   await authenticateBrowser(page);
   await page.goto("/");
 
-  await expect(page.getByLabel("Workspace views")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Knowledge/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Kanban/ })).toBeVisible();
+  const workspaceViews = page.getByLabel("Workspace views");
+  await expect(workspaceViews).toBeVisible();
+  await expect(
+    workspaceViews.getByRole("button", { name: /Knowledge/ }),
+  ).toBeVisible();
+  await expect(
+    workspaceViews.getByRole("button", { name: /Kanban/ }),
+  ).toBeVisible();
   await expect(page.getByText("Active context")).toBeVisible();
 
   await page.getByRole("button", { name: "Profile & settings" }).click();
