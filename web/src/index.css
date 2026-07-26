@@ -175,6 +175,13 @@
     overflow-x: clip;
   }
 
+  html.app-shell-active,
+  html.app-shell-active body,
+  html.app-shell-active #root {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-background font-sans text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;

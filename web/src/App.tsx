@@ -104,6 +104,16 @@ function AppInner() {
     }
   }, [loading, navigate, path, user]);
 
+  useEffect(() => {
+    const className = "app-shell-active";
+    const shellIsActive = Boolean(user) && path === "/app";
+    document.documentElement.classList.toggle(className, shellIsActive);
+
+    return () => {
+      document.documentElement.classList.remove(className);
+    };
+  }, [path, user]);
+
   if (loading) {
     return <RouteLoading />;
   }
@@ -125,32 +135,37 @@ function AppInner() {
 
   return (
     <WorkspaceProvider>
-      <Suspense fallback={<RouteLoading />}>
-        {view === "profile" ? (
-          <ProfilePage
-            onBack={() => setView("workspace")}
-            pendingInvitationToken={invitationToken}
-            onInvitationHandled={() => {
-              window.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
-              setInvitationToken(null);
-            }}
-            onInvitationTerminalFailure={() => {
-              window.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
-            }}
-            onInvitationSwitchAccount={async () => {
-              if (invitationToken) {
-                window.sessionStorage.setItem(
-                  INVITATION_STORAGE_KEY,
-                  invitationToken,
-                );
-              }
-              await logout();
-            }}
-          />
-        ) : (
-          <AppLayout onNavigateProfile={() => setView("profile")} />
-        )}
-      </Suspense>
+      <div
+        data-testid="authenticated-app-shell"
+        className="h-dvh w-full overflow-hidden overscroll-none bg-background"
+      >
+        <Suspense fallback={<RouteLoading />}>
+          {view === "profile" ? (
+            <ProfilePage
+              onBack={() => setView("workspace")}
+              pendingInvitationToken={invitationToken}
+              onInvitationHandled={() => {
+                window.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
+                setInvitationToken(null);
+              }}
+              onInvitationTerminalFailure={() => {
+                window.sessionStorage.removeItem(INVITATION_STORAGE_KEY);
+              }}
+              onInvitationSwitchAccount={async () => {
+                if (invitationToken) {
+                  window.sessionStorage.setItem(
+                    INVITATION_STORAGE_KEY,
+                    invitationToken,
+                  );
+                }
+                await logout();
+              }}
+            />
+          ) : (
+            <AppLayout onNavigateProfile={() => setView("profile")} />
+          )}
+        </Suspense>
+      </div>
     </WorkspaceProvider>
   );
 }
