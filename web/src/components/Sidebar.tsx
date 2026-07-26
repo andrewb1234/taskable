@@ -289,16 +289,6 @@ function SubprojectList({
     }
   }, [activeSubprojectId, subprojects.data, onSelect]);
 
-  useEffect(() => {
-    if (
-      activeSubprojectId == null &&
-      subprojects.data &&
-      subprojects.data.length > 0
-    ) {
-      onSelect(subprojects.data[0].id, subprojects.data[0].name);
-    }
-  }, [activeSubprojectId, subprojects.data, onSelect]);
-
   async function handleDelete(sub: Subproject) {
     if (
       !window.confirm(
