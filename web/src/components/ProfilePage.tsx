@@ -474,7 +474,7 @@ export function ProfilePage({
             <div
               role="status"
               aria-live="polite"
-              className="rounded-sm border border-success/40 bg-success/10 p-3 text-xs text-success"
+              className="rounded-sm border border-status-done-border bg-status-done p-3 text-xs text-status-done-foreground"
             >
               {invitationNotice}
             </div>
@@ -503,7 +503,7 @@ export function ProfilePage({
                 <p
                   role="alert"
                   aria-live="assertive"
-                  className="text-xs text-destructive-foreground"
+                  className="text-xs text-destructive"
                 >
                   {invitationError}
                 </p>
@@ -728,9 +728,9 @@ export function ProfilePage({
                 className="rounded-sm border border-success/40 bg-success/10 p-4"
               >
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-status-done-foreground" />
                   <div className="flex-1">
-                    <p className="text-sm font-semibold text-success">
+                    <p className="text-sm font-semibold text-status-done-foreground">
                       API key created — copy it now!
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
@@ -738,7 +738,7 @@ export function ProfilePage({
                       readable only by its owner (<code>0600</code>).
                     </p>
                     <div className="mt-2 flex items-center gap-2">
-                      <code className="flex-1 truncate rounded bg-green-500/10 px-2 py-1.5 text-xs font-mono">
+                      <code className="flex-1 truncate rounded bg-status-done px-2 py-1.5 text-xs font-mono text-status-done-foreground">
                         {newlyCreatedKey.key}
                       </code>
                       <Button
@@ -751,7 +751,7 @@ export function ProfilePage({
                         }
                       >
                         {copied ? (
-                          <Check className="h-3.5 w-3.5 text-green-600" />
+                          <Check className="h-3.5 w-3.5 text-status-done-foreground" />
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
                         )}
@@ -784,7 +784,7 @@ export function ProfilePage({
               <div
                 role="alert"
                 aria-live="assertive"
-                className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-foreground"
+                className="flex flex-wrap items-center gap-2 rounded-sm border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
               >
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 flex-1">{error}</span>
@@ -827,7 +827,7 @@ export function ProfilePage({
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium">{key.name}</p>
                         {key.expires_at && (
-                          <span className="rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] text-yellow-600 dark:text-yellow-400">
+                          <span className="rounded border border-status-review-border bg-status-review px-1.5 py-0.5 text-xs text-status-review-foreground">
                             Expires {formatDate(key.expires_at)}
                           </span>
                         )}
@@ -847,7 +847,7 @@ export function ProfilePage({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive-foreground"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
                       onClick={() => handleRevoke(key.id)}
                       aria-label={`Revoke ${key.name}`}
                     >
@@ -926,7 +926,7 @@ export function ProfilePage({
               <div
                 role="status"
                 aria-live="polite"
-                className="rounded-sm border border-success/40 bg-success/10 p-3 text-xs text-success"
+                className="rounded-sm border border-status-done-border bg-status-done p-3 text-xs text-status-done-foreground"
               >
                 {recoveryNotice}
               </div>

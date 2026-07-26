@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./uiFixture";
 import { E2E_API_KEY } from "./authFixture";
 
 async function authenticateBrowser(page: Page) {
@@ -27,7 +27,7 @@ async function openProfile(page: Page) {
   ).toBeVisible();
 }
 
-test("sign-in distinguishes configured hosted and local access", async ({
+test("sign-in names only the configured authentication methods", async ({
   page,
 }) => {
   await page.route("**/api/v1/auth/providers", async (route) => {
@@ -42,6 +42,10 @@ test("sign-in distinguishes configured hosted and local access", async ({
   await expect(
     page.getByRole("button", { name: "Continue with Google" }),
   ).toBeVisible();
+  await expect(page.getByText("Google sign-in", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("API-key sign-in", { exact: true })).toHaveCount(
+    2,
+  );
   await expect(page.getByLabel("Local API key")).toHaveAttribute(
     "type",
     "password",
@@ -49,6 +53,8 @@ test("sign-in distinguishes configured hosted and local access", async ({
   await expect(
     page.getByText("never saved by this UI", { exact: false }),
   ).toBeVisible();
+  await expect(page.getByText("Hosted workspace")).toHaveCount(0);
+  await expect(page.getByText("Local installation")).toHaveCount(0);
 });
 
 test("sign-in explains an environment with no configured provider", async ({
@@ -66,6 +72,27 @@ test("sign-in explains an environment with no configured provider", async ({
   await expect(
     page.getByRole("status").getByText("No sign-in method is configured"),
   ).toBeVisible();
+  await expect(
+    page.getByText("ask the deployment operator", { exact: false }),
+  ).toBeVisible();
+});
+
+test("sign-in heading stack stays separate at tablet width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 904, height: 800 });
+  await page.goto("/app");
+
+  const back = await page
+    .getByRole("button", { name: "Back to overview" })
+    .boundingBox();
+  const heading = await page
+    .getByRole("heading", { name: "Sign in to Mouvadah" })
+    .boundingBox();
+  expect(back).not.toBeNull();
+  expect(heading).not.toBeNull();
+  expect(heading!.y).toBeGreaterThanOrEqual(back!.y + back!.height);
+  await expect(page.getByText("Workspace access")).toHaveCount(0);
 });
 
 test("profile groups trust surfaces and completes an API-key lifecycle", async ({

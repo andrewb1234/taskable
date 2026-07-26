@@ -34,30 +34,48 @@ export function LoginPage({
       <section className="relative hidden border-r border-border bg-surface px-10 py-12 lg:flex lg:flex-col lg:justify-between">
         <MouvadahLockup size="lg" />
         <div className="max-w-lg">
-          <TechnicalLabel>Trusted workspace entry</TechnicalLabel>
-          <h1 className="mt-5 text-5xl font-semibold leading-[0.95] tracking-[-0.05em]">
-            Return to known state.
-          </h1>
+          <TechnicalLabel>Sign in</TechnicalLabel>
+          <p className="mt-5 text-5xl font-semibold leading-[0.95] tracking-[-0.05em]">
+            Return to your workspace.
+          </p>
           <p className="mt-6 max-w-md text-lg leading-relaxed text-muted-foreground">
-            Sign in to review work, evidence, access, and recovery state across
-            your human-agent workspace.
+            Review current work, decisions, evidence, and the next action.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-px border border-border bg-border">
-          <div className="bg-background p-4">
-            <ShieldCheck className="h-4 w-4 text-brand-brass" aria-hidden />
-            <p className="mt-3 text-sm font-semibold">Hosted access</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Continue through the configured identity provider.
+        <div className="border border-border bg-background">
+          {providers.google && (
+            <div className="grid grid-cols-[auto_1fr] gap-3 border-b border-border p-4 last:border-b-0">
+              <ShieldCheck
+                className="mt-0.5 h-4 w-4 text-brand-brass"
+                aria-hidden
+              />
+              <div>
+                <p className="text-sm font-semibold">Google sign-in</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Enabled for this environment.
+                </p>
+              </div>
+            </div>
+          )}
+          {providers.local_api_key && (
+            <div className="grid grid-cols-[auto_1fr] gap-3 border-b border-border p-4 last:border-b-0">
+              <KeyRound
+                className="mt-0.5 h-4 w-4 text-brand-brass"
+                aria-hidden
+              />
+              <div>
+                <p className="text-sm font-semibold">API-key sign-in</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Enabled for this environment.
+                </p>
+              </div>
+            </div>
+          )}
+          {!hasProvider && (
+            <p className="p-4 text-xs leading-relaxed text-muted-foreground">
+              No sign-in method is configured for this environment.
             </p>
-          </div>
-          <div className="bg-background p-4">
-            <KeyRound className="h-4 w-4 text-brand-brass" aria-hidden />
-            <p className="mt-3 text-sm font-semibold">Local access</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Exchange a bootstrap key for an HttpOnly session.
-            </p>
-          </div>
+          )}
         </div>
       </section>
 
@@ -74,25 +92,24 @@ export function LoginPage({
             <button
               type="button"
               onClick={onBackToLanding}
-              className="focus-ring transition-fast mb-8 inline-flex min-h-11 items-center gap-2 rounded-sm text-xs text-muted-foreground hover:text-foreground"
+              className="focus-ring transition-fast mb-8 flex min-h-11 w-fit items-center gap-2 rounded-sm text-xs text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
               Back to overview
             </button>
           ) : null}
 
-          <TechnicalLabel>Workspace access</TechnicalLabel>
-          <h2 className="mt-4 text-3xl font-semibold tracking-tight">
+          <h1 className="text-3xl font-semibold tracking-tight">
             Sign in to Mouvadah
-          </h2>
+          </h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Choose the access method configured for this environment.
+            Use a sign-in method available in this environment.
           </p>
 
           <div className="mt-8 flex w-full flex-col gap-5">
             {providers.google && (
               <div className="rounded-sm border border-border bg-card p-4">
-                <p className="technical-label mb-3">Hosted workspace</p>
+                <p className="technical-label mb-3">Google sign-in</p>
                 <button
                   type="button"
                   onClick={login}
@@ -136,7 +153,7 @@ export function LoginPage({
                 className="rounded-sm border border-border bg-card p-4"
                 onSubmit={submitLocalLogin}
               >
-                <p className="technical-label mb-3">Local installation</p>
+                <p className="technical-label mb-3">API-key sign-in</p>
                 <label
                   className="mb-2 block text-xs font-semibold"
                   htmlFor="local-api-key"
@@ -159,7 +176,7 @@ export function LoginPage({
                   <p
                     role="alert"
                     aria-live="assertive"
-                    className="mt-2 text-xs text-destructive-foreground"
+                    className="mt-2 text-xs text-destructive"
                   >
                     {error}
                   </p>
@@ -169,7 +186,7 @@ export function LoginPage({
                   disabled={submitting || apiKey.trim().length === 0}
                   className="focus-ring transition-fast mt-3 min-h-11 w-full rounded-sm bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-brand-brass hover:text-brand-brass-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {submitting ? "Exchanging key…" : "Continue locally"}
+                  {submitting ? "Exchanging key…" : "Continue with API key"}
                 </button>
                 <p
                   id="local-api-key-help"
@@ -191,9 +208,10 @@ export function LoginPage({
                   No sign-in method is configured
                 </p>
                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                  For a local installation, run{" "}
-                  <code>python3 bootstrap.py</code>, then refresh this page.
-                  Hosted environments must configure an identity provider.
+                  If you run Mouvadah locally, run{" "}
+                  <code>python3 bootstrap.py</code>, then refresh. Otherwise,
+                  ask the deployment operator to configure Google sign-in or
+                  API-key access.
                 </p>
               </div>
             )}

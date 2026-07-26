@@ -2,9 +2,7 @@ import type { CSSProperties, MouseEvent } from "react";
 import {
   ArrowRight,
   BookOpenCheck,
-  Braces,
   GitBranch,
-  Github,
   RefreshCcw,
   ScanEye,
   ShieldCheck,
@@ -19,6 +17,39 @@ const lifecycle = [
   { code: "04", label: "Evidence", detail: "Checks and source refs" },
   { code: "05", label: "Review", detail: "Human judgment stays visible" },
   { code: "06", label: "Handoff", detail: "Recoverable project state" },
+] as const;
+
+const projectProof = [
+  {
+    label: "Outcome",
+    value: "Ship the authenticated project workbench",
+    detail: "Bound to one reviewable ticket",
+  },
+  {
+    label: "Ownership",
+    value: "One agent · lease active",
+    detail: "The second worker sees that the ticket is already claimed",
+  },
+  {
+    label: "Dependencies",
+    value: "Prerequisites complete",
+    detail: "Only ready work can be claimed",
+  },
+  {
+    label: "Evidence",
+    value: "Tests · source refs · pull request",
+    detail: "The delivery record stays outside the transcript",
+  },
+  {
+    label: "Blocker",
+    value: "Human review required",
+    detail: "The reason and owner remain visible",
+  },
+  {
+    label: "Next safe action",
+    value: "Review evidence, then merge",
+    detail: "A new session can resume from this state",
+  },
 ] as const;
 
 const narratives = [
@@ -48,79 +79,81 @@ const narratives = [
   },
 ] as const;
 
-function LifecycleDiagram() {
+function ProjectProof() {
   return (
     <figure
-      className="relative overflow-hidden border border-border bg-surface p-5 sm:p-7"
+      id="project-proof"
+      data-testid="landing-project-proof"
+      className="relative overflow-hidden border border-border bg-surface"
       aria-labelledby="lifecycle-title"
     >
-      <div className="mb-8 flex items-start justify-between gap-4">
+      <div className="border-b border-border p-5 sm:p-7">
         <div>
-          <TechnicalLabel>Live execution model</TechnicalLabel>
+          <TechnicalLabel>Guided execution example</TechnicalLabel>
           <h2
             id="lifecycle-title"
-            className="mt-3 max-w-md text-xl font-semibold tracking-tight sm:text-2xl"
+            className="mt-3 max-w-3xl text-2xl font-semibold tracking-tight sm:text-3xl"
           >
-            From intent to recoverable state
+            Two agents choose the same ticket. Mouvadah keeps one accountable
+            path.
           </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            The first atomic claim wins. Everyone else sees the owner,
+            dependencies, evidence, blocker, and next safe action—without
+            reconstructing state from an agent transcript.
+          </p>
         </div>
-        <Braces className="h-5 w-5 text-brand-brass" aria-hidden />
       </div>
 
-      <div className="relative">
-        <svg
-          className="pointer-events-none absolute inset-x-0 top-4 hidden h-12 w-full text-brand-brass/60 md:block"
-          viewBox="0 0 1000 80"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path
-            pathLength="1"
-            d="M36 40H964"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            className="motion-trace"
-          />
-          {[36, 220, 405, 595, 780, 964].map((x) => (
-            <circle
-              key={x}
-              cx={x}
-              cy="40"
-              r="6"
-              fill="hsl(var(--surface))"
-              stroke="currentColor"
-              strokeWidth="2"
-            />
-          ))}
-        </svg>
-
-        <ol className="grid gap-px bg-border md:grid-cols-3 xl:grid-cols-6">
-          {lifecycle.map((item, index) => (
-            <li
+      <div className="p-5 sm:p-7">
+        <TechnicalLabel>What the project knows now</TechnicalLabel>
+        <dl className="mt-4 grid gap-px border border-border bg-border sm:grid-cols-2">
+          {projectProof.map((item) => (
+            <div
               key={item.label}
-              className="motion-enter relative min-h-32 bg-surface p-4"
-              style={
-                {
-                  "--motion-delay": `${index * 65}ms`,
-                } as CSSProperties
-              }
+              className="min-w-0 bg-surface p-4"
+              data-testid={`proof-${item.label.toLowerCase().replaceAll(" ", "-")}`}
             >
-              <span className="font-mono text-xs text-brand-brass">
+              <dt className="font-mono text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-brand-brass">
+                {item.label}
+              </dt>
+              <dd className="mt-2 text-sm font-semibold">{item.value}</dd>
+              <dd className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {item.detail}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <figcaption className="border-t border-border">
+        <details className="group">
+          <summary className="focus-ring flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-semibold marker:content-none sm:px-7">
+            How this state was reached
+            <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+              Show
+            </span>
+            <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
+              Hide
+            </span>
+          </summary>
+        <ol
+            className="relative grid gap-px border-t border-border bg-border p-px sm:grid-cols-3 xl:grid-cols-6"
+          aria-label="Execution lifecycle"
+        >
+          {lifecycle.map((item) => (
+            <li key={item.label} className="bg-surface p-3">
+              <span className="font-mono text-[0.65rem] text-brand-brass">
                 {item.code}
               </span>
-              <p className="mt-8 text-sm font-semibold">{item.label}</p>
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              <span className="ml-2 text-xs font-semibold">{item.label}</span>
+              <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">
                 {item.detail}
-              </p>
+              </span>
             </li>
           ))}
         </ol>
-      </div>
-
-      <figcaption className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="h-1.5 w-1.5 rounded-full bg-brand-brass" />
-        State remains complete and readable when motion is reduced.
+        </details>
       </figcaption>
     </figure>
   );
@@ -137,6 +170,12 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
       data-surface="marketing"
       className="min-h-screen overflow-x-hidden bg-background text-foreground"
     >
+      <a
+        href="#landing-main"
+        className="focus-ring fixed left-4 top-4 z-50 -translate-y-24 rounded-sm bg-brand-paper px-4 py-3 text-sm font-semibold text-brand-ink transition-transform focus:translate-y-0"
+      >
+        Skip to main content
+      </a>
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
           <a href="/" aria-label="Mouvadah home" className="focus-ring rounded-sm">
@@ -145,7 +184,7 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
           <nav aria-label="Primary" className="flex items-center gap-3 sm:gap-6">
             <a
               href="https://github.com/andrewb1234/taskable"
-              className="focus-ring transition-fast hidden rounded-sm text-xs text-muted-foreground hover:text-foreground sm:inline"
+              className="focus-ring transition-fast hidden min-h-11 items-center rounded-sm text-xs text-muted-foreground hover:text-foreground sm:inline-flex"
             >
               Source
             </a>
@@ -161,11 +200,11 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
         </div>
       </header>
 
-      <main>
-        <section className="mx-auto grid max-w-[1440px] gap-12 px-5 py-20 sm:px-8 sm:py-28 lg:grid-cols-[1.05fr_0.95fr] lg:px-12 lg:py-36">
+      <main id="landing-main" tabIndex={-1}>
+        <section className="mx-auto grid max-w-[1440px] gap-12 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[0.72fr_1.28fr] lg:px-12 lg:py-20">
           <div className="motion-enter">
-            <TechnicalLabel>Human + agent control plane</TechnicalLabel>
-            <h1 className="mt-8 max-w-4xl text-[clamp(3.4rem,9vw,8.75rem)] font-semibold leading-[0.84] tracking-[-0.075em]">
+            <TechnicalLabel>Shared project state</TechnicalLabel>
+            <h1 className="mt-8 max-w-4xl text-[clamp(3.4rem,8vw,7.5rem)] font-semibold leading-[0.84] tracking-[-0.075em]">
               What are
               <br />
               you doing?
@@ -173,56 +212,41 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
             <p className="mt-9 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
               Know what every human and agent is doing—and why.
             </p>
+            <p className="mt-4 max-w-xl text-sm leading-relaxed text-foreground/80 sm:text-base">
+              Mouvadah gives software teams one reviewable record of agent
+              work—who owns it, what unblocked it, what proves it, and what can
+              safely happen next.
+            </p>
             <div className="mt-10 flex flex-col gap-3 sm:flex-row">
               <a
                 href="/app"
                 onClick={openApp}
                 className="focus-ring transition-fast inline-flex items-center justify-center gap-3 rounded-sm bg-primary px-5 py-3.5 text-sm font-semibold text-primary-foreground hover:bg-brand-brass hover:text-brand-brass-foreground"
               >
-                Open Mouvadah
+                Sign in to your workspace
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </a>
               <a
-                href="https://github.com/andrewb1234/taskable"
+                href="#project-proof"
                 className="focus-ring transition-fast inline-flex items-center justify-center gap-3 rounded-sm border border-border px-5 py-3.5 text-sm font-semibold hover:border-brand-brass hover:text-brand-brass"
               >
-                <Github className="h-4 w-4" aria-hidden />
-                Review the source
+                See an example project state
               </a>
             </div>
+            <a
+              href="https://github.com/andrewb1234/taskable#readme"
+              className="focus-ring mt-4 inline-flex min-h-11 items-center rounded-sm text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
+            >
+              Read documentation
+            </a>
           </div>
 
-          <div className="motion-enter lg:pt-14" style={{ "--motion-delay": "120ms" } as CSSProperties}>
-            <div className="border-l border-brand-brass pl-5 sm:pl-8">
-              <TechnicalLabel>Operating thesis</TechnicalLabel>
-              <p className="mt-5 max-w-xl text-2xl leading-snug tracking-tight sm:text-3xl">
-                Mouvadah is the shared state between an outcome, the work in
-                flight, the evidence behind it, and the next safe action.
-              </p>
-            </div>
-            <dl className="mt-12 grid grid-cols-2 gap-px bg-border border border-border">
-              {[
-                ["Ready", "Dependency-safe work"],
-                ["Owned", "Visible claims + leases"],
-                ["Proven", "Evidence + review"],
-                ["Resumable", "Scoped handoffs"],
-              ].map(([term, detail]) => (
-                <div key={term} className="bg-surface p-4 sm:p-5">
-                  <dt className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-brand-brass">
-                    {term}
-                  </dt>
-                  <dd className="mt-2 text-sm text-muted-foreground">{detail}</dd>
-                </div>
-              ))}
-            </dl>
+          <div
+            className="motion-enter"
+            style={{ "--motion-delay": "120ms" } as CSSProperties}
+          >
+            <ProjectProof />
           </div>
-        </section>
-
-        <section
-          aria-label="Execution lifecycle"
-          className="mx-auto max-w-[1440px] px-5 pb-24 sm:px-8 lg:px-12 lg:pb-36"
-        >
-          <LifecycleDiagram />
         </section>
 
         <section className="border-y border-border">
@@ -235,7 +259,8 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
                 </h2>
                 <p className="mt-6 max-w-md leading-relaxed text-muted-foreground">
                   Not another broad tracker. Not an agent runtime. A durable
-                  control and memory layer around the work your tools already do.
+                  shared state and memory layer around the work your tools
+                  already do.
                 </p>
               </div>
               <ol>
@@ -339,13 +364,13 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
             <a
               href="/app"
               onClick={openApp}
-              className="focus-ring rounded-sm hover:text-foreground"
+              className="focus-ring inline-flex min-h-11 items-center rounded-sm hover:text-foreground"
             >
               Sign in
             </a>
             <a
               href="https://github.com/andrewb1234/taskable"
-              className="focus-ring rounded-sm hover:text-foreground"
+              className="focus-ring inline-flex min-h-11 items-center rounded-sm hover:text-foreground"
             >
               GitHub source
             </a>

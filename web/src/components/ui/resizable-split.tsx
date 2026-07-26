@@ -20,6 +20,8 @@ interface ResizableSplitProps {
   defaultSize?: number;
   minSize?: number;
   maxSize?: number;
+  /** Keep at least this many pixels available for the second pane. */
+  minSecondSize?: number;
   /** Persist size under this key in localStorage. */
   storageKey?: string;
   separatorLabel?: string;
@@ -36,6 +38,7 @@ export function ResizableSplit({
   defaultSize = 288,
   minSize = 160,
   maxSize = 800,
+  minSecondSize = 160,
   storageKey,
   separatorLabel = "Resize pane",
   collapseFirstBelowMd = false,
@@ -47,31 +50,67 @@ export function ResizableSplit({
   const [internalSize, setInternalSize] = useState<number>(() => {
     if (size !== undefined) return size;
     if (storageKey) {
-      const raw = localStorage.getItem(storageKey);
-      const parsed = raw ? Number(raw) : NaN;
-      if (Number.isFinite(parsed) && parsed >= minSize && parsed <= maxSize) {
-        return parsed;
+      try {
+        const raw = localStorage.getItem(storageKey);
+        const parsed = raw ? Number(raw) : NaN;
+        if (Number.isFinite(parsed) && parsed >= minSize && parsed <= maxSize) {
+          return parsed;
+        }
+      } catch {
+        // Storage can be unavailable in hardened/private browsing contexts.
       }
     }
     return defaultSize;
   });
   const currentSize = size ?? internalSize;
+  const currentSizeRef = useRef(currentSize);
   const [dragging, setDragging] = useState(false);
 
-  const setSize = useCallback(
+  const persistSize = useCallback(
     (next: number) => {
-      const clamped = Math.max(minSize, Math.min(maxSize, next));
+      if (!storageKey) return;
+      try {
+        localStorage.setItem(storageKey, String(next));
+      } catch {
+        // Resizing remains functional when persistence is unavailable.
+      }
+    },
+    [storageKey],
+  );
+
+  const setSize = useCallback(
+    (next: number, persist = true) => {
+      const container = containerRef.current;
+      const extent = container
+        ? direction === "horizontal"
+          ? container.getBoundingClientRect().width
+          : container.getBoundingClientRect().height
+        : 0;
+      const availableMax =
+        extent > 0
+          ? Math.max(minSize, Math.min(maxSize, extent - minSecondSize))
+          : maxSize;
+      const clamped = Math.max(minSize, Math.min(availableMax, next));
+      currentSizeRef.current = clamped;
       if (size === undefined) setInternalSize(clamped);
       onSizeChange?.(clamped);
-      if (storageKey) localStorage.setItem(storageKey, String(clamped));
+      if (persist) persistSize(clamped);
     },
-    [minSize, maxSize, onSizeChange, size, storageKey],
+    [
+      direction,
+      minSecondSize,
+      minSize,
+      maxSize,
+      onSizeChange,
+      persistSize,
+      size,
+    ],
   );
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     setDragging(true);
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    e.currentTarget.setPointerCapture(e.pointerId);
   }, []);
 
   const onPointerMove = useCallback(
@@ -84,19 +123,24 @@ export function ResizableSplit({
         direction === "horizontal"
           ? e.clientX - rect.left
           : e.clientY - rect.top;
-      setSize(next);
+      setSize(next, false);
     },
     [dragging, direction, setSize],
   );
 
-  const onPointerUp = useCallback((e: React.PointerEvent) => {
-    setDragging(false);
-    try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      /* not captured */
-    }
-  }, []);
+  const finishPointerResize = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragging) return;
+      setDragging(false);
+      persistSize(currentSizeRef.current);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* Pointer capture may already have been released by the browser. */
+      }
+    },
+    [dragging, persistSize],
+  );
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -115,6 +159,17 @@ export function ResizableSplit({
 
   // Restore a global body cursor while dragging so the feedback is clear
   // even when the pointer leaves the gutter briefly.
+  useEffect(() => {
+    currentSizeRef.current = currentSize;
+  }, [currentSize]);
+
+  useEffect(() => {
+    const clampToContainer = () => setSize(currentSizeRef.current, false);
+    clampToContainer();
+    window.addEventListener("resize", clampToContainer);
+    return () => window.removeEventListener("resize", clampToContainer);
+  }, [setSize]);
+
   useEffect(() => {
     if (!dragging) return;
     const prev = document.body.style.cursor;
@@ -163,10 +218,12 @@ export function ResizableSplit({
         tabIndex={0}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
+        onPointerUp={finishPointerResize}
+        onPointerCancel={finishPointerResize}
+        onLostPointerCapture={finishPointerResize}
         onKeyDown={onKeyDown}
         className={cn(
-          "group relative shrink-0 bg-border/30 transition-colors hover:bg-primary/50 focus-visible:bg-primary",
+          "focus-ring group relative shrink-0 bg-border/30 transition-colors hover:bg-primary/50 focus-visible:bg-primary",
           direction === "horizontal"
             ? "w-1 cursor-col-resize"
             : "h-1 cursor-row-resize",

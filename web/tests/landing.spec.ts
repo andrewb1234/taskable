@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./uiFixture";
 import { E2E_API_KEY } from "./authFixture";
 
 async function authenticateBrowser(page: Page) {
@@ -20,8 +20,19 @@ test("public landing hands an unauthenticated visitor into sign in", async ({
   await expect(
     page.getByText("Know what every human and agent is doing—and why."),
   ).toBeVisible();
+  await expect(
+    page.getByText("Mouvadah gives software teams one reviewable record"),
+  ).toBeVisible();
+  await expect(page.getByText("Outcome", { exact: true })).toBeVisible();
+  await expect(page.getByText("Blocker", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Next safe action", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Intent", { exact: true })).not.toBeVisible();
 
-  await page.getByRole("link", { name: "Open Mouvadah" }).click();
+  await page
+    .getByRole("link", { name: "Sign in to your workspace" })
+    .click();
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByLabel("Local API key")).toBeVisible();
 });
@@ -73,6 +84,8 @@ test("landing remains contained at 360px", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "What are you doing?" }),
   ).toBeVisible();
+  await expect(page.getByText("Shared project state")).toBeVisible();
+  await expect(page.getByText("Human + agent control plane")).toHaveCount(0);
   const dimensions = (await page.evaluate(
     `({
       scrollWidth: document.documentElement.scrollWidth,
@@ -80,6 +93,11 @@ test("landing remains contained at 360px", async ({ page }) => {
     })`,
   )) as { scrollWidth: number; clientWidth: number };
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+
+  const proof = await page.getByTestId("landing-project-proof").boundingBox();
+  expect(proof).not.toBeNull();
+  expect(proof!.x).toBeGreaterThanOrEqual(0);
+  expect(proof!.x + proof!.width).toBeLessThanOrEqual(360);
 });
 
 test("reduced-motion landing exposes the complete static lifecycle", async ({
@@ -88,10 +106,22 @@ test("reduced-motion landing exposes the complete static lifecycle", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  await expect(page.getByText("From intent to recoverable state")).toBeVisible();
+  await page.getByText("How this state was reached").click();
+  await expect(page.getByText("Intent", { exact: true })).toBeVisible();
   await expect(page.getByText("Handoff", { exact: true })).toBeVisible();
-  const traceAnimation = await page.evaluate(
-    `getComputedStyle(document.querySelector(".motion-trace")).animationName`,
-  );
-  expect(traceAnimation).toBe("none");
+  const entryAnimations = (await page.evaluate(
+    `[...document.querySelectorAll(".motion-enter")].map(
+      (element) => getComputedStyle(element).animationName,
+    )`,
+  )) as string[];
+  expect(entryAnimations.every((name) => name === "none")).toBe(true);
+});
+
+test("landing skip link moves focus to the main content", async ({ page }) => {
+  await page.goto("/");
+  const skipLink = page.getByRole("link", { name: "Skip to main content" });
+  await skipLink.focus();
+  await expect(skipLink).toBeFocused();
+  await skipLink.press("Enter");
+  await expect(page.locator("#landing-main")).toBeFocused();
 });

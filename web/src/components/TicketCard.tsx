@@ -74,7 +74,7 @@ export function TicketCard({ ticket, onClick, onDelete }: Props) {
         aria-label={`Open ticket #${ticket.id}: ${ticket.title}`}
       >
         <div className="flex items-start gap-3">
-          <span className="shrink-0 font-mono text-[11px] font-semibold text-brand-brass">
+          <span className="shrink-0 font-mono text-xs font-semibold text-foreground/80">
             #{ticket.id}
           </span>
           <h4

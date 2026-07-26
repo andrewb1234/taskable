@@ -52,7 +52,11 @@ export function Workspace({ lastEvent }: Props) {
   }, [lastEvent, activeSubprojectId]);
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+    <main
+      id="workspace-main"
+      tabIndex={-1}
+      className="flex min-w-0 flex-1 flex-col overflow-hidden"
+    >
       <header className="shrink-0 border-b border-border bg-card/50 px-3 py-3 sm:px-5">
         <div className="mb-3 flex min-w-0 items-center gap-2">
           <span className="technical-label shrink-0">Active context</span>
@@ -76,7 +80,7 @@ export function Workspace({ lastEvent }: Props) {
             </>
           )}
         </div>
-        <nav className="grid grid-cols-3 gap-2" aria-label="Workspace views">
+        <nav className="grid grid-cols-3 gap-1 sm:gap-2" aria-label="Workspace views">
           <ViewTab
             active={view === "control"}
             onClick={() => setView("control")}
@@ -125,11 +129,21 @@ export function Workspace({ lastEvent }: Props) {
           Select a subproject from the sidebar to open the Kanban board.
         </div>
       ) : subproject.loading && !subproject.data ? (
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div
+          className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground"
+          role="status"
+        >
+          <Loader2
+            className="h-5 w-5 animate-spin text-muted-foreground"
+            aria-hidden
+          />
+          Loading execution workbench…
         </div>
       ) : subproject.error ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-destructive-foreground">
+        <div
+          className="flex flex-1 items-center justify-center text-sm text-destructive"
+          role="alert"
+        >
           {subproject.error.message}
         </div>
       ) : subproject.data ? (
@@ -182,7 +196,7 @@ function ViewTab({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex min-w-0 items-center gap-2 border px-3 py-2 text-left transition-colors",
+        "flex min-w-0 items-center gap-1 overflow-hidden border px-2 py-2 text-left transition-colors sm:gap-2 sm:px-3",
         active
           ? "border-brand-brass bg-brand-brass/10 text-foreground"
           : "border-border bg-background/40 text-muted-foreground hover:bg-accent/40",
@@ -192,7 +206,7 @@ function ViewTab({
         {icon}
       </span>
       <span className="min-w-0">
-        <span className="block text-xs font-semibold">{label}</span>
+        <span className="block truncate text-xs font-semibold">{label}</span>
         <span className="hidden truncate text-[10px] text-muted-foreground sm:block">
           {description}
         </span>

@@ -242,13 +242,6 @@ export const BLOCKED_BY_LABELS: Record<BlockedByCategory, string> = {
   EXTERNAL: "External",
 };
 
-export const BLOCKED_BY_COLORS: Record<BlockedByCategory, string> = {
-  WAITING_HUMAN: "bg-red-100 text-red-700 border-red-200",
-  WAITING_DEPENDENCY: "bg-yellow-100 text-yellow-700 border-yellow-200",
-  AMBIGUOUS_REQUIREMENT: "bg-orange-100 text-orange-700 border-orange-200",
-  EXTERNAL: "bg-purple-100 text-purple-700 border-purple-200",
-};
-
 export interface ApiKey {
   id: number;
   workspace_id: number | null;

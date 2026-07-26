@@ -200,7 +200,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
       {actionError && (
         <div
           role="alert"
-          className="flex items-start gap-2 border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive-foreground"
+          className="flex items-start gap-2 border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1">{actionError}</span>
@@ -374,7 +374,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
           )}
           {projectTickets.error && (
             <div className="p-2 text-xs">
-              <p role="alert" className="text-destructive-foreground">
+              <p role="alert" className="text-destructive">
                 {projectTickets.error.message}
               </p>
               <Button
@@ -484,7 +484,7 @@ export function MetadataPane({ ticket, onChanged }: Props) {
             href={ticket.mr_link}
             target="_blank"
             rel="noopener noreferrer"
-            className="focus-ring mt-2 flex min-h-11 items-center gap-1.5 break-all text-xs font-semibold text-brand-brass underline-offset-2 hover:underline"
+            className="focus-ring mt-2 flex min-h-11 items-center gap-1.5 break-all text-xs font-semibold text-foreground underline decoration-brand-brass underline-offset-2"
           >
             <LinkIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
             Open linked merge request

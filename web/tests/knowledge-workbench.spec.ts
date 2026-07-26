@@ -5,7 +5,7 @@ import {
   type APIRequestContext,
   type APIResponse,
   type Page,
-} from "@playwright/test";
+} from "./uiFixture";
 import { E2E_API_KEY } from "./authFixture";
 
 const API_URL = "http://127.0.0.1:8000/api/v1/";
@@ -330,7 +330,9 @@ test("Knowledge workbench drills from map to a full-width node at 360px", async 
   const fixture = await seedKnowledge();
   await openKnowledge(page, fixture);
 
-  await expect(page.getByRole("tree", { name: "Knowledge hierarchy" })).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Knowledge hierarchy" }),
+  ).toBeVisible();
   await page.getByText(fixture.root.title, { exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Back to knowledge map" }),
@@ -345,7 +347,9 @@ test("Knowledge workbench drills from map to a full-width node at 360px", async 
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
 
   await page.getByRole("button", { name: "Back to knowledge map" }).click();
-  await expect(page.getByRole("tree", { name: "Knowledge hierarchy" })).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Knowledge hierarchy" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("separator", { name: "Resize knowledge map" }),
   ).toHaveCount(0);

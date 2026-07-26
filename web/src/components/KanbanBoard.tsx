@@ -76,7 +76,7 @@ export function KanbanBoard({
       {actionError && (
         <div
           role="alert"
-          className="mx-4 mt-3 flex items-center gap-2 border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive-foreground"
+          className="mx-4 mt-3 flex items-center gap-2 border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
         >
           <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1">{actionError}</span>
@@ -293,7 +293,7 @@ function NewTicketForm({
         </Select>
       </div>
       {error && (
-        <p role="alert" className="text-xs text-destructive-foreground">
+        <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       )}

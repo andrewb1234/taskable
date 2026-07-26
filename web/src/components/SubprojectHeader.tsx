@@ -194,7 +194,7 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
           {error && (
             <p
               role="alert"
-              className="flex items-center gap-2 text-xs text-destructive-foreground"
+              className="flex items-center gap-2 text-xs text-destructive"
             >
               <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
               {error}
@@ -226,7 +226,7 @@ export function SubprojectHeader({ subproject, onSaved, onDeleted }: Props) {
       {!editing && error && (
         <p
           role="alert"
-          className="mt-3 flex items-center gap-2 text-xs text-destructive-foreground"
+          className="mt-3 flex items-center gap-2 text-xs text-destructive"
         >
           <AlertCircle className="h-4 w-4 shrink-0" aria-hidden />
           {error}

@@ -32,6 +32,12 @@ export function AppLayout({
 
   return (
     <div className="flex h-dvh w-full min-w-0 overflow-hidden bg-background">
+      <a
+        href="#workspace-main"
+        className="focus-ring fixed left-4 top-4 z-[100] -translate-y-24 rounded-sm bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-transform focus:translate-y-0"
+      >
+        Skip to workspace
+      </a>
       <ResizableSplit
         direction="horizontal"
         defaultSize={288}

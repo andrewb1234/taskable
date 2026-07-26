@@ -1,4 +1,4 @@
-import { test, expect, request, type Page } from "@playwright/test";
+import { test, expect, request, type Page } from "./uiFixture";
 import { E2E_API_KEY } from "./authFixture";
 
 /**
@@ -53,7 +53,7 @@ test("local API key is exchanged for an HttpOnly browser session", async ({
   await page.goto("/app");
 
   await page.getByLabel("Local API key").fill(E2E_API_KEY);
-  await page.getByRole("button", { name: "Continue locally" }).click();
+  await page.getByRole("button", { name: "Continue with API key" }).click();
 
   await expect(page.getByRole("heading", { name: "mouvadah" })).toBeVisible();
   await expect(page.getByText("Playwright Owner", { exact: true })).toBeVisible();

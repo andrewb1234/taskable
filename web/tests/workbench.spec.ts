@@ -4,7 +4,7 @@ import {
   test,
   type APIRequestContext,
   type Page,
-} from "@playwright/test";
+} from "./uiFixture";
 import { E2E_API_KEY } from "./authFixture";
 
 const API_URL = "http://127.0.0.1:8000/api/v1/";
