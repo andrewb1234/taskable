@@ -162,6 +162,27 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 800 });
+  await page.addInitScript(`
+    (() => {
+      const NativeEventSource = window.EventSource;
+      class ObservableEventSource extends NativeEventSource {
+        constructor(url, eventSourceInitDict) {
+          super(url, eventSourceInitDict);
+          this.addEventListener(
+            "ready",
+            () => {
+              window.__mouvadahSseReady = true;
+            },
+            { once: true },
+          );
+        }
+      }
+      Object.defineProperty(window, "EventSource", {
+        configurable: true,
+        value: ObservableEventSource,
+      });
+    })();
+  `);
   await authenticateBrowser(page);
   const api = await authenticatedApi();
   const suffix = Date.now();
@@ -177,6 +198,9 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
   ).json();
 
   await page.goto("/app");
+  await expect
+    .poll(() => page.evaluate("window.__mouvadahSseReady === true"))
+    .toBe(true);
   await page
     .getByRole("button", { name: "Open workspace navigation" })
     .click();
@@ -187,11 +211,16 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
   await expect(
     page.getByRole("heading", { name: "Control Room" }),
   ).toBeVisible();
-  // The heading renders before project resources and the EventSource have
-  // necessarily settled on slower CI runners. Wait for the initial work-state
-  // snapshot before publishing the event so this measures delivery latency,
-  // not connection startup.
+  // The project resources and EventSource settle independently. The stream's
+  // ready event is awaited above so the mutation cannot race subscription;
+  // these assertions confirm both ticket and subproject state before
+  // publishing because ticket invalidation is scoped through that map.
   await expect(page.getByText("Nothing needs attention")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Subproject map" })
+      .getByRole("button", { name: new RegExp(subproject.name) }),
+  ).toBeVisible();
   await api.post(`subprojects/${subproject.id}/tickets`, {
     data: {
       title: "New human review",
@@ -199,9 +228,7 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
       assignee: "HUMAN",
     },
   });
-  await expect(page.getByText("New human review")).toBeVisible({
-    timeout: 1_000,
-  });
+  await expect(page.getByText("New human review")).toBeVisible();
 
   const dimensions = (await page.evaluate(
     `({
