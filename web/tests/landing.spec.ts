@@ -25,19 +25,16 @@ test("public landing hands an unauthenticated visitor into sign in", async ({
   ).toBeVisible();
   await expect(
     page.getByRole("heading", {
-      name: "The race, resolved in six events.",
+      name: "When a worker disappears, the project does not.",
     }),
   ).toBeVisible();
-  await expect(page.getByText("Claim responses")).toBeVisible();
+  await expect(page.getByText("Project-state ledger")).toBeVisible();
   await expect(
-    page.getByText("409 · already claimed", { exact: true }),
+    page.getByText("Expired work requeued", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText(
-      "In an isolated Northstar Commerce workspace, agent-cobalt and agent-ember",
-      { exact: false },
-    ),
-  ).toBeAttached();
+    page.getByText("Review accepted; knowledge leaf written", { exact: true }),
+  ).toBeVisible();
 
   await page
     .getByRole("link", { name: "Sign in to your workspace" })
@@ -103,23 +100,28 @@ test("landing remains contained at 360px", async ({ page }) => {
   )) as { scrollWidth: number; clientWidth: number };
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
 
-  const proof = await page.getByTestId("landing-claim-workflow").boundingBox();
+  const proof = await page
+    .getByTestId("landing-project-state-ledger")
+    .boundingBox();
   expect(proof).not.toBeNull();
   expect(proof!.x).toBeGreaterThanOrEqual(0);
   expect(proof!.x + proof!.width).toBeLessThanOrEqual(360);
 });
 
-test("reduced-motion landing exposes the complete static claim workflow", async ({
+test("reduced-motion landing exposes the complete project ledger", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
   await expect(
-    page.getByText("agent-ember takes the next ready task.", { exact: true }),
+    page.getByText("Two agents, two owned tickets.", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Next state" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Pause" })).toHaveCount(0);
+  await expect(
+    page.getByText("Recovered work becomes durable knowledge.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   const entryAnimations = (await page.evaluate(
     `[...document.querySelectorAll(".motion-enter")].map(
       (element) => getComputedStyle(element).animationName,
@@ -128,59 +130,67 @@ test("reduced-motion landing exposes the complete static claim workflow", async 
   expect(entryAnimations.every((name) => name === "none")).toBe(true);
 });
 
-test("claim workflow can be paused and replayed", async ({ page }) => {
-  await page.goto("/");
-  const workflow = page.getByTestId("landing-claim-workflow");
-  const status = workflow.getByRole("status");
-
-  await expect(status).toContainText("Both agents select the checkout fix.");
-  await expect(status).toContainText("agent-cobalt becomes the owner.", {
-    timeout: 5_000,
-  });
-
-  await workflow.getByRole("button", { name: "Pause" }).click();
-  const pausedCopy = await status.textContent();
-  await page.waitForTimeout(1_800);
-  await expect(status).toHaveText(pausedCopy ?? "");
-
-  await workflow.getByRole("button", { name: "Replay" }).click();
-  await expect(status).toContainText("Both agents select the checkout fix.");
-});
-
-test("claim workflow uses optimized, dimensioned local captures", async ({
+test("project ledger is static and exposes the complete recovery record", async ({
   page,
 }) => {
   await page.goto("/");
-  const captures = page
-    .getByTestId("landing-claim-workflow")
-    .locator("img");
-  await expect(captures).toHaveCount(3);
+  const ledger = page.getByTestId("landing-project-state-ledger");
 
-  const imageMetadata = await captures.evaluateAll((images) =>
-    images.map((image) => {
-      const capture = image as unknown as {
-        currentSrc: string;
-        width: number;
-        height: number;
-        naturalWidth: number;
-        naturalHeight: number;
-      };
-      return {
-        source: capture.currentSrc,
-        width: capture.width,
-        height: capture.height,
-        naturalWidth: capture.naturalWidth,
-        naturalHeight: capture.naturalHeight,
-      };
-    }),
-  );
-  for (const image of imageMetadata) {
-    expect(image.source).toContain(".webp");
-    expect(image.width).toBeGreaterThan(0);
-    expect(image.height).toBeGreaterThan(0);
-    expect(image.naturalWidth).toBe(680);
-    expect(image.naturalHeight).toBe(680);
-  }
+  await expect(
+    ledger.getByText("Last valid heartbeat on #43", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    ledger.getByText("Fresh claim on recovered work", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    ledger.getByText("#42 + #43 → DONE · K-19 → CURRENT", { exact: true }),
+  ).toBeVisible();
+  await expect(ledger.getByRole("listitem")).toHaveCount(8);
+  await expect(ledger.getByRole("button")).toHaveCount(0);
+  await expect(ledger.locator("img")).toHaveCount(0);
+
+  const motion = (await ledger.locator("*").evaluateAll((elements) =>
+    elements.map((element) => ({
+      animationName:
+        element.ownerDocument.defaultView?.getComputedStyle(element)
+          .animationName ?? "",
+      transitionDuration:
+        element.ownerDocument.defaultView?.getComputedStyle(element)
+          .transitionDuration ?? "",
+    })),
+  )) as Array<{ animationName: string; transitionDuration: string }>;
+  expect(motion.every((item) => item.animationName === "none")).toBe(true);
+  expect(motion.every((item) => item.transitionDuration === "0s")).toBe(true);
+});
+
+test("project ledger names the recovery boundary without overclaiming", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const ledger = page.getByTestId("landing-project-state-ledger");
+
+  await expect(
+    ledger.getByText(
+      "The expired worker cannot extend its old lease",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    ledger.getByText(
+      "A fresh worker must still inspect existing code, external side effects, and evidence",
+      { exact: false },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Inspect the recovery record" }),
+  ).toHaveAttribute("href", "#project-state-ledger");
+  const labels = await ledger
+    .locator("[aria-label]")
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("aria-label")),
+    );
+  expect(labels).toContain("Project state snapshots");
+  expect(labels).toContain("Recovery event ledger");
 });
 
 test("landing skip link moves focus to the main content", async ({ page }) => {

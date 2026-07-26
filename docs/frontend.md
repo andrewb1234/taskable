@@ -74,6 +74,23 @@ round-trip. Route-level components are loaded with `React.lazy` and
 `Suspense`, keeping the public landing payload independent from authenticated
 workbench code.
 
+## Landing proof contract
+
+The public landing page explains recovery with a static, illustrative
+project-state ledger rather than a simulated product interface. Its sequence
+must preserve the real coordination boundary:
+
+1. agents read scoped knowledge and claim separate ready tickets;
+2. a missing heartbeat allows a lease to expire, but does not transfer work;
+3. an explicit requeue clears the stale worker and lease before another claim;
+4. the new worker inspects existing code, external effects, and evidence;
+5. independent review records the accepted outcome and updates durable
+   knowledge.
+
+The proof must remain complete without autoplay, timers, screenshots, or a
+client-side state machine. Lease recovery prevents indefinite stale ownership;
+it does not promise exactly-once execution.
+
 ## Authenticated information hierarchy
 
 The Control Room answers operational questions before explaining the product:

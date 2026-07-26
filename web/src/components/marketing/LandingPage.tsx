@@ -8,7 +8,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { MouvadahLockup } from "@/components/brand/mouvadah-brand";
-import { ClaimWorkflow } from "@/components/marketing/ClaimWorkflow";
+import { ProjectStateLedger } from "@/components/marketing/ProjectStateLedger";
 import { TechnicalLabel } from "@/components/ui/technical-label";
 
 const narratives = [
@@ -106,10 +106,10 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </a>
               <a
-                href="#claim-workflow"
+                href="#project-state-ledger"
                 className="focus-ring transition-fast inline-flex items-center justify-center gap-3 rounded-sm border border-border px-5 py-3.5 text-sm font-semibold hover:border-brand-brass hover:text-brand-brass"
               >
-                Watch the claim resolve
+                Inspect the recovery record
               </a>
             </div>
             <a
@@ -124,7 +124,7 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
             className="motion-enter"
             style={{ "--motion-delay": "120ms" } as CSSProperties}
           >
-            <ClaimWorkflow />
+            <ProjectStateLedger />
           </div>
         </section>
 
