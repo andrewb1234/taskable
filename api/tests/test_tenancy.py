@@ -109,6 +109,7 @@ def test_descendant_and_agent_routes_reject_cross_workspace_ids(
 
     reads = [
         f"/api/v1/projects/{alice['project']}/tickets",
+        f"/api/v1/projects/{alice['project']}/control-room",
         f"/api/v1/projects/{alice['project']}/subprojects",
         f"/api/v1/subprojects/{alice['subproject']}",
         f"/api/v1/tickets/{alice['ticket']}",

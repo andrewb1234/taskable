@@ -47,7 +47,9 @@ Every response includes a server-generated `X-Request-ID`; valid W3C
 `traceparent` context is retained in structured JSON logs and OpenTelemetry
 spans. `/healthz` is liveness. `/readyz` performs a database round trip and
 returns `503` when the database is unavailable or the shared realtime
-transport is degraded/not started. Route labels are normalized and telemetry
+transport is degraded/not started. Route labels are normalized; request
+duration and uncompressed response-body-size histograms make payload growth
+visible without recording response content; and telemetry
 does not record request bodies, query strings, credentials, email addresses,
 client IPs, or SQL statements.
 

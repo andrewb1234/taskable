@@ -1,6 +1,50 @@
 import { useEffect, useRef } from "react";
+import {
+  clearAsyncCache,
+  invalidateAsyncCache,
+  invalidateAsyncCachePrefix,
+} from "@/hooks/useAsync";
 import { apiBase } from "@/lib/api";
 import type { SSEPayload } from "@/types";
+
+function invalidateCachedReads(payload: SSEPayload): void {
+  if (payload.action === "SYNC_REQUIRED") {
+    clearAsyncCache();
+    return;
+  }
+  if (payload.entity === "project") {
+    invalidateAsyncCache("projects");
+    invalidateAsyncCache(`control-room:${payload.entity_id}`);
+    invalidateAsyncCache(`projects:${payload.entity_id}:subprojects`);
+    return;
+  }
+  if (payload.entity === "subproject") {
+    invalidateAsyncCache(`subproject:${payload.entity_id}`);
+    if (payload.parent_id != null) {
+      invalidateAsyncCache(`projects:${payload.parent_id}:subprojects`);
+      invalidateAsyncCache(`control-room:${payload.parent_id}`);
+    }
+    return;
+  }
+  if (payload.entity === "ticket") {
+    if (payload.parent_id != null) {
+      invalidateAsyncCache(`subproject:${payload.parent_id}`);
+    }
+    // Ticket invalidations name their subproject, not their project. Clear
+    // the small family of warm summaries so an unmounted project cannot hide
+    // an agent update until its TTL expires.
+    invalidateAsyncCachePrefix("control-room:");
+    return;
+  }
+  if (
+    payload.parent_id != null &&
+    (payload.entity === "knowledge_node" ||
+      payload.entity === "knowledge_proposal" ||
+      payload.entity === "agent_session")
+  ) {
+    invalidateAsyncCache(`control-room:${payload.parent_id}`);
+  }
+}
 
 /**
  * Subscribe to the backend SSE stream. Dispatches every message to the
@@ -22,6 +66,7 @@ export function useSSE(onEvent: (payload: SSEPayload) => void): void {
     const dispatch = (event: MessageEvent<string>) => {
       try {
         const payload = JSON.parse(event.data) as SSEPayload;
+        invalidateCachedReads(payload);
         handlerRef.current(payload);
       } catch (err) {
         console.error("SSE payload parse failed", err, event.data);

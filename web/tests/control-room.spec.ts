@@ -175,6 +175,17 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
             },
             { once: true },
           );
+          this.addEventListener("message", (event) => {
+            try {
+              const payload = JSON.parse(event.data);
+              if (payload.entity === "ticket") {
+                window.__mouvadahTicketEvents =
+                  (window.__mouvadahTicketEvents || 0) + 1;
+              }
+            } catch {
+              // The application owns payload validation.
+            }
+          });
         }
       }
       Object.defineProperty(window, "EventSource", {
@@ -221,6 +232,19 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
       .getByRole("region", { name: "Subproject map" })
       .getByRole("button", { name: new RegExp(subproject.name) }),
   ).toBeVisible();
+  await expect(page.getByText("Refreshing")).toHaveCount(0);
+  const ticketEventsBeforeMutation = (await page.evaluate(
+    "window.__mouvadahTicketEvents || 0",
+  )) as number;
+  let summaryRequestsAfterMutation = 0;
+  page.on("request", (request) => {
+    if (
+      request.method() === "GET" &&
+      request.url().includes(`/projects/${project.id}/control-room`)
+    ) {
+      summaryRequestsAfterMutation += 1;
+    }
+  });
   await api.post(`subprojects/${subproject.id}/tickets`, {
     data: {
       title: "New human review",
@@ -228,7 +252,15 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
       assignee: "HUMAN",
     },
   });
+  await expect
+    .poll(() => page.evaluate("window.__mouvadahTicketEvents || 0"))
+    .toBe(ticketEventsBeforeMutation + 1);
   await expect(page.getByText("New human review")).toBeVisible();
+  await expect
+    .poll(() => summaryRequestsAfterMutation)
+    .toBe(1);
+  await page.waitForTimeout(200);
+  expect(summaryRequestsAfterMutation).toBe(1);
 
   const dimensions = (await page.evaluate(
     `({
@@ -245,4 +277,221 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
   expect(statusSummary).not.toBeNull();
   expect(statusSummary!.x).toBeGreaterThanOrEqual(0);
   expect(statusSummary!.x + statusSummary!.width).toBeLessThanOrEqual(360);
+});
+
+test("Control Room performs a trailing refresh for overlapping agent updates", async ({
+  page,
+}) => {
+  await page.addInitScript(`
+    (() => {
+      const NativeEventSource = window.EventSource;
+      class ObservableEventSource extends NativeEventSource {
+        constructor(url, eventSourceInitDict) {
+          super(url, eventSourceInitDict);
+          this.addEventListener("ready", () => {
+            window.__mouvadahSseReady = true;
+          });
+          this.addEventListener("message", (event) => {
+            try {
+              const payload = JSON.parse(event.data);
+              if (payload.entity === "ticket") {
+                window.__mouvadahTicketEvents =
+                  (window.__mouvadahTicketEvents || 0) + 1;
+              }
+            } catch {
+              // The application owns payload validation; this observer only
+              // provides a deterministic synchronization point for the test.
+            }
+          });
+        }
+      }
+      Object.defineProperty(window, "EventSource", {
+        configurable: true,
+        value: ObservableEventSource,
+      });
+    })();
+  `);
+  await authenticateBrowser(page);
+  const api = await authenticatedApi();
+  const suffix = Date.now();
+  const project = await (
+    await api.post("projects", {
+      data: { name: `Overlapping refresh ${suffix}` },
+    })
+  ).json();
+  const subproject = await (
+    await api.post(`projects/${project.id}/subprojects`, {
+      data: { name: `Refresh queue ${suffix}` },
+    })
+  ).json();
+
+  let holdNextSummary = false;
+  let summaryRequests = 0;
+  let releaseHeldResponse!: () => void;
+  let markResponseHeld!: () => void;
+  const heldResponseReleased = new Promise<void>((resolve) => {
+    releaseHeldResponse = resolve;
+  });
+  const responseHeld = new Promise<void>((resolve) => {
+    markResponseHeld = resolve;
+  });
+  await page.route(
+    `**/api/v1/projects/${project.id}/control-room`,
+    async (route) => {
+      summaryRequests += 1;
+      if (!holdNextSummary) {
+        await route.continue();
+        return;
+      }
+      holdNextSummary = false;
+      const response = await route.fetch();
+      markResponseHeld();
+      await heldResponseReleased;
+      await route.fulfill({ response });
+    },
+  );
+
+  await page.goto("/app");
+  await expect
+    .poll(() => page.evaluate("window.__mouvadahSseReady === true"))
+    .toBe(true);
+  await page
+    .getByRole("button", { name: project.name, exact: true })
+    .click();
+  await expect(page.getByText("Nothing needs attention")).toBeVisible();
+  const requestsBeforeMutations = summaryRequests;
+  const eventsBeforeMutations = (await page.evaluate(
+    "window.__mouvadahTicketEvents || 0",
+  )) as number;
+
+  holdNextSummary = true;
+  const ticket = await (
+    await api.post(`subprojects/${subproject.id}/tickets`, {
+      data: {
+        title: "Overlapping agent update",
+        status: "REVIEW",
+        assignee: "AGENT",
+      },
+    })
+  ).json();
+  await responseHeld;
+
+  await api.patch(`tickets/${ticket.id}`, {
+    data: { status: "DONE" },
+  });
+  await expect
+    .poll(() =>
+      page.evaluate("window.__mouvadahTicketEvents || 0"),
+    )
+    .toBe(eventsBeforeMutations + 2);
+  releaseHeldResponse();
+
+  await expect(page.getByText("Nothing needs attention")).toBeVisible();
+  await expect
+    .poll(() => summaryRequests - requestsBeforeMutations)
+    .toBe(2);
+  await expect(
+    page
+      .locator('dl[aria-label="Ticket status summary"] > div')
+      .filter({ hasText: "Done" }),
+  ).toContainText("1");
+});
+
+test("agent events invalidate warm Control Room data while its view is unmounted", async ({
+  page,
+}) => {
+  await page.addInitScript(`
+    (() => {
+      const NativeEventSource = window.EventSource;
+      class ObservableEventSource extends NativeEventSource {
+        constructor(url, eventSourceInitDict) {
+          super(url, eventSourceInitDict);
+          this.addEventListener("ready", () => {
+            window.__mouvadahSseReady = true;
+          });
+          this.addEventListener("message", (event) => {
+            try {
+              const payload = JSON.parse(event.data);
+              const key = "__mouvadahEvent_" + payload.entity;
+              window[key] = (window[key] || 0) + 1;
+            } catch {
+              // The application owns payload validation.
+            }
+          });
+        }
+      }
+      Object.defineProperty(window, "EventSource", {
+        configurable: true,
+        value: ObservableEventSource,
+      });
+    })();
+  `);
+  await authenticateBrowser(page);
+  const api = await authenticatedApi();
+  const suffix = Date.now();
+  const firstProject = await (
+    await api.post("projects", {
+      data: { name: `Warm cache target ${suffix}` },
+    })
+  ).json();
+  const firstSubproject = await (
+    await api.post(`projects/${firstProject.id}/subprojects`, {
+      data: { name: `Agent-owned work ${suffix}` },
+    })
+  ).json();
+  const secondProject = await (
+    await api.post("projects", {
+      data: { name: `Current view ${suffix}` },
+    })
+  ).json();
+
+  await page.goto("/app");
+  await expect
+    .poll(() => page.evaluate("window.__mouvadahSseReady === true"))
+    .toBe(true);
+  await page
+    .getByRole("button", { name: firstProject.name, exact: true })
+    .click();
+  await expect(page.getByText("Nothing needs attention")).toBeVisible();
+  await expect(page.getByText("Refreshing")).toHaveCount(0);
+
+  await page
+    .getByRole("button", { name: secondProject.name, exact: true })
+    .click();
+  await expect(
+    page
+      .locator('[aria-labelledby="control-room-title"]')
+      .getByText(secondProject.name, { exact: true }),
+  ).toBeVisible();
+
+  const ticketEventsBefore = (await page.evaluate(
+    "window.__mouvadahEvent_ticket || 0",
+  )) as number;
+  const knowledgeEventsBefore = (await page.evaluate(
+    "window.__mouvadahEvent_knowledge_node || 0",
+  )) as number;
+  await api.post(`subprojects/${firstSubproject.id}/tickets`, {
+    data: {
+      title: "Agent update while unmounted",
+      status: "REVIEW",
+      assignee: "AGENT",
+    },
+  });
+  await api.post(`projects/${secondProject.id}/knowledge`, {
+    data: {
+      title: "Later unrelated event",
+      content: "Replaces the latest mounted-view event.",
+    },
+  });
+  await expect
+    .poll(() => page.evaluate("window.__mouvadahEvent_ticket || 0"))
+    .toBe(ticketEventsBefore + 1);
+  await expect
+    .poll(() => page.evaluate("window.__mouvadahEvent_knowledge_node || 0"))
+    .toBe(knowledgeEventsBefore + 1);
+
+  await page
+    .getByRole("button", { name: firstProject.name, exact: true })
+    .click();
+  await expect(page.getByText("Agent update while unmounted")).toBeVisible();
 });

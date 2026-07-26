@@ -15,6 +15,7 @@ import {
   type AuthProviders,
   type AuthUser,
 } from "@/lib/api";
+import { clearAsyncCache } from "@/hooks/useAsync";
 
 interface AuthState {
   user: AuthUser | null;
@@ -56,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithLocalApiKey = useCallback(async (apiKey: string) => {
     await createLocalSession(apiKey);
+    clearAsyncCache();
     setUser(await getMe());
   }, []);
 
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       /* ignore */
     }
+    clearAsyncCache();
     setUser(null);
   }, []);
 

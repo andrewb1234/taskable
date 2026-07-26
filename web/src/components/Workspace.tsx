@@ -31,6 +31,12 @@ export function Workspace({ lastEvent }: Props) {
         ? Promise.resolve(null)
         : getSubproject(activeSubprojectId),
     [activeSubprojectId],
+    {
+      cacheKey:
+        activeSubprojectId == null
+          ? "subproject:none"
+          : `subproject:${activeSubprojectId}`,
+    },
   );
 
   // SSE-driven targeted refetch. TICKET_DELETED/SUBPROJECT_DELETED fall out

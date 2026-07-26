@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useRef } from "react";
 import {
   ArrowRight,
   BookOpenCheck,
@@ -11,21 +11,11 @@ import {
 } from "lucide-react";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useAsync } from "@/hooks/useAsync";
-import {
-  getProject,
-  listKnowledgeNodesAll,
-  listProjectProposals,
-  listProjectTickets,
-  listSessions,
-  listSubprojects,
-} from "@/lib/api";
+import { getControlRoomSummary } from "@/lib/api";
 import type {
   AgentSession,
-  KnowledgeNode,
-  KnowledgeProposal,
-  Project,
+  ControlRoomSummary,
   SSEPayload,
-  Subproject,
   TicketAssignee,
   TicketRef,
   TicketStatus,
@@ -55,136 +45,35 @@ const assignees: TicketAssignee[] = ["HUMAN", "AGENT", "UNASSIGNED"];
 
 export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
   const { openTicket, setActiveSubprojectId, setView } = useWorkspace();
-  const project = useAsync<Project>(() => getProject(projectId), [projectId]);
-  const subprojects = useAsync<Subproject[]>(
-    () => listSubprojects(projectId),
+  const summary = useAsync<ControlRoomSummary>(
+    () => getControlRoomSummary(projectId),
     [projectId],
+    { cacheKey: `control-room:${projectId}` },
   );
-  const tickets = useAsync<TicketRef[]>(
-    () => listProjectTickets(projectId),
-    [projectId],
-  );
-  const knowledge = useAsync<KnowledgeNode[]>(
-    () => listKnowledgeNodesAll(projectId),
-    [projectId],
-  );
-  const proposals = useAsync<KnowledgeProposal[]>(
-    () => listProjectProposals(projectId),
-    [projectId],
-  );
-  const sessions = useAsync<AgentSession[]>(
-    () => listSessions(projectId),
-    [projectId],
-  );
+  const data = summary.data;
+  const latestSummaryRef = useRef<ControlRoomSummary | undefined>(data);
+  latestSummaryRef.current = data;
 
   useEffect(() => {
     if (!lastEvent) return;
     if (lastEvent.action === "SYNC_REQUIRED") {
-      project.refetch();
-      subprojects.refetch();
-      tickets.refetch();
-      knowledge.refetch();
-      proposals.refetch();
-      sessions.refetch();
+      summary.refetch();
       return;
     }
-
-    if (lastEvent.entity === "project" && lastEvent.entity_id === projectId) {
-      project.refetch();
-    }
-    if (
-      lastEvent.entity === "subproject" &&
-      lastEvent.parent_id === projectId
-    ) {
-      subprojects.refetch();
-    }
-    if (
+    const isTicketForProject =
       lastEvent.entity === "ticket" &&
-      subprojects.data?.some(
-        (subproject) => subproject.id === lastEvent.parent_id,
-      )
-    ) {
-      tickets.refetch();
-    }
-    if (
-      lastEvent.entity === "knowledge_node" &&
-      lastEvent.parent_id === projectId
-    ) {
-      knowledge.refetch();
-    }
-    if (
-      lastEvent.entity === "knowledge_proposal" &&
-      (lastEvent.parent_id === projectId ||
-        proposals.data?.some(
-          (proposal) => proposal.id === lastEvent.entity_id,
-        ))
-    ) {
-      proposals.refetch();
-    }
-    if (
-      lastEvent.entity === "agent_session" &&
-      lastEvent.parent_id === projectId
-    ) {
-      sessions.refetch();
-    }
-    // Each resource owns its own loading/error state; targeted invalidation
-    // keeps one noisy source from blanking the full Control Room.
+      (latestSummaryRef.current === undefined ||
+        latestSummaryRef.current.subprojects.some(
+          (subproject) => subproject.id === lastEvent.parent_id,
+        ));
+    const isProjectEvent =
+      (lastEvent.entity === "project" && lastEvent.entity_id === projectId) ||
+      (lastEvent.entity !== "project" &&
+        lastEvent.entity !== "ticket" &&
+        lastEvent.parent_id === projectId);
+    if (isProjectEvent || isTicketForProject) summary.refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent, projectId]);
-
-  const ticketSummary = useMemo(() => {
-    const statusCounts = Object.fromEntries(
-      ticketStatuses.map((status) => [status, 0]),
-    ) as Record<TicketStatus, number>;
-    const ownerCounts = Object.fromEntries(
-      assignees.map((assignee) => [assignee, 0]),
-    ) as Record<TicketAssignee, number>;
-    const attention: TicketRef[] = [];
-    const inFlight: TicketRef[] = [];
-    const bySubproject = new Map<
-      number,
-      { total: number; moving: number; attention: number }
-    >();
-
-    for (const ticket of tickets.data ?? []) {
-      statusCounts[ticket.status] += 1;
-      ownerCounts[ticket.assignee] += 1;
-      if (ticket.status === "BLOCKED" || ticket.status === "REVIEW") {
-        attention.push(ticket);
-      }
-      if (ticket.status === "IN_PROGRESS") inFlight.push(ticket);
-      const scoped = bySubproject.get(ticket.subproject_id) ?? {
-        total: 0,
-        moving: 0,
-        attention: 0,
-      };
-      scoped.total += 1;
-      if (ticket.status === "IN_PROGRESS") scoped.moving += 1;
-      if (ticket.status === "BLOCKED" || ticket.status === "REVIEW") {
-        scoped.attention += 1;
-      }
-      bySubproject.set(ticket.subproject_id, scoped);
-    }
-
-    attention.sort((a, b) => {
-      if (a.status === b.status) return a.id - b.id;
-      return a.status === "BLOCKED" ? -1 : 1;
-    });
-    inFlight.sort((a, b) => a.id - b.id);
-    return { statusCounts, ownerCounts, attention, inFlight, bySubproject };
-  }, [tickets.data]);
-  const staleKnowledgeCount =
-    knowledge.data?.filter((node) => node.status === "STALE").length ?? 0;
-  const pendingProposalCount =
-    proposals.data?.filter((proposal) => proposal.status === "PENDING").length ??
-    0;
-  const resumableSessions = (sessions.data ?? [])
-    .filter(
-      (session) =>
-        session.status !== "ACTIVE" &&
-        Boolean(session.handoff_note?.trim()),
-    )
-    .slice(0, 4);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -198,13 +87,13 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
               >
                 Control Room
               </h2>
-              {project.data ? (
+              {data ? (
                 <p className="mt-2 line-clamp-2 max-w-3xl break-words text-sm leading-relaxed text-muted-foreground">
                   <span className="font-semibold text-foreground">
-                    {project.data.name}
+                    {data.project.name}
                   </span>
-                  {project.data.description?.trim()
-                    ? ` — ${project.data.description.trim()}`
+                  {data.project.description?.trim()
+                    ? ` — ${data.project.description.trim()}`
                     : ""}
                 </p>
               ) : (
@@ -215,14 +104,7 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
             </div>
             <Button
               variant="outline"
-              onClick={() => {
-                project.refetch();
-                subprojects.refetch();
-                tickets.refetch();
-                knowledge.refetch();
-                proposals.refetch();
-                sessions.refetch();
-              }}
+              onClick={summary.refetch}
             >
               <RefreshCcw className="h-4 w-4" aria-hidden />
               Refresh
@@ -232,11 +114,11 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
 
         <AsyncSection
           title="Project state"
-          loading={tickets.loading}
-          error={tickets.error}
-          onRetry={tickets.refetch}
+          loading={summary.loading}
+          error={summary.error}
+          onRetry={summary.refetch}
         >
-          {tickets.data && (
+          {data && (
             <div className="space-y-3">
               <div className="grid gap-3 xl:grid-cols-2">
                 <Surface radius="none" padding="md">
@@ -255,14 +137,15 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
                     />
                   </div>
                   <p className="sr-only" role="status" aria-live="polite">
-                    {ticketSummary.attention.length}{" "}
-                    {ticketSummary.attention.length === 1
+                    {data.attention_total}{" "}
+                    {data.attention_total === 1
                       ? "ticket requires"
                       : "tickets require"}{" "}
                     human attention.
                   </p>
                   <TicketSummaryList
-                    tickets={ticketSummary.attention}
+                    tickets={data.attention_tickets}
+                    total={data.attention_total}
                     emptyIcon={CircleCheck}
                     emptyTitle="Nothing needs attention"
                     emptyBody="No tickets are blocked or awaiting review."
@@ -279,7 +162,8 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
                     </p>
                   </div>
                   <TicketSummaryList
-                    tickets={ticketSummary.inFlight}
+                    tickets={data.in_flight_tickets}
+                    total={data.in_flight_total}
                     emptyIcon={CircleCheck}
                     emptyTitle="No work in flight"
                     emptyBody="No tickets are currently in progress."
@@ -302,7 +186,7 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
                       {TICKET_STATUS_LABELS[status]}
                     </dt>
                     <dd className="shrink-0 font-mono text-lg font-semibold sm:mt-2">
-                      {ticketSummary.statusCounts[status]}
+                      {data.ticket_status_counts[status]}
                     </dd>
                   </div>
                 ))}
@@ -313,16 +197,13 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
 
         <AsyncSection
           title="Subproject map"
-          loading={subprojects.loading || tickets.loading}
-          error={subprojects.error ?? tickets.error}
-          onRetry={() => {
-            subprojects.refetch();
-            tickets.refetch();
-          }}
+          loading={summary.loading}
+          error={summary.error}
+          onRetry={summary.refetch}
         >
-          {subprojects.data && tickets.data && (
+          {data && (
             <>
-              {subprojects.data.length === 0 ? (
+              {data.subprojects.length === 0 ? (
                 <Surface radius="none" padding="lg">
                   <EmptyState
                     icon={GitBranch}
@@ -332,9 +213,9 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
                 </Surface>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {subprojects.data.map((subproject) => {
-                    const scoped = ticketSummary.bySubproject.get(
-                      subproject.id,
+                  {data.subprojects.map((subproject) => {
+                    const scoped = data.subproject_ticket_counts.find(
+                      (count) => count.subproject_id === subproject.id,
                     ) ?? {
                       total: 0,
                       moving: 0,
@@ -365,7 +246,7 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
                           {subproject.name}
                         </span>
                         <span className="mt-2 line-clamp-2 block text-xs leading-relaxed text-muted-foreground">
-                          {subproject.context_brief ||
+                          {subproject.context_preview ||
                             "No subproject context has been recorded."}
                         </span>
                         <span className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -388,7 +269,8 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
           )}
         </AsyncSection>
 
-        {(pendingProposalCount > 0 || staleKnowledgeCount > 0) && (
+        {data &&
+          (data.pending_proposal_count > 0 || data.stale_knowledge_count > 0) && (
           <section aria-labelledby="control-room-knowledge-review">
             <h3
               id="control-room-knowledge-review"
@@ -403,10 +285,10 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
             >
               <div>
                 <p className="text-sm font-semibold">
-                  {pendingProposalCount} pending{" "}
-                  {pendingProposalCount === 1 ? "proposal" : "proposals"} ·{" "}
-                  {staleKnowledgeCount} stale{" "}
-                  {staleKnowledgeCount === 1 ? "node" : "nodes"}
+                  {data.pending_proposal_count} pending{" "}
+                  {data.pending_proposal_count === 1 ? "proposal" : "proposals"} ·{" "}
+                  {data.stale_knowledge_count} stale{" "}
+                  {data.stale_knowledge_count === 1 ? "node" : "nodes"}
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   Review proposed changes and context that may no longer be
@@ -421,7 +303,7 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
           </section>
         )}
 
-        {resumableSessions.length > 0 && (
+        {data && data.resumable_sessions.length > 0 && (
           <section aria-labelledby="control-room-handoffs">
             <h3 id="control-room-handoffs" className="mb-3 text-sm font-semibold">
               Handoffs ready to resume
@@ -431,12 +313,12 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
                 Explicit handoff notes from recorded agent sessions. Active
                 ticket work appears under Work in flight.
               </p>
-              <SessionList sessions={resumableSessions} />
+              <SessionList sessions={data.resumable_sessions} />
             </Surface>
           </section>
         )}
 
-        {project.data && tickets.data && (
+        {data && (
           <details className="group border border-border bg-surface">
             <summary className="focus-ring flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold marker:content-none">
               Project details
@@ -449,9 +331,9 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
             </summary>
             <div className="grid gap-6 border-t border-border p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
               <div>
-                <p className="text-sm font-semibold">{project.data.name}</p>
+                <p className="text-sm font-semibold">{data.project.name}</p>
                 <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
-                  {project.data.description?.trim() ||
+                  {data.project.description?.trim() ||
                     "No project brief has been recorded yet."}
                 </p>
               </div>
@@ -465,7 +347,7 @@ export function ControlRoom({ projectId, lastEvent }: ControlRoomProps) {
                       {ASSIGNEE_LABELS[assignee]}
                     </dt>
                     <dd className="mt-2 font-mono text-lg font-semibold">
-                      {ticketSummary.ownerCounts[assignee]}
+                      {data.ticket_assignee_counts[assignee]}
                     </dd>
                   </div>
                 ))}
@@ -544,6 +426,7 @@ function EmptyState({
 
 function TicketSummaryList({
   tickets,
+  total,
   emptyIcon,
   emptyTitle,
   emptyBody,
@@ -551,6 +434,7 @@ function TicketSummaryList({
   onOpen,
 }: {
   tickets: TicketRef[];
+  total: number;
   emptyIcon: typeof BookOpenCheck;
   emptyTitle: string;
   emptyBody: string;
@@ -568,41 +452,48 @@ function TicketSummaryList({
   }
 
   return (
-    <ul className="mt-4 divide-y divide-border border-y border-border">
-      {tickets.map((ticket) => (
-        <li key={ticket.id}>
-          <button
-            type="button"
-            className="focus-ring flex min-h-12 w-full flex-wrap items-center gap-x-3 gap-y-2 px-2 py-3 text-left hover:bg-accent/40 sm:flex-nowrap"
-            onClick={() => onOpen(ticket.id)}
-          >
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">
-              #{ticket.id}
-            </span>
-            <span className="min-w-0 flex-1 basis-[12rem]">
-              <span className="block truncate text-sm font-medium">
-                {ticket.title}
+    <>
+      <ul className="mt-4 divide-y divide-border border-y border-border">
+        {tickets.map((ticket) => (
+          <li key={ticket.id}>
+            <button
+              type="button"
+              className="focus-ring flex min-h-12 w-full flex-wrap items-center gap-x-3 gap-y-2 px-2 py-3 text-left hover:bg-accent/40 sm:flex-nowrap"
+              onClick={() => onOpen(ticket.id)}
+            >
+              <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                #{ticket.id}
               </span>
-              <span className="mt-1 block truncate text-xs text-muted-foreground">
-                {ticket.subproject_name ??
-                  `Subproject #${ticket.subproject_id}`}
+              <span className="min-w-0 flex-1 basis-[12rem]">
+                <span className="block truncate text-sm font-medium">
+                  {ticket.title}
+                </span>
+                <span className="mt-1 block truncate text-xs text-muted-foreground">
+                  {ticket.subproject_name ??
+                    `Subproject #${ticket.subproject_id}`}
+                </span>
               </span>
-            </span>
-            {indicator === "status" ? (
-              <TicketStatusIndicator
-                status={ticket.status}
-                className="max-w-full shrink-0"
-              />
-            ) : (
-              <AssigneeIndicator
-                assignee={ticket.assignee}
-                className="max-w-full shrink-0"
-              />
-            )}
-          </button>
-        </li>
-      ))}
-    </ul>
+              {indicator === "status" ? (
+                <TicketStatusIndicator
+                  status={ticket.status}
+                  className="max-w-full shrink-0"
+                />
+              ) : (
+                <AssigneeIndicator
+                  assignee={ticket.assignee}
+                  className="max-w-full shrink-0"
+                />
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {total > tickets.length && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Showing {tickets.length} of {total} tickets.
+        </p>
+      )}
+    </>
   );
 }
 

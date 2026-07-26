@@ -110,15 +110,31 @@ appears under Work in flight.
 
 ## Data loading and realtime invalidation
 
-`useAsync` gives each mounted surface its own loading, data, error, and refetch
-state. A failure in one Control Room resource must not blank unrelated project
-state. Loading and error states use `role="status"` and `role="alert"` where a
-screen-reader announcement is required.
+`useAsync` gives each mounted surface loading, data, error, and refetch state,
+with an optional small shared TTL cache that deduplicates in-flight reads and
+keeps recently visited views warm. Loading and error states use `role="status"`
+and `role="alert"` where a screen-reader announcement is required. The cache is
+cleared before an authenticated identity change is rendered, so data is never
+reused across browser-session principals.
+
+The Control Room uses one bounded `GET /projects/{id}/control-room` read model
+instead of loading full knowledge-node bodies, proposal payloads, and agent
+session history to render dashboard counts. It contains compact subprojects
+with server-capped context previews, ticket aggregates, capped triage lists,
+and at most four resumable handoffs; Kanban and Knowledge retain their detail
+endpoints for drill-in work.
 
 `AppLayout` owns the single SSE subscription and passes the latest validated
-event into mounted workbench surfaces. Each surface refetches only the resource
-family affected by the event. `SYNC_REQUIRED` is the exception: every mounted
-resource refetches because incremental continuity is no longer guaranteed.
+event into mounted workbench surfaces. The Control Room performs one
+project-scoped summary refresh for an affected event; detail surfaces refetch
+only the resource family they need. `SYNC_REQUIRED` is the exception: every
+mounted resource refetches because incremental continuity is no longer
+guaranteed. The stream also evicts affected warm cache entries even when their
+views are not mounted; ticket events clear the small Control Room cache family
+because the realtime payload names a subproject rather than its project.
+Duplicate consumers can share an invalidation read before it starts, while an
+invalidation arriving during an active refresh queues one trailing read so
+rapid agent updates cannot be hidden by request deduplication.
 Mutations remain ordinary REST requests; an SSE event is an invalidation
 signal, not the stored source of truth.
 

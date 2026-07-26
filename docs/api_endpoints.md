@@ -52,6 +52,7 @@ Every HTTP response includes a server-generated `X-Request-ID`.
 * `GET /projects` : Retrieve all projects.
 * `POST /projects` : Create new project `(name, description)`.
 * `GET /projects/{id}` : Retrieve project details.
+* `GET /projects/{id}/control-room` : Bounded project dashboard read model: compact subprojects with capped context previews, ticket aggregates, capped attention/in-flight lists, knowledge/proposal counts, and up to four resumable handoffs. It never includes complete subproject briefs, knowledge bodies, proposal payloads, or complete session history.
 * `DELETE /projects/{id}` : Hard-delete a project and cascade subprojects, tickets, comments, audit logs, and knowledge nodes.
 
 ## Subprojects (Contexts)
