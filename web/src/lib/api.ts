@@ -12,6 +12,7 @@ import type {
   ApiKeyCreated,
   BlockedByCategory,
   Comment,
+  ControlRoomSummary,
   ContextTrail,
   KnowledgeNode,
   KnowledgeNodeStatus,
@@ -218,6 +219,8 @@ export const restoreWorkspace = (workspaceId: number) =>
   });
 
 export const getProject = (id: number) => request<Project>(`/projects/${id}`);
+export const getControlRoomSummary = (projectId: number) =>
+  request<ControlRoomSummary>(`/projects/${projectId}/control-room`);
 export const listProjectTickets = (projectId: number) =>
   request<TicketRef[]>(`/projects/${projectId}/tickets`);
 export const createProject = (payload: {

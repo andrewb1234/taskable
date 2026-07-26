@@ -47,7 +47,9 @@ export function Sidebar({
   } = useWorkspace();
   const { user, logout } = useAuth();
 
-  const projects = useAsync<Project[]>(() => listProjects(), []);
+  const projects = useAsync<Project[]>(() => listProjects(), [], {
+    cacheKey: "projects",
+  });
 
   useEffect(() => {
     if (!lastEvent) return;
@@ -253,6 +255,7 @@ function SubprojectList({
   const subprojects = useAsync<Subproject[]>(
     () => listSubprojects(projectId),
     [projectId],
+    { cacheKey: `projects:${projectId}:subprojects` },
   );
 
   useEffect(() => {

@@ -179,7 +179,10 @@ async def review_proposal(
             action=SSEAction.KNOWLEDGE_PROPOSAL_REVIEWED,
             entity="knowledge_proposal",
             entity_id=proposal_id,
-            parent_id=proposal.node_id,
+            # Proposal create and review events are both project-scoped
+            # invalidations. A node ID here forces consumers to retain a full
+            # proposal index merely to determine relevance.
+            parent_id=proposal_node.project_id,
             workspace_id=workspace_id_for_project(
                 session,
                 proposal_node.project_id,

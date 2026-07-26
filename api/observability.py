@@ -123,6 +123,21 @@ HTTP_DURATION = Histogram(
     ("method", "route"),
     buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30),
 )
+HTTP_RESPONSE_SIZE = Histogram(
+    "mouvadah_http_response_body_bytes",
+    "Uncompressed HTTP response body size by route.",
+    ("method", "route"),
+    buckets=(
+        256,
+        1_024,
+        4_096,
+        16_384,
+        65_536,
+        262_144,
+        1_048_576,
+        4_194_304,
+    ),
+)
 HTTP_EXCEPTIONS = Counter(
     "mouvadah_http_unhandled_exceptions_total",
     "Unhandled HTTP exceptions.",
@@ -583,15 +598,20 @@ class ObservabilityMiddleware:
                     )
                 status_code = 500
                 response_started = False
+                response_bytes = 0
                 unhandled: Exception | None = None
 
                 async def send_with_correlation(message: Message) -> None:
-                    nonlocal status_code, response_started
+                    nonlocal status_code, response_bytes, response_started
                     if message["type"] == "http.response.start":
                         response_started = True
                         status_code = int(message["status"])
                         headers = MutableHeaders(scope=message)
                         headers["X-Request-ID"] = request_id
+                    elif message["type"] == "http.response.body":
+                        body = message.get("body", b"")
+                        if isinstance(body, bytes):
+                            response_bytes += len(body)
                     await send(message)
 
                 try:
@@ -612,6 +632,7 @@ class ObservabilityMiddleware:
                         "http.response.status_code",
                         status_code,
                     )
+                    span.set_attribute("http.response.body.size", response_bytes)
                     if status_code >= 500:
                         span.set_status(Status(StatusCode.ERROR))
                     if unhandled is not None:
@@ -631,6 +652,9 @@ class ObservabilityMiddleware:
                             str(status_code),
                         ).inc()
                         HTTP_DURATION.labels(method, route).observe(duration)
+                        HTTP_RESPONSE_SIZE.labels(method, route).observe(
+                            response_bytes
+                        )
                         if status_code in {401, 403}:
                             AUTH_FAILURES.labels(str(status_code)).inc()
                         state = _request_state(scope)
@@ -639,6 +663,7 @@ class ObservabilityMiddleware:
                             "route": route,
                             "status": status_code,
                             "duration_ms": round(duration * 1000, 3),
+                            "response_bytes": response_bytes,
                             "response_started": response_started,
                             "auth_method": state.get("auth_method"),
                             "actor_user_id": state.get("user_id"),

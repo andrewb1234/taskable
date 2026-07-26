@@ -133,6 +133,7 @@ def test_metrics_endpoint_requires_dedicated_token(
     assert denied.status_code == 401
     assert accepted.status_code == 200
     assert "mouvadah_http_requests_total" in accepted.text
+    assert "mouvadah_http_response_body_bytes" in accepted.text
     assert "mouvadah_database_queries_total" in accepted.text
     assert token not in accepted.text
 

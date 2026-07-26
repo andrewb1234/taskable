@@ -95,6 +95,37 @@ test("sign-in heading stack stays separate at tablet width", async ({
   await expect(page.getByText("Workspace access")).toHaveCount(0);
 });
 
+test("signing out clears identity-bound client data before another login", async ({
+  page,
+}) => {
+  await authenticateBrowser(page);
+  await page.goto("/app");
+  await expect(page.getByLabel("Workspace views")).toBeVisible();
+
+  let observeAuthenticatedReads = false;
+  let projectReadsAfterLogin = 0;
+  page.on("response", (response) => {
+    const request = response.request();
+    if (
+      observeAuthenticatedReads &&
+      request.method() === "GET" &&
+      response.status() === 200 &&
+      new URL(request.url()).pathname === "/api/v1/projects"
+    ) {
+      projectReadsAfterLogin += 1;
+    }
+  });
+
+  await page.getByRole("button", { name: "Sign out" }).first().click();
+  await expect(page.getByLabel("Local API key")).toBeVisible();
+  await page.getByLabel("Local API key").fill(E2E_API_KEY);
+  observeAuthenticatedReads = true;
+  await page.getByRole("button", { name: "Continue with API key" }).click();
+
+  await expect(page.getByLabel("Workspace views")).toBeVisible();
+  await expect.poll(() => projectReadsAfterLogin).toBeGreaterThan(0);
+});
+
 test("profile groups trust surfaces and completes an API-key lifecycle", async ({
   page,
 }) => {

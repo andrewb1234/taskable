@@ -176,6 +176,35 @@ export interface TicketRef {
   subproject_name?: string | null;
 }
 
+export interface ControlRoomSubproject {
+  id: number;
+  name: string;
+  context_preview: string;
+  status: SubprojectStatus;
+}
+
+export interface ControlRoomSubprojectCounts {
+  subproject_id: number;
+  total: number;
+  moving: number;
+  attention: number;
+}
+
+export interface ControlRoomSummary {
+  project: Project;
+  subprojects: ControlRoomSubproject[];
+  ticket_status_counts: Record<TicketStatus, number>;
+  ticket_assignee_counts: Record<TicketAssignee, number>;
+  subproject_ticket_counts: ControlRoomSubprojectCounts[];
+  attention_tickets: TicketRef[];
+  attention_total: number;
+  in_flight_tickets: TicketRef[];
+  in_flight_total: number;
+  stale_knowledge_count: number;
+  pending_proposal_count: number;
+  resumable_sessions: AgentSession[];
+}
+
 export interface AgentSession {
   id: number;
   project_id: number;

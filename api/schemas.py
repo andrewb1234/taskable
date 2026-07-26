@@ -168,6 +168,48 @@ class ProjectRead(BaseModel):
     created_at: datetime
 
 
+class ControlRoomSubprojectRead(BaseModel):
+    """The subproject fields needed to render the project Control Room."""
+
+    id: int
+    name: str
+    context_preview: str
+    status: SubprojectStatus
+
+
+class ControlRoomSubprojectCounts(BaseModel):
+    """Compact ticket totals for one subproject."""
+
+    subproject_id: int
+    total: int = 0
+    moving: int = 0
+    attention: int = 0
+
+
+class ControlRoomSummary(BaseModel):
+    """Bounded read model for the project-level operational dashboard.
+
+    It intentionally omits knowledge content, proposal payloads, and complete
+    agent-session history. Those records remain available from their detail
+    endpoints when a user opens the corresponding workbench.
+    """
+
+    project: ProjectRead
+    subprojects: list[ControlRoomSubprojectRead] = Field(default_factory=list)
+    ticket_status_counts: dict[TicketStatus, int] = Field(default_factory=dict)
+    ticket_assignee_counts: dict[TicketAssignee, int] = Field(default_factory=dict)
+    subproject_ticket_counts: list[ControlRoomSubprojectCounts] = Field(
+        default_factory=list
+    )
+    attention_tickets: list["TicketRef"] = Field(default_factory=list)
+    attention_total: int = 0
+    in_flight_tickets: list["TicketRef"] = Field(default_factory=list)
+    in_flight_total: int = 0
+    stale_knowledge_count: int = 0
+    pending_proposal_count: int = 0
+    resumable_sessions: list["AgentSessionRead"] = Field(default_factory=list)
+
+
 # ---- Subproject -----------------------------------------------------------
 
 
