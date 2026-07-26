@@ -169,6 +169,11 @@ test("Control Room updates attention from SSE and stays contained at 360px", asy
   await expect(
     page.getByRole("heading", { name: "Control Room" }),
   ).toBeVisible();
+  // The heading renders before project resources and the EventSource have
+  // necessarily settled on slower CI runners. Wait for the initial work-state
+  // snapshot before publishing the event so this measures delivery latency,
+  // not connection startup.
+  await expect(page.getByText("No blocked or review work")).toBeVisible();
   await api.post(`subprojects/${subproject.id}/tickets`, {
     data: {
       title: "New human review",
