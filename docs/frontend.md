@@ -160,6 +160,11 @@ Knowledge becomes a map-to-node drill-down, and workspace view tabs retain
 tests assert local element containment as well as document width because
 `overflow-hidden` can otherwise conceal collisions.
 
+Authenticated `/app` surfaces own the dynamic viewport and lock page-level
+scrolling and overscroll while mounted. Scrolling belongs to the explicit
+Control Room, Knowledge, Kanban, profile, drawer, and dialog regions inside the
+shell. The public landing and sign-in surfaces remain document-scrolling pages.
+
 ## Accessibility and browser regression contract
 
 - Landing and application shells provide skip links to their main regions.

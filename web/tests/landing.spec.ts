@@ -17,6 +17,26 @@ test("public landing hands an unauthenticated visitor into sign in", async ({
   await expect(
     page.getByRole("heading", { name: "What are you doing?" }),
   ).toBeVisible();
+  const documentScroll = (await page.evaluate(
+    `({
+      shellLocked:
+        document.documentElement.classList.contains("app-shell-active"),
+      overflow: getComputedStyle(document.documentElement).overflowY,
+      scrollHeight: document.documentElement.scrollHeight,
+      clientHeight: document.documentElement.clientHeight,
+    })`,
+  )) as {
+    shellLocked: boolean;
+    overflow: string;
+    scrollHeight: number;
+    clientHeight: number;
+  };
+  expect(documentScroll.shellLocked).toBe(false);
+  expect(documentScroll.overflow).not.toBe("hidden");
+  expect(documentScroll.scrollHeight).toBeGreaterThan(
+    documentScroll.clientHeight,
+  );
+
   await expect(
     page.getByText("Know what every human and agent is doing—and why."),
   ).toBeVisible();

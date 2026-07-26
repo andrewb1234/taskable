@@ -42,6 +42,112 @@ test("desktop shell keeps planning, execution, and profile discoverable", async 
   await expect(page.getByLabel("Workspace views")).toBeVisible();
 });
 
+test("authenticated shell owns the viewport and blocks document overscroll", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 2048, height: 1056 });
+  const api = await authenticatedApi();
+  const projectResponse = await api.post("projects", {
+    data: {
+      name: `Viewport ownership ${Date.now()}`,
+      description: "Shell containment fixture.",
+    },
+  });
+  expect(projectResponse.ok()).toBeTruthy();
+  const project = (await projectResponse.json()) as {
+    id: number;
+    name: string;
+  };
+  await api.dispose();
+  await authenticateBrowser(page);
+  await page.goto("/app");
+
+  const shell = page.getByTestId("authenticated-app-shell");
+  await expect(shell).toBeVisible();
+
+  const assertViewportIsLocked = async () => {
+    const metrics = (await page.evaluate(
+      `(() => {
+        const shellElement = document.querySelector(
+          '[data-testid="authenticated-app-shell"]',
+        );
+        if (!(shellElement instanceof HTMLElement)) {
+          throw new Error("Authenticated app shell is missing.");
+        }
+        const shellRect = shellElement.getBoundingClientRect();
+        const htmlStyle = getComputedStyle(document.documentElement);
+        const bodyStyle = getComputedStyle(document.body);
+        return {
+          shell: {
+            x: shellRect.x,
+            y: shellRect.y,
+            width: shellRect.width,
+            height: shellRect.height,
+          },
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          },
+          htmlOverflow: htmlStyle.overflow,
+          bodyOverflow: bodyStyle.overflow,
+          htmlOverscroll: htmlStyle.overscrollBehavior,
+          bodyOverscroll: bodyStyle.overscrollBehavior,
+        };
+      })()`,
+    )) as {
+      shell: { x: number; y: number; width: number; height: number };
+      viewport: { width: number; height: number };
+      htmlOverflow: string;
+      bodyOverflow: string;
+      htmlOverscroll: string;
+      bodyOverscroll: string;
+    };
+
+    expect(metrics.shell).toEqual({
+      x: 0,
+      y: 0,
+      width: metrics.viewport.width,
+      height: metrics.viewport.height,
+    });
+    expect(metrics.htmlOverflow).toBe("hidden");
+    expect(metrics.bodyOverflow).toBe("hidden");
+    expect(metrics.htmlOverscroll).toBe("none");
+    expect(metrics.bodyOverscroll).toBe("none");
+
+    await page.evaluate(`window.scrollTo(1200, 1200)`);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          `({
+            x: window.scrollX,
+            y: window.scrollY,
+          })`,
+        ),
+      )
+      .toEqual({ x: 0, y: 0 });
+  };
+
+  await assertViewportIsLocked();
+
+  await page
+    .getByRole("button", { name: project.name, exact: true })
+    .click();
+  await page
+    .getByLabel("Workspace views")
+    .getByRole("button", { name: /Knowledge/ })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Knowledge workbench" }),
+  ).toBeVisible();
+  await assertViewportIsLocked();
+
+  await page.getByRole("button", { name: "Profile & settings" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Profile & Settings" }),
+  ).toBeVisible();
+  await assertViewportIsLocked();
+});
+
 test("desktop navigation width is keyboard-resizable and persists", async ({
   page,
 }) => {
