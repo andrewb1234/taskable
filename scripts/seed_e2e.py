@@ -22,6 +22,7 @@ from api.models.entities import (
     WorkspaceMembership,
 )
 from api.models.enums import WorkspaceRole
+from api.security import DELETE_SCOPE, READ_SCOPE, WRITE_SCOPE
 
 E2E_USER_ID = 1
 E2E_WORKSPACE_ID = 1
@@ -89,7 +90,10 @@ def main() -> None:
                 name="Playwright",
                 key_prefix=raw_api_key[:12],
                 key_hash=hash_api_key(raw_api_key),
-                scopes=["read", "write"],
+                # This fixture drives remote-deletion browser scenarios. Keep
+                # destructive access explicit and isolated to the disposable
+                # Playwright database.
+                scopes=[READ_SCOPE, WRITE_SCOPE, DELETE_SCOPE],
             )
         )
         session.commit()
