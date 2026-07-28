@@ -50,13 +50,9 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from dotenv import load_dotenv
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
-
-load_dotenv()
-load_dotenv("../.env")
+from mcp.types import TextContent, Tool, ToolAnnotations
 
 
 def _environment_value(
@@ -116,6 +112,10 @@ def _load_api_key() -> str:
 
 
 API_KEY = _load_api_key()
+DESTRUCTIVE_TOOLS_ENABLED = (
+    os.getenv("MOUVADAH_ENABLE_DESTRUCTIVE_TOOLS", "").strip().lower()
+    == "true"
+)
 
 VALID_TICKET_STATUSES = {"TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"}
 VALID_TICKET_ASSIGNEES = {"HUMAN", "AGENT", "UNASSIGNED"}
@@ -756,7 +756,7 @@ async def update_knowledge_node(
 # ---- MCP wiring -----------------------------------------------------------
 
 
-TOOLS: list[Tool] = [
+SAFE_TOOLS: list[Tool] = [
     Tool(
         name="get_all_projects",
         description=(
@@ -1004,6 +1004,9 @@ TOOLS: list[Tool] = [
             "required": ["ticket_id", "content"],
         },
     ),
+]
+
+DESTRUCTIVE_TOOLS: list[Tool] = [
     Tool(
         name="delete_project",
         description=(
@@ -1017,6 +1020,11 @@ TOOLS: list[Tool] = [
             },
             "required": ["project_id"],
         },
+        annotations=ToolAnnotations(
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
     ),
     Tool(
         name="delete_subproject",
@@ -1031,6 +1039,11 @@ TOOLS: list[Tool] = [
             },
             "required": ["subproject_id"],
         },
+        annotations=ToolAnnotations(
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
     ),
     Tool(
         name="delete_ticket",
@@ -1045,6 +1058,11 @@ TOOLS: list[Tool] = [
             },
             "required": ["ticket_id"],
         },
+        annotations=ToolAnnotations(
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
     ),
     Tool(
         name="delete_knowledge_node",
@@ -1059,7 +1077,16 @@ TOOLS: list[Tool] = [
             },
             "required": ["node_id"],
         },
+        annotations=ToolAnnotations(
+            destructiveHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
     ),
+]
+
+SAFE_TOOLS.extend(
+    [
     Tool(
         name="list_knowledge_nodes",
         description=(
@@ -1196,10 +1223,16 @@ TOOLS: list[Tool] = [
             "required": ["node_id"],
         },
     ),
+    ]
+)
+
+TOOLS = [
+    *SAFE_TOOLS,
+    *(DESTRUCTIVE_TOOLS if DESTRUCTIVE_TOOLS_ENABLED else []),
 ]
 
 
-TOOL_DISPATCH = {
+SAFE_TOOL_DISPATCH = {
     "get_all_projects": get_all_projects,
     "create_project": create_project,
     "create_subproject": create_subproject,
@@ -1213,15 +1246,25 @@ TOOL_DISPATCH = {
     "heartbeat_ticket": heartbeat_ticket,
     "requeue_expired": requeue_expired,
     "leave_comment": leave_comment,
-    "delete_project": delete_project,
-    "delete_subproject": delete_subproject,
-    "delete_ticket": delete_ticket,
-    "delete_knowledge_node": delete_knowledge_node,
     "list_knowledge_nodes": list_knowledge_nodes,
     "read_knowledge_node": read_knowledge_node,
     "find_context_trail": find_context_trail,
     "create_knowledge_node": create_knowledge_node,
     "update_knowledge_node": update_knowledge_node,
+}
+DESTRUCTIVE_TOOL_DISPATCH = {
+    "delete_project": delete_project,
+    "delete_subproject": delete_subproject,
+    "delete_ticket": delete_ticket,
+    "delete_knowledge_node": delete_knowledge_node,
+}
+TOOL_DISPATCH = {
+    **SAFE_TOOL_DISPATCH,
+    **(
+        DESTRUCTIVE_TOOL_DISPATCH
+        if DESTRUCTIVE_TOOLS_ENABLED
+        else {}
+    ),
 }
 
 

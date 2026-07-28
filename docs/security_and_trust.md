@@ -1,7 +1,7 @@
 # Mouvadah Security and Trust Baseline
 
 Status: verified alpha posture and target control plan
-Audit date: 2026-07-25
+Audit date: 2026-07-28
 Scope: repository application, local deployment, proposed hosted service
 
 ## Plain-language posture
@@ -17,8 +17,9 @@ baseline per-process rate limits, and browser security headers are now
 verified. Shared PostgreSQL realtime is implemented and tested, but production
 multi-instance operation and listener failover still lack hosted evidence.
 Production backup control-plane configuration, distributed abuse controls,
-monitoring, artifact provenance, and runtime-image hardening remain open
-release gates.
+and hosted failover evidence remain open release gates. Artifact signing and
+independent assessment also remain open; runtime locking, image hardening,
+SBOMs, provenance, and release image scanning are now implemented.
 
 This document deliberately separates verified controls from target controls.
 Security guarantees must be limited to what the code, tests, and operational
@@ -35,8 +36,9 @@ evidence support.
 - The cookie is marked Secure when the configured frontend URL uses HTTPS.
 - Agent API keys contain 32 bytes of random entropy, are returned only at
   creation, and are stored as SHA-256 hashes.
-- API keys bind to one workspace, carry explicit read/write scopes, may limit
-  access to selected projects, can expire, and can be revoked.
+- API keys bind to one workspace, carry explicit read, write, and independent
+  delete scopes, may limit access to selected projects, can expire, and can be
+  revoked.
 - Users can inspect active browser sessions and immediately revoke any one;
   logout revokes the server-side record before clearing the cookie.
 - Unsafe cookie-authenticated API requests require the exact configured
@@ -127,7 +129,8 @@ evidence support.
 Mouvadah does not currently guarantee:
 
 - database-enforced tenant isolation or PostgreSQL row-level security;
-- granular custom roles or scopes beyond the verified read/write boundary;
+- granular custom roles or scopes beyond the verified read/write/delete
+  boundary;
 - independently assessed confidentiality controls;
 - distributed rate limiting, workspace quotas, or denial-of-service
   resistance;
@@ -135,7 +138,8 @@ Mouvadah does not currently guarantee:
 - encrypted application-layer fields or customer-managed keys;
 - migration rollback, configured provider point-in-time recovery, or tested
   production disaster recovery;
-- signed builds, SBOMs, provenance attestations, or container scanning;
+- cryptographically signed release artifacts or independently reproducible
+  builds;
 - a response-time SLA, RPO, or RTO;
 - SOC 2, ISO 27001, HIPAA, FedRAMP, or other certification;
 - independent penetration testing; or
@@ -323,14 +327,15 @@ Required outcome:
 Login/callback paths and unsafe actions now have process-local sliding-window
 limits with explicit 429 and Retry-After behavior. This matches the current
 single-instance deployment stage but is not a distributed abuse-control
-system.
+system. API request bodies are capped at 1 MiB by default; mutable long-text,
+comment, source-reference, dependency, and session-node inputs have explicit
+field and collection limits; and search queries are capped.
 
-Required outcome:
+Residual outcome:
 
 - replace the process-local limiter with a trusted shared edge/application
   limiter before scaling out;
 - add per-user, API-key, and workspace quotas;
-- maximum content, source-ref, query, and dependency counts;
 - connection and timeout limits;
 - backpressure and explicit 429 behavior.
 
@@ -343,16 +348,17 @@ and npm audits, and complete-history secret scanning. Actions are pinned by
 full SHA and Dependabot covers every supported package ecosystem.
 
 The dependency baselines were moved to fixed FastAPI/Starlette, pytest, Vite,
-PostCSS, and related versions, with clean local Python and npm audits.
+PostCSS, and related versions, with clean local Python and npm audits. Release
+containers install a hash-locked runtime-only Python graph, use digest-pinned
+base images, and run as non-root users. Tag builds emit SBOM and provenance
+attestations, scan both images for high/critical findings, and publish a
+Compose manifest pinned to the resulting image digests.
 
 Residual risk:
 
 - required-check enforcement, Actions policy, and secret-scanning settings are
   GitHub control-plane configuration and need periodic evidence;
-- Python dependencies are constrained but not fully hash-locked;
-- no container scan, SBOM, build signing, or provenance attestation exists;
-- Docker images run with the image default user and install production plus
-  test dependencies; and
+- artifact signing is not implemented;
 - release artifacts are not yet independently reproducible.
 
 ### Partially resolved medium: recovery and deletion
@@ -561,7 +567,7 @@ tenant isolation, restore testing, or secure authorization.
    then run and record an isolated production-environment restore drill.
 2. Exercise PostgreSQL listener failure/recovery in the hosted environment.
 3. Add distributed abuse controls, monitoring, and operator alerting.
-4. Add dependency locks, container scanning, SBOMs, signing, and provenance.
+4. Add cryptographic release signing and independently reproduce a release.
 5. Create a threat model for GitHub/Linear integrations before implementation.
 
 ## Standards and primary references

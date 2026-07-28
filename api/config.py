@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     auth_rate_window_seconds: int = 300
     action_rate_limit: int = 180
     action_rate_window_seconds: int = 60
+    max_request_body_bytes: int = 1_048_576
     deletion_recovery_days: int = 30
     # Required to adopt pre-tenancy projects in a production database. Local
     # development may safely adopt them when exactly one user exists.
@@ -154,6 +155,10 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "Rate-limit settings must be positive: "
                 + ", ".join(invalid_rate_values)
+            )
+        if not 16_384 <= self.max_request_body_bytes <= 10_485_760:
+            raise RuntimeError(
+                "MAX_REQUEST_BODY_BYTES must be between 16384 and 10485760."
             )
         if not 7 <= self.deletion_recovery_days <= 90:
             raise RuntimeError(

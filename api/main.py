@@ -51,7 +51,11 @@ from api.routes import (
     tickets,
     workspaces,
 )
-from api.security import SecurityMiddleware, parse_bearer_token
+from api.security import (
+    RequestBodyLimitMiddleware,
+    SecurityMiddleware,
+    parse_bearer_token,
+)
 from api.version import __version__, git_sha
 
 
@@ -101,6 +105,7 @@ def create_app() -> FastAPI:
     # Added after CORS so it wraps every API/static response, including CORS
     # rejections and mounted sub-application routes.
     app.add_middleware(SecurityMiddleware)
+    app.add_middleware(RequestBodyLimitMiddleware)
     # Added last so it wraps security/CORS/static responses and correlates
     # failures that occur before route authentication.
     app.add_middleware(ObservabilityMiddleware)

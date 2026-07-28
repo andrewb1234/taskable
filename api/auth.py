@@ -30,6 +30,7 @@ from api.models.entities import (
 )
 from api.security import (
     COOKIE_NAME,
+    DELETE_SCOPE,
     READ_SCOPE,
     SAFE_METHODS,
     WRITE_SCOPE,
@@ -184,9 +185,12 @@ async def get_current_user(
         )
         if verified is not None:
             user, api_key, project_ids = verified
-            required_scope = (
-                READ_SCOPE if request.method in SAFE_METHODS else WRITE_SCOPE
-            )
+            if request.method in SAFE_METHODS:
+                required_scope = READ_SCOPE
+            elif request.method == "DELETE":
+                required_scope = DELETE_SCOPE
+            else:
+                required_scope = WRITE_SCOPE
             scopes = frozenset(api_key.scopes)
             if required_scope not in scopes:
                 raise HTTPException(

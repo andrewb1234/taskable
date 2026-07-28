@@ -8,7 +8,7 @@ via `MOUVADAH_API_URL` (default `http://localhost:8000/api/v1`).
 
 ```bash
 # Published package:
-pipx install mouvadah-mcp==0.1.0
+pipx install mouvadah-mcp==0.1.1
 
 # Or install a checked-out source tree:
 pipx install ./mcp
@@ -69,6 +69,14 @@ The legacy `TASKABLE_API_URL`, `TASKABLE_API_KEY`, and
 - Every HTTP call injects the authenticated user's
   `Authorization: Bearer <MOUVADAH_API_KEY>` header. The key is revocable and
   inherits only its owning user's workspace memberships.
+- The bridge reads configuration only from its explicit process environment
+  and the configured owner-only credentials file. It never loads `.env` from
+  the repository where an agent happens to run.
+- Cascading deletion tools are hidden by default. To expose them deliberately,
+  create an API key with the separate `delete` scope and set
+  `MOUVADAH_ENABLE_DESTRUCTIVE_TOOLS=true` in the MCP client configuration.
+  Supporting clients receive destructive-operation annotations and should
+  require confirmation.
 - Error payloads from the API bubble up verbatim so the LLM can self-correct.
 
 ## License

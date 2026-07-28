@@ -18,11 +18,28 @@ jobs:
     name: Build and publish release artifacts
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    environment: release
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Reject replacement or non-main releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "Release commit is not on origin/main." >&2
+            exit 1
+          }
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists and will not be replaced." >&2
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -89,6 +106,7 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Build and publish API image
+        id: api_image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
@@ -103,6 +121,7 @@ jobs:
           sbom: true
 
       - name: Build and publish web image
+        id: web_image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
@@ -116,9 +135,70 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: Scan API image
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: ghcr.io/andrewb1234/mouvadah-api@${{ steps.api_image.outputs.digest }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Scan web image
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: ghcr.io/andrewb1234/mouvadah-web@${{ steps.web_image.outputs.digest }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
       - name: Assemble checksummed release
+        env:
+          API_IMAGE_DIGEST: ${{ steps.api_image.outputs.digest }}
+          WEB_IMAGE_DIGEST: ${{ steps.web_image.outputs.digest }}
         run: |
-          cp docker/compose.release.yml release-assets/compose.yml
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          compose = pathlib.Path("docker/compose.release.yml").read_text(
+              encoding="utf-8"
+          )
+          digests = {
+              "API": os.environ["API_IMAGE_DIGEST"],
+              "WEB": os.environ["WEB_IMAGE_DIGEST"],
+          }
+          for name, digest in digests.items():
+              if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+                  raise SystemExit(f"Invalid {name} image digest: {digest}")
+
+          compose, api_count = re.subn(
+              r"(?m)^    image: \\$\\{MOUVADAH_API_IMAGE[^\\n]+$",
+              (
+                  "    image: ghcr.io/andrewb1234/mouvadah-api@"
+                  + digests["API"]
+              ),
+              compose,
+          )
+          compose, web_count = re.subn(
+              r"(?m)^    image: \\$\\{MOUVADAH_WEB_IMAGE[^\\n]+$",
+              (
+                  "    image: ghcr.io/andrewb1234/mouvadah-web@"
+                  + digests["WEB"]
+              ),
+              compose,
+          )
+          if (api_count, web_count) != (1, 1):
+              raise SystemExit("Expected exactly one API and one web image line.")
+          if ":latest" in compose or "MOUVADAH_API_IMAGE" in compose:
+              raise SystemExit("Release Compose manifest is not digest-pinned.")
+          pathlib.Path("release-assets/compose.yml").write_text(
+              compose,
+              encoding="utf-8",
+          )
+          PY
           cp packaging/mouvadah release-assets/mouvadah
           chmod +x release-assets/mouvadah
           printf '%s\n' "${GITHUB_REF_NAME#v}" > release-assets/VERSION

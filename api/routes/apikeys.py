@@ -25,7 +25,12 @@ from api.models.entities import (
     Workspace,
     WorkspaceMembership,
 )
-from api.security import READ_SCOPE, VALID_API_KEY_SCOPES, WRITE_SCOPE
+from api.security import (
+    DELETE_SCOPE,
+    READ_SCOPE,
+    VALID_API_KEY_SCOPES,
+    WRITE_SCOPE,
+)
 
 router = APIRouter(prefix="/apikeys", tags=["apikeys"])
 
@@ -33,7 +38,7 @@ router = APIRouter(prefix="/apikeys", tags=["apikeys"])
 class CreateApiKeyRequest(BaseModel):
     name: str = Field(default="Default", min_length=1, max_length=100)
     workspace_id: Optional[int] = None
-    scopes: list[Literal["read", "write"]] = Field(
+    scopes: list[Literal["read", "write", "delete"]] = Field(
         default_factory=lambda: [READ_SCOPE, WRITE_SCOPE]
     )
     project_ids: list[int] = Field(default_factory=list, max_length=100)
@@ -149,7 +154,10 @@ async def create_api_key(
         session,
         user,
         workspace_id,
-        write=WRITE_SCOPE in payload.scopes,
+        write=(
+            WRITE_SCOPE in payload.scopes
+            or DELETE_SCOPE in payload.scopes
+        ),
         lock=True,
     )
 

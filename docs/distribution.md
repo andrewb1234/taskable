@@ -1,7 +1,7 @@
 # Mouvadah distribution
 
 Mouvadah Community is a self-hosted human-agent control and memory plane. The
-current release stage is alpha. Version `0.1.0` is available as a checksummed
+current release stage is alpha. Version `0.1.1` is available as a checksummed
 GitHub Release, a Homebrew-installed release command, and a separately
 installable Python MCP bridge.
 
@@ -30,14 +30,14 @@ mouvadah install --email you@example.com --name "Your Name"
 ```
 
 The same `mouvadah` command is available as a checksummed asset on the
-[`v0.1.0` GitHub Release](https://github.com/andrewb1234/mouvadah/releases/tag/v0.1.0).
+[`v0.1.1` GitHub Release](https://github.com/andrewb1234/mouvadah/releases/tag/v0.1.1).
 It downloads a checksummed Compose manifest and versioned API/web images, binds
 both services to loopback, and preserves data on uninstall.
 
 The MCP bridge is published independently:
 
 ```bash
-pipx install mouvadah-mcp==0.1.0
+pipx install mouvadah-mcp==0.1.1
 ```
 
 ## Install from source
@@ -63,9 +63,9 @@ Each version tag builds:
 - the `mouvadah-mcp` wheel and source archive;
 - a local installer and Docker Compose manifest;
 - multi-architecture (`linux/amd64` and `linux/arm64`) API and web container
-  images;
+  images, referenced by immutable digest in the published Compose manifest;
 - license, trademark, and third-party notices; and
-- SHA-256 checksums.
+- SHA-256 checksums, SBOMs, and build-provenance attestations.
 
 `npx` is not a primary channel because the connector is Python and the
 application is a multi-container service.

@@ -1,4 +1,4 @@
-FROM postgres:17-alpine
+FROM postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
 
 RUN apk add --no-cache \
     aws-cli \
@@ -7,12 +7,13 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-COPY api/requirements.txt /app/api/requirements.txt
+COPY api/requirements-runtime.txt /app/api/requirements-runtime.txt
 RUN python3 -m pip install \
     --break-system-packages \
     --disable-pip-version-check \
     --no-cache-dir \
-    -r /app/api/requirements.txt
+    --require-hashes \
+    -r /app/api/requirements-runtime.txt
 
 COPY api /app/api
 COPY scripts/backup_to_s3.sh /app/scripts/backup_to_s3.sh

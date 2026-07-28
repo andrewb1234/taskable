@@ -57,22 +57,44 @@ verify_release_asset() {
   }
 }
 
-set_installed_version() {
+set_install_environment() {
   target_version="$1"
+  target_uid="$2"
+  target_gid="$3"
   temporary_environment="$(mktemp "$install_root/.env.XXXXXX")"
-  awk -v version="$target_version" '
-    BEGIN { updated = 0 }
+  awk -v version="$target_version" -v uid="$target_uid" -v gid="$target_gid" '
+    BEGIN { version_updated = 0; uid_updated = 0; gid_updated = 0 }
     /^MOUVADAH_VERSION=/ {
-      if (!updated) {
+      if (!version_updated) {
         print "MOUVADAH_VERSION=" version
-        updated = 1
+        version_updated = 1
+      }
+      next
+    }
+    /^MOUVADAH_UID=/ {
+      if (!uid_updated) {
+        print "MOUVADAH_UID=" uid
+        uid_updated = 1
+      }
+      next
+    }
+    /^MOUVADAH_GID=/ {
+      if (!gid_updated) {
+        print "MOUVADAH_GID=" gid
+        gid_updated = 1
       }
       next
     }
     { print }
     END {
-      if (!updated) {
+      if (!version_updated) {
         print "MOUVADAH_VERSION=" version
+      }
+      if (!uid_updated) {
+        print "MOUVADAH_UID=" uid
+      }
+      if (!gid_updated) {
+        print "MOUVADAH_GID=" gid
       }
     }
   ' "$environment_file" >"$temporary_environment"
@@ -167,6 +189,8 @@ install_mouvadah() {
   rm -f "$temporary_checksums" "$temporary_version"
   trap - EXIT HUP INT TERM
 
+  local_uid="$(id -u)"
+  local_gid="$(id -g)"
   if [ ! -f "$environment_file" ]; then
     jwt_secret="$(openssl rand -hex 32)"
     {
@@ -174,10 +198,12 @@ install_mouvadah() {
       printf 'MOUVADAH_CONFIG_DIR=%s\n' "$config_root"
       printf 'MOUVADAH_DATA_DIR=%s\n' "$data_root"
       printf 'MOUVADAH_VERSION=%s\n' "$image_version"
+      printf 'MOUVADAH_UID=%s\n' "$local_uid"
+      printf 'MOUVADAH_GID=%s\n' "$local_gid"
     } >"$environment_file"
     chmod 600 "$environment_file"
-  elif ! grep -q "^MOUVADAH_VERSION=$image_version\$" "$environment_file"; then
-    set_installed_version "$image_version"
+  else
+    set_install_environment "$image_version" "$local_uid" "$local_gid"
   fi
 
   compose pull
@@ -185,7 +211,7 @@ install_mouvadah() {
   compose exec -T api python -m api.local_setup \
     --email "$owner_email" \
     --name "$owner_name" \
-    --credentials-file /root/.config/mouvadah/credentials.env
+    --credentials-file /home/mouvadah/.config/mouvadah/credentials.env
 
   printf '%s\n' \
     "Mouvadah is running at http://localhost:3000" \

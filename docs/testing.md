@@ -53,6 +53,7 @@ From the repository root:
 (cd web && npm run test:e2e)
 (cd web && npm audit --audit-level=high)
 .venv/bin/pip-audit -r api/requirements.txt -r mcp/requirements.txt
+.venv/bin/pip-audit -r api/requirements-runtime.txt
 ```
 
 Playwright starts an isolated FastAPI process and Vite server, authenticates a

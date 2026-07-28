@@ -146,7 +146,8 @@ Retain, under access control:
 - customer-facing messages and recipients; and
 - verification results and follow-up tickets.
 
-Security incidents use the published security contact once available.
+Security incidents use the private reporting channel in
+[`SECURITY.md`](../SECURITY.md).
 Potentially affected customers receive a factual notice after scope is
 validated and legal/privacy obligations are assessed. Public status text must
 distinguish investigation, mitigation, monitoring, and resolution.

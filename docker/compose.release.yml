@@ -8,6 +8,7 @@ services:
   api:
     image: ${MOUVADAH_API_IMAGE:-ghcr.io/andrewb1234/mouvadah-api}:${MOUVADAH_VERSION:-latest}
     container_name: mouvadah-api
+    user: "${MOUVADAH_UID:-10001}:${MOUVADAH_GID:-10001}"
     restart: unless-stopped
     environment:
       DATABASE_URL: sqlite:////app/data/mouvadah.db
@@ -19,7 +20,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ${MOUVADAH_DATA_DIR:-${HOME}/.local/share/mouvadah}:/app/data
-      - ${MOUVADAH_CONFIG_DIR:-${HOME}/.config/mouvadah}:/root/.config/mouvadah
+      - ${MOUVADAH_CONFIG_DIR:-${HOME}/.config/mouvadah}:/home/mouvadah/.config/mouvadah
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
       interval: 10s
@@ -34,7 +35,7 @@ services:
     container_name: mouvadah-web
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:3000:8080"
     depends_on:
       api:
         condition: service_healthy
