@@ -1,6 +1,6 @@
-"""Taskable MCP server.
+"""Mouvadah MCP server.
 
-Exposes the Taskable REST API to agentic IDEs (Windsurf, Claude Desktop, etc.)
+Exposes the Mouvadah REST API to agentic IDEs (Windsurf, Claude Desktop, etc.)
 over MCP stdio. The underlying REST API must be reachable on
 ``TASKABLE_API_URL`` (default ``http://localhost:8000/api/v1``).
 

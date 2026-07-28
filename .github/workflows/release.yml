@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Validate tag and build MCP artifacts
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          version = tomllib.loads(
+              pathlib.Path("mcp/pyproject.toml").read_text(encoding="utf-8")
+          )["project"]["version"]
+          if os.environ["RELEASE_TAG"] != f"v{version}":
+              raise SystemExit(
+                  f"tag {os.environ['RELEASE_TAG']} does not match MCP version {version}"
+              )
+          PY
+          python -m pip install --disable-pip-version-check build==1.3.0 twine==6.2.0
+          python -m build --outdir release-assets mcp
+          python -m twine check release-assets/*
+
+      - name: Validate installer and Compose manifest
+        env:
+          JWT_SECRET: release-validation-only
+          MOUVADAH_CONFIG_DIR: /tmp/mouvadah-config
+          MOUVADAH_DATA_DIR: /tmp/mouvadah-data
+        run: |
+          sh -n packaging/mouvadah
+          docker compose -f docker/compose.release.yml config >/dev/null
+
+      - name: Authenticate to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and publish versioned images
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          api_image="ghcr.io/andrewb1234/mouvadah-api"
+          web_image="ghcr.io/andrewb1234/mouvadah-web"
+          docker build \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg VERSION="$version" \
+            -f docker/Dockerfile.api \
+            -t "$api_image:$version" \
+            -t "$api_image:latest" .
+          docker build \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg VERSION="$version" \
+            -f docker/Dockerfile.web \
+            -t "$web_image:$version" \
+            -t "$web_image:latest" .
+          docker push "$api_image:$version"
+          docker push "$api_image:latest"
+          docker push "$web_image:$version"
+          docker push "$web_image:latest"
+
+      - name: Assemble checksummed release
+        run: |
+          cp docker/compose.release.yml release-assets/compose.yml
+          cp packaging/mouvadah release-assets/mouvadah
+          chmod +x release-assets/mouvadah
+          cp LICENSE release-assets/LICENSE
+          cp mcp/LICENSE release-assets/MCP-LICENSE
+          cp NOTICE TRADEMARKS.md THIRD_PARTY_NOTICES.md release-assets/
+          (
+            cd release-assets
+            sha256sum * > SHA256SUMS
+          )
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            release-assets/* \
+            --generate-notes \
+            --title "Mouvadah ${{ github.ref_name }}"

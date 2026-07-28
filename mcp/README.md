@@ -1,30 +1,39 @@
-# Taskable MCP Server
+# Mouvadah MCP
 
-A Model Context Protocol server that exposes the Taskable REST API to agentic
+A Model Context Protocol server that exposes the Mouvadah REST API to agentic
 IDEs over `stdio`. The FastAPI backend must be running on the URL you supply
 via `TASKABLE_API_URL` (default `http://localhost:8000/api/v1`).
 
 ## Install
 
 ```bash
-# From the repo root (shares the backend's virtualenv to avoid duplication)
-source .venv/bin/activate
-pip install -r mcp/requirements.txt
+# Published package, after the first registry release:
+pipx install mouvadah-mcp
+
+# Or install a checked-out source tree:
+pipx install ./mcp
+
+# uv alternative:
+uv tool install ./mcp
 ```
+
+The installed command is `mouvadah-mcp`. The legacy `taskable-mcp` alias is
+also installed during the naming transition.
 
 ## Run locally (smoke test)
 
 ```bash
 TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env \
   TASKABLE_API_URL=http://localhost:8000/api/v1 \
-  python mcp/mcp_server.py
+  mouvadah-mcp
 ```
 
 Stdio input/output is MCP protocol; use an MCP-aware client to interact.
 
 ## Windsurf configuration
 
-Run `python3 bootstrap.py` to configure Windsurf automatically, or add the
+Run `python3 bootstrap.py` from a source checkout to configure Windsurf
+automatically, or add the
 contents of `mcp.json.example` to its MCP config. The server reads a per-user
 database-backed key from `TASKABLE_API_KEY` or from the owner-only
 `TASKABLE_CREDENTIALS_FILE`; the backend never shares a static bypass secret.
@@ -59,3 +68,9 @@ database-backed key from `TASKABLE_API_KEY` or from the owner-only
   `Authorization: Bearer <TASKABLE_API_KEY>` header. The key is revocable and
   inherits only its owning user's workspace memberships.
 - Error payloads from the API bubble up verbatim so the LLM can self-correct.
+
+## License
+
+The Mouvadah MCP bridge is licensed under
+[Apache-2.0](./LICENSE). The server and web application in the parent
+repository are separately licensed under AGPL-3.0-only.

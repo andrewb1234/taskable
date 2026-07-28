@@ -338,12 +338,16 @@ def provision_local_owner(
 
 def resolve_mcp_command() -> dict[str, Any]:
     """Choose the most durable installed invocation for the MCP server."""
-    global_tool = shutil.which("taskable-mcp")
-    venv_tool = VENV_DIR / ("Scripts" if os.name == "nt" else "bin") / "taskable-mcp"
+    global_tool = shutil.which("mouvadah-mcp") or shutil.which("taskable-mcp")
+    scripts_dir = VENV_DIR / ("Scripts" if os.name == "nt" else "bin")
+    venv_tool = scripts_dir / "mouvadah-mcp"
+    legacy_venv_tool = scripts_dir / "taskable-mcp"
     if global_tool:
-        return {"command": "taskable-mcp", "args": []}
+        return {"command": global_tool, "args": []}
     if venv_tool.exists():
         return {"command": str(venv_tool), "args": []}
+    if legacy_venv_tool.exists():
+        return {"command": str(legacy_venv_tool), "args": []}
     return {
         "command": str(venv_python()),
         "args": [str(MCP_SERVER)],

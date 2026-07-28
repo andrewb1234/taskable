@@ -1,0 +1,17 @@
+Mouvadah
+Copyright (C) 2026 Mouvadah contributors.
+
+Except for the separately licensed MCP bridge described below, this
+distribution is licensed under the GNU Affero General Public License,
+version 3 only (AGPL-3.0-only). See LICENSE.
+
+The contents of the mcp/ directory are licensed under the Apache License,
+Version 2.0. See mcp/LICENSE.
+
+The licenses cover copyright permissions only. They do not grant permission
+to use the Mouvadah name, logo, or other source identifiers except as
+described in TRADEMARKS.md.
+
+Copyright protection applies only to copyrightable human-authored expression.
+Third-party dependencies and materials retain their own notices and licenses.
+See THIRD_PARTY_NOTICES.md for the audited direct-dependency inventory.
