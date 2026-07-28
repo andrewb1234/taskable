@@ -4,13 +4,19 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing immutable version tag to publish
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -25,14 +31,28 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Reject replacement or non-main releases
+        id: release_ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
+          case "$RELEASE_TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "Release tag must be a v-prefixed semantic version." >&2
+              exit 1
+              ;;
+          esac
           git fetch origin main --no-tags
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+          release_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          test "$(git rev-parse HEAD)" = "$release_sha" || {
+            echo "Checked-out source does not match $RELEASE_TAG." >&2
+            exit 1
+          }
+          git merge-base --is-ancestor "$release_sha" origin/main || {
             echo "Release commit is not on origin/main." >&2
             exit 1
           }
@@ -40,6 +60,8 @@ jobs:
             echo "Release $RELEASE_TAG already exists and will not be replaced." >&2
             exit 1
           fi
+          echo "tag=$RELEASE_TAG" >>"$GITHUB_OUTPUT"
+          echo "sha=$release_sha" >>"$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -48,7 +70,7 @@ jobs:
 
       - name: Validate tag and build MCP artifacts
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.release_ref.outputs.tag }}
         run: |
           python - <<'PY'
           import os
@@ -90,7 +112,7 @@ jobs:
       - name: Prepare image metadata
         id: images
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.release_ref.outputs.tag }}
         run: |
           version="${RELEASE_TAG#v}"
           {
@@ -115,7 +137,7 @@ jobs:
           push: true
           tags: ${{ steps.images.outputs.api_tags }}
           build-args: |
-            VCS_REF=${{ github.sha }}
+            VCS_REF=${{ steps.release_ref.outputs.sha }}
             VERSION=${{ steps.images.outputs.version }}
           provenance: mode=max
           sbom: true
@@ -130,7 +152,7 @@ jobs:
           push: true
           tags: ${{ steps.images.outputs.web_tags }}
           build-args: |
-            VCS_REF=${{ github.sha }}
+            VCS_REF=${{ steps.release_ref.outputs.sha }}
             VERSION=${{ steps.images.outputs.version }}
           provenance: mode=max
           sbom: true
@@ -156,6 +178,7 @@ jobs:
       - name: Assemble checksummed release
         env:
           API_IMAGE_DIGEST: ${{ steps.api_image.outputs.digest }}
+          RELEASE_TAG: ${{ steps.release_ref.outputs.tag }}
           WEB_IMAGE_DIGEST: ${{ steps.web_image.outputs.digest }}
         run: |
           python - <<'PY'
@@ -175,7 +198,7 @@ jobs:
                   raise SystemExit(f"Invalid {name} image digest: {digest}")
 
           compose, api_count = re.subn(
-              r"(?m)^    image: \\$\\{MOUVADAH_API_IMAGE[^\\n]+$",
+              r"(?m)^    image: \$\{MOUVADAH_API_IMAGE[^\n]+$",
               (
                   "    image: ghcr.io/andrewb1234/mouvadah-api@"
                   + digests["API"]
@@ -183,7 +206,7 @@ jobs:
               compose,
           )
           compose, web_count = re.subn(
-              r"(?m)^    image: \\$\\{MOUVADAH_WEB_IMAGE[^\\n]+$",
+              r"(?m)^    image: \$\{MOUVADAH_WEB_IMAGE[^\n]+$",
               (
                   "    image: ghcr.io/andrewb1234/mouvadah-web@"
                   + digests["WEB"]
@@ -201,7 +224,7 @@ jobs:
           PY
           cp packaging/mouvadah release-assets/mouvadah
           chmod +x release-assets/mouvadah
-          printf '%s\n' "${GITHUB_REF_NAME#v}" > release-assets/VERSION
+          printf '%s\n' "${RELEASE_TAG#v}" > release-assets/VERSION
           cp LICENSE release-assets/LICENSE
           cp mcp/LICENSE release-assets/MCP-LICENSE
           cp mcp/NOTICE release-assets/MCP-NOTICE
@@ -214,11 +237,12 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_ref.outputs.tag }}
         run: |
-          gh release create "${{ github.ref_name }}" \
+          gh release create "$RELEASE_TAG" \
             release-assets/* \
             --generate-notes \
-            --title "Mouvadah ${{ github.ref_name }}"
+            --title "Mouvadah $RELEASE_TAG"
 
   pypi:
     name: Publish MCP package to PyPI
@@ -234,6 +258,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
