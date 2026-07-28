@@ -19,11 +19,14 @@ def git_sha() -> str | None:
     """Return the short git SHA of the running codebase, if available.
 
     Resolution order:
-        1. ``TASKABLE_GIT_SHA`` env var (set by Docker build args / CI).
+        1. ``MOUVADAH_GIT_SHA`` env var (set by Docker build args / CI).
+           ``TASKABLE_GIT_SHA`` remains a compatibility alias.
         2. ``git rev-parse --short HEAD`` against the repo root.
         3. ``None`` when neither option works (e.g. shipped wheel).
     """
-    env_value = os.environ.get("TASKABLE_GIT_SHA")
+    env_value = os.environ.get("MOUVADAH_GIT_SHA") or os.environ.get(
+        "TASKABLE_GIT_SHA"
+    )
     if env_value:
         return env_value.strip() or None
 

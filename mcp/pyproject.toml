@@ -24,8 +24,8 @@ description = "MCP stdio bridge from agent harnesses to the Mouvadah API."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
-authors = [{ name = "Mouvadah contributors" }]
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Andrew Betbadal" }]
 keywords = ["mcp", "mouvadah", "agent", "harness", "stdio"]
 dependencies = [
     "mcp>=1.1,<2",
@@ -40,8 +40,8 @@ taskable-mcp = "mcp_server:main"
 
 [project.urls]
 Homepage = "https://mouvadah.com"
-Repository = "https://github.com/andrewb1234/taskable"
-Issues = "https://github.com/andrewb1234/taskable/issues"
+Repository = "https://github.com/andrewb1234/mouvadah"
+Issues = "https://github.com/andrewb1234/mouvadah/issues"
 
 [tool.setuptools]
 # Flat layout: a single top-level module (`mcp_server.py`) becomes the

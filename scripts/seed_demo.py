@@ -2,7 +2,7 @@
 """Idempotent demo data loader.
 
 Why this file exists:
-    A fresh Taskable install shows an empty UI, which obscures whether SSE /
+    A fresh Mouvadah install shows an empty UI, which obscures whether SSE /
     drag-and-drop / the modal even work. This script hydrates the database
     with a realistic seed (one game project, one battle-focused subproject,
     tickets across the Kanban columns, threaded comments, and a knowledge tree
@@ -33,8 +33,12 @@ import json
 from typing import Any
 
 SEED_PROJECT_NAME = "BattleForge Context Demo"
-SEED_PROJECT_2_NAME = "Taskable Platform — Coordination Demo"
-DEFAULT_API = os.environ.get("TASKABLE_API_URL", "http://127.0.0.1:8000/api/v1")
+SEED_PROJECT_2_NAME = "Mouvadah Platform — Coordination Demo"
+DEFAULT_API = (
+    os.environ.get("MOUVADAH_API_URL")
+    or os.environ.get("TASKABLE_API_URL")
+    or "http://127.0.0.1:8000/api/v1"
+)
 
 TICKETS: list[dict[str, Any]] = [
     {
@@ -104,7 +108,9 @@ def request(method: str, url: str, payload: dict | None = None) -> Any:
     """Tiny wrapper around urllib so this script has zero runtime deps."""
     body = None
     headers = {"Accept": "application/json"}
-    api_key = os.environ.get("TASKABLE_API_KEY", "")
+    api_key = os.environ.get("MOUVADAH_API_KEY") or os.environ.get(
+        "TASKABLE_API_KEY", ""
+    )
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     if payload is not None:
@@ -638,7 +644,7 @@ def main() -> int:
             if result.get("created", True):
                 print()
                 print(
-                    f"Open the Taskable web UI and pick '{SEED_PROJECT_NAME}' "
+                    f"Open the Mouvadah web UI and pick '{SEED_PROJECT_NAME}' "
                     "from the sidebar to try context trails, checkpoints, and SSE."
                 )
             print()

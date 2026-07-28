@@ -7,12 +7,12 @@
       "args": [],
 
       "// Option B": "Direct venv invocation (no global install needed)",
-      "// command": "/absolute/path/to/taskable/.venv/bin/python",
-      "// args": ["/absolute/path/to/taskable/mcp/mcp_server.py"],
+      "// command": "/absolute/path/to/mouvadah/.venv/bin/python",
+      "// args": ["/absolute/path/to/mouvadah/mcp/mcp_server.py"],
 
       "env": {
-        "TASKABLE_API_URL": "http://localhost:8000/api/v1",
-        "TASKABLE_CREDENTIALS_FILE": "/absolute/path/to/.config/mouvadah/credentials.env"
+        "MOUVADAH_API_URL": "http://localhost:8000/api/v1",
+        "MOUVADAH_CREDENTIALS_FILE": "/absolute/path/to/.config/mouvadah/credentials.env"
       }
     }
   }

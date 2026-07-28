@@ -295,6 +295,7 @@ def write_local_env(credentials_file: Path) -> None:
             "FRONTEND_URL": "http://localhost:5173",
             "MIGRATION_MODE": "upgrade",
             "VITE_API_URL": "http://localhost:8000/api/v1",
+            "MOUVADAH_CREDENTIALS_FILE": str(credentials_file),
             "TASKABLE_CREDENTIALS_FILE": str(credentials_file),
         },
         remove={"AGENT_API_KEY"},
@@ -355,7 +356,9 @@ def resolve_mcp_command() -> dict[str, Any]:
 
 
 def _locate_windsurf_config() -> Path | None:
-    override = os.environ.get("TASKABLE_WINDSURF_CONFIG")
+    override = os.environ.get("MOUVADAH_WINDSURF_CONFIG") or os.environ.get(
+        "TASKABLE_WINDSURF_CONFIG"
+    )
     if override:
         return Path(override).expanduser()
     candidates = [
@@ -379,7 +382,7 @@ def merge_windsurf_config(credentials_file: Path) -> Path | None:
     if target is None:
         warn(
             "Windsurf was not detected. Use mcp/mcp.json.example with "
-            f"TASKABLE_CREDENTIALS_FILE={credentials_file} in another client."
+            f"MOUVADAH_CREDENTIALS_FILE={credentials_file} in another client."
         )
         return None
 
@@ -400,8 +403,8 @@ def merge_windsurf_config(credentials_file: Path) -> Path | None:
     servers["mouvadah"] = {
         **command,
         "env": {
-            "TASKABLE_API_URL": "http://localhost:8000/api/v1",
-            "TASKABLE_CREDENTIALS_FILE": str(credentials_file),
+            "MOUVADAH_API_URL": "http://localhost:8000/api/v1",
+            "MOUVADAH_CREDENTIALS_FILE": str(credentials_file),
         },
     }
     _secure_atomic_write(target, json.dumps(current, indent=2) + "\n")
@@ -420,7 +423,7 @@ def print_summary(
     print()
     print("Then:")
     print("  1. Open http://localhost:5173")
-    print(f"  2. Copy TASKABLE_API_KEY from {credentials_file}")
+    print(f"  2. Copy MOUVADAH_API_KEY from {credentials_file}")
     print("  3. Paste it into “Local API key” and choose Continue locally")
     if mcp_config:
         print("  4. Restart Windsurf and run the Mouvadah get_all_projects tool")
@@ -452,7 +455,9 @@ def main() -> int:
         fatal(f"Missing {API_REQ}; run bootstrap.py from a complete clone.")
 
     credentials_file = Path(
-        os.getenv("TASKABLE_CREDENTIALS_FILE", DEFAULT_CREDENTIALS_FILE)
+        os.getenv("MOUVADAH_CREDENTIALS_FILE")
+        or os.getenv("TASKABLE_CREDENTIALS_FILE")
+        or DEFAULT_CREDENTIALS_FILE
     ).expanduser()
     ensure_venv()
     ensure_frontend()

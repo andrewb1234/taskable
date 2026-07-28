@@ -1,6 +1,6 @@
 """Context-trail search over a project's knowledge tree.
 
-The trail is deliberately heuristic, not embedding-based. Taskable is
+The trail is deliberately heuristic, not embedding-based. Mouvadah is
 local-first and dependency-light, so the first pass should work offline and be
 predictable enough for a human to correct when the agent follows the wrong
 branch.

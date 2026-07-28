@@ -29,12 +29,12 @@ function buildConfig(apiKey: string, apiUrl: string): string {
   return JSON.stringify(
     {
       mcpServers: {
-        taskable: {
-          command: "taskable-mcp",
+        mouvadah: {
+          command: "mouvadah-mcp",
           args: [],
           env: {
-            TASKABLE_API_URL: apiUrl,
-            TASKABLE_API_KEY: apiKey,
+            MOUVADAH_API_URL: apiUrl,
+            MOUVADAH_API_KEY: apiKey,
           },
         },
       },

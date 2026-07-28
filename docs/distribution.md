@@ -1,9 +1,9 @@
 # Mouvadah distribution
 
 Mouvadah Community is a self-hosted human-agent control and memory plane. The
-current release stage is alpha: source installation is supported for early
-users, while packaged releases and managed Cloud service follow after their
-release gates pass.
+current release stage is alpha. Version `0.1.0` is available as a checksummed
+GitHub Release, a Homebrew-installed release command, and a separately
+installable Python MCP bridge.
 
 ## Editions and licenses
 
@@ -20,14 +20,34 @@ otherwise. The contents of [`mcp/`](../mcp/) use the separate
 permissions, not rights to Mouvadah branding; see
 [`TRADEMARKS.md`](../TRADEMARKS.md).
 
+## Install the packaged Community release
+
+The full application requires Docker with Compose v2:
+
+```bash
+brew install andrewb1234/tap/mouvadah
+mouvadah install --email you@example.com --name "Your Name"
+```
+
+The same `mouvadah` command is available as a checksummed asset on the
+[`v0.1.0` GitHub Release](https://github.com/andrewb1234/mouvadah/releases/tag/v0.1.0).
+It downloads a checksummed Compose manifest and versioned API/web images, binds
+both services to loopback, and preserves data on uninstall.
+
+The MCP bridge is published independently:
+
+```bash
+pipx install mouvadah-mcp==0.1.0
+```
+
 ## Install from source
 
 The supported alpha path requires Python 3.12 or newer and Node.js 20 or
 newer:
 
 ```bash
-git clone https://github.com/andrewb1234/taskable.git
-cd taskable
+git clone https://github.com/andrewb1234/mouvadah.git
+cd mouvadah
 python3 bootstrap.py
 ```
 
@@ -36,21 +56,19 @@ a local owner and API key, and prints commands for starting the API, web
 application, and MCP bridge. See the repository [`README`](../README.md) for
 the full local and Docker workflows.
 
-## Packaged releases
+## Packaged release contents
 
-A future version tag will build checksummed GitHub Release assets and versioned
-API/web images. The release will contain:
+Each version tag builds:
 
 - the `mouvadah-mcp` wheel and source archive;
 - a local installer and Docker Compose manifest;
-- API and web container images;
+- multi-architecture (`linux/amd64` and `linux/arm64`) API and web container
+  images;
 - license, trademark, and third-party notices; and
 - SHA-256 checksums.
 
-PyPI distribution of `mouvadah-mcp` and a Homebrew tap may follow after a
-versioned release passes clean-install, upgrade, and rollback checks. `npx` is
-not a primary channel because the connector is Python and the application is a
-multi-container service.
+`npx` is not a primary channel because the connector is Python and the
+application is a multi-container service.
 
 ## Retraction
 

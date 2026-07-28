@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository="andrewb1234/taskable"
+repository="andrewb1234/mouvadah"
 config_root="${XDG_CONFIG_HOME:-$HOME/.config}/mouvadah"
 data_root="${XDG_DATA_HOME:-$HOME/.local/share}/mouvadah"
 install_root="$config_root/install"
@@ -16,9 +16,9 @@ Usage:
   mouvadah uninstall
 
 install downloads a checksummed release manifest, creates an owner-only local
-configuration, starts Mouvadah on http://localhost:3000, and provisions the
-local owner. uninstall removes containers but deliberately preserves data and
-credentials.
+configuration, starts or upgrades Mouvadah on http://localhost:3000, and
+provisions the local owner. uninstall removes containers but deliberately
+preserves data and credentials.
 EOF
 }
 
@@ -31,6 +31,53 @@ require_command() {
 
 compose() {
   docker compose --env-file "$environment_file" -f "$compose_file" "$@"
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{ print $1 }'
+  else
+    shasum -a 256 "$1" | awk '{ print $1 }'
+  fi
+}
+
+verify_release_asset() {
+  asset_path="$1"
+  asset_name="$2"
+  checksums_path="$3"
+  expected_checksum="$(awk -v name="$asset_name" '$2 == name { print $1 }' "$checksums_path")"
+  [ -n "$expected_checksum" ] || {
+    printf 'Release checksums do not list %s.\n' "$asset_name" >&2
+    exit 1
+  }
+  actual_checksum="$(sha256_file "$asset_path")"
+  [ "$actual_checksum" = "$expected_checksum" ] || {
+    printf 'Release checksum verification failed for %s.\n' "$asset_name" >&2
+    exit 1
+  }
+}
+
+set_installed_version() {
+  target_version="$1"
+  temporary_environment="$(mktemp "$install_root/.env.XXXXXX")"
+  awk -v version="$target_version" '
+    BEGIN { updated = 0 }
+    /^MOUVADAH_VERSION=/ {
+      if (!updated) {
+        print "MOUVADAH_VERSION=" version
+        updated = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!updated) {
+        print "MOUVADAH_VERSION=" version
+      }
+    }
+  ' "$environment_file" >"$temporary_environment"
+  chmod 600 "$temporary_environment"
+  mv "$temporary_environment" "$environment_file"
 }
 
 install_mouvadah() {
@@ -76,7 +123,7 @@ install_mouvadah() {
 
   if [ "$release_version" = "latest" ]; then
     release_base="https://github.com/$repository/releases/latest/download"
-    image_version="latest"
+    image_version=""
   else
     case "$release_version" in
       v*) release_tag="$release_version"; image_version="${release_version#v}" ;;
@@ -87,27 +134,37 @@ install_mouvadah() {
 
   temporary_manifest="$(mktemp "$install_root/.compose.XXXXXX")"
   temporary_checksums="$(mktemp "$install_root/.checksums.XXXXXX")"
-  trap 'rm -f "$temporary_manifest" "$temporary_checksums"' EXIT HUP INT TERM
+  temporary_version="$(mktemp "$install_root/.version.XXXXXX")"
+  trap 'rm -f "$temporary_manifest" "$temporary_checksums" "$temporary_version"' EXIT HUP INT TERM
   curl -fsSL "$release_base/compose.yml" -o "$temporary_manifest"
   curl -fsSL "$release_base/SHA256SUMS" -o "$temporary_checksums"
+  curl -fsSL "$release_base/VERSION" -o "$temporary_version"
 
-  expected_checksum="$(awk '$2 == "compose.yml" { print $1 }' "$temporary_checksums")"
-  [ -n "$expected_checksum" ] || {
-    printf '%s\n' "Release checksums do not list compose.yml." >&2
+  verify_release_asset "$temporary_manifest" "compose.yml" "$temporary_checksums"
+  verify_release_asset "$temporary_version" "VERSION" "$temporary_checksums"
+  released_version="$(tr -d '\r\n' <"$temporary_version")"
+  case "$released_version" in
+    ""|*[!0-9A-Za-z.-]*)
+      printf '%s\n' "Release VERSION is invalid." >&2
+      exit 1
+      ;;
+  esac
+  if [ -z "$image_version" ]; then
+    image_version="$released_version"
+  elif [ "$released_version" != "$image_version" ]; then
+    printf 'Requested version %s but release reports %s.\n' \
+      "$image_version" "$released_version" >&2
     exit 1
-  }
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual_checksum="$(sha256sum "$temporary_manifest" | awk '{ print $1 }')"
-  else
-    actual_checksum="$(shasum -a 256 "$temporary_manifest" | awk '{ print $1 }')"
   fi
-  [ "$actual_checksum" = "$expected_checksum" ] || {
-    printf '%s\n' "Release manifest checksum verification failed." >&2
-    exit 1
-  }
+
+  if [ "$release_version" = "latest" ]; then
+    release_version="v$released_version"
+  else
+    release_version="v$image_version"
+  fi
 
   mv "$temporary_manifest" "$compose_file"
-  rm -f "$temporary_checksums"
+  rm -f "$temporary_checksums" "$temporary_version"
   trap - EXIT HUP INT TERM
 
   if [ ! -f "$environment_file" ]; then
@@ -120,11 +177,7 @@ install_mouvadah() {
     } >"$environment_file"
     chmod 600 "$environment_file"
   elif ! grep -q "^MOUVADAH_VERSION=$image_version\$" "$environment_file"; then
-    printf '%s\n' \
-      "Existing installation uses a different version. Remove only" \
-      "$environment_file and rerun install after backing it up, or use the" \
-      "release-specific Compose workflow documented in the release notes." >&2
-    exit 1
+    set_installed_version "$image_version"
   fi
 
   compose pull
@@ -137,8 +190,9 @@ install_mouvadah() {
   printf '%s\n' \
     "Mouvadah is running at http://localhost:3000" \
     "API: http://localhost:8000" \
+    "Version: $release_version" \
     "Credentials: $config_root/credentials.env" \
-    "Install the release's mouvadah-mcp wheel to connect an agent harness."
+    "Install mouvadah-mcp==$image_version from PyPI to connect an agent harness."
 }
 
 command_name="${1:-}"

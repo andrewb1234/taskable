@@ -20,7 +20,7 @@ ARG VERSION=dev
 
 LABEL org.opencontainers.image.title="Mouvadah Web" \
     org.opencontainers.image.description="Mouvadah human-agent control plane web application" \
-    org.opencontainers.image.source="https://github.com/andrewb1234/taskable" \
+    org.opencontainers.image.source="https://github.com/andrewb1234/mouvadah" \
     org.opencontainers.image.revision="${VCS_REF}" \
     org.opencontainers.image.version="${VERSION}" \
     org.opencontainers.image.licenses="AGPL-3.0-only"

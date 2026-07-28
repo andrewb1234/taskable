@@ -62,7 +62,7 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
           </a>
           <nav aria-label="Primary" className="flex items-center gap-3 sm:gap-6">
             <a
-              href="https://github.com/andrewb1234/taskable"
+              href="https://github.com/andrewb1234/mouvadah"
               className="focus-ring transition-fast hidden min-h-11 items-center rounded-sm text-xs text-muted-foreground hover:text-foreground sm:inline-flex"
             >
               Source
@@ -113,7 +113,7 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
               </a>
             </div>
             <a
-              href="https://github.com/andrewb1234/taskable#readme"
+              href="https://github.com/andrewb1234/mouvadah#readme"
               className="focus-ring mt-4 inline-flex min-h-11 items-center rounded-sm text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
             >
               Read documentation
@@ -248,7 +248,7 @@ export function LandingPage({ onOpenApp }: { onOpenApp: () => void }) {
               Sign in
             </a>
             <a
-              href="https://github.com/andrewb1234/taskable"
+              href="https://github.com/andrewb1234/mouvadah"
               className="focus-ring inline-flex min-h-11 items-center rounded-sm hover:text-foreground"
             >
               GitHub source

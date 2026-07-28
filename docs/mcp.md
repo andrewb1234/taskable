@@ -1,6 +1,6 @@
-# MCP Server — Current State
+# Mouvadah MCP server
 
-Python-based Model Context Protocol (MCP) server that exposes the Taskable REST
+Python-based Model Context Protocol (MCP) server that exposes the Mouvadah REST
 API to agentic IDEs (Windsurf, Claude Desktop, etc.) over a `stdio` transport.
 
 > **Source of truth:** `mcp/mcp_server.py`. Every tool below is registered in
@@ -12,17 +12,22 @@ API to agentic IDEs (Windsurf, Claude Desktop, etc.) over a `stdio` transport.
 * `python-dotenv` (reads non-secret MCP configuration from the environment)
 
 See `mcp/pyproject.toml` for the packaging manifest. Install via
-`pipx install ./mcp`, `uv tool install ./mcp`, or `pip install -e ./mcp` to
-get the `taskable-mcp` console script.
+`pipx install mouvadah-mcp==0.1.0`, `uv tool install mouvadah-mcp==0.1.0`, or
+`pip install -e ./mcp` to get the `mouvadah-mcp` console script.
 
 ## Configuration
-* **API Target:** `TASKABLE_API_URL` (default `http://localhost:8000/api/v1`).
+* **API Target:** `MOUVADAH_API_URL` (default
+  `http://localhost:8000/api/v1`).
   Trailing slashes are stripped at load time.
 * **Transport:** Standard Input/Output (`stdio`).
-* **Auth:** Every request sends `Authorization: Bearer {TASKABLE_API_KEY}`.
+* **Auth:** Every request sends `Authorization: Bearer {MOUVADAH_API_KEY}`.
   The value is a revocable per-user key stored only as a hash by the API.
-  Supply it directly or point `TASKABLE_CREDENTIALS_FILE` at the owner-only
+  Supply it directly or point `MOUVADAH_CREDENTIALS_FILE` at the owner-only
   file created by `bootstrap.py`.
+
+The legacy `TASKABLE_API_URL`, `TASKABLE_API_KEY`,
+`TASKABLE_CREDENTIALS_FILE`, and `taskable-mcp` names remain accepted for
+existing installations.
 
 ## Tool Catalogue
 
@@ -143,13 +148,13 @@ All tools return a plain-text `TextContent` frame. Error responses begin with
       `KNOWLEDGE_NODE_DELETED`.
 
 ## Execution Entrypoint
-`Server("copilot-workspace")` is run via `mcp.server.stdio.stdio_server()`
+`Server("mouvadah")` is run via `mcp.server.stdio.stdio_server()`
 inside `main() -> asyncio.run(amain())`. The installed console script
-`taskable-mcp` calls `main()` directly.
+`mouvadah-mcp` calls `main()` directly.
 
 ## IDE / Client Configuration
 See `mcp/mcp.json.example` for a drop-in Windsurf / Claude Desktop block with
-both the `taskable-mcp`-on-`$PATH` form and the venv-relative fallback.
+both the `mouvadah-mcp`-on-`$PATH` form and the venv-relative fallback.
 
 ## Testing
 * `api/tests/test_mcp_simulator.py` boots a real uvicorn + the MCP stdio

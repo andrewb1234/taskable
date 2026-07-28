@@ -1,4 +1,4 @@
-# Taskable repository guidance
+# Mouvadah repository guidance
 
 ## Mouvadah project mapping
 
@@ -8,7 +8,7 @@
 - Use `$mouvadah-project-memory` for substantive work and keep Mouvadah tickets,
   dependencies, blockers, decisions, and durable knowledge aligned with
   verified repository state.
-- Add Taskable-specific knowledge beneath the closest existing project node.
+- Add Mouvadah-specific knowledge beneath the closest existing project node.
   Search and read before creating; inspect descendants before any deletion.
 
 ## Verification

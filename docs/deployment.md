@@ -5,7 +5,8 @@
 ### Community/local
 
 - FastAPI and React run on one machine.
-- SQLite persists at `~/.taskable/taskable.db` or `TASKABLE_DATA_DIR`.
+- SQLite persists at `~/.taskable/taskable.db` or `MOUVADAH_DATA_DIR`.
+  `TASKABLE_DATA_DIR` remains a compatibility alias.
 - `MIGRATION_MODE=upgrade` applies ordered Alembic revisions at startup.
 - Existing file-backed SQLite databases receive an automatic pre-migration
   backup.
@@ -15,7 +16,7 @@
   `FRONTEND_URL` is a loopback origin. The API key is exchanged for an
   HttpOnly session and is not retained by the browser.
 - The MCP server runs locally over stdio and reads the same per-user key from
-  an owner-only `TASKABLE_CREDENTIALS_FILE`.
+  an owner-only `MOUVADAH_CREDENTIALS_FILE`.
 
 ### Hosted
 
@@ -109,8 +110,9 @@ Optional:
   projects.
 - `LOCAL_AUTH_ENABLED=true`: loopback community installations only; rejected
   for hosted and non-loopback origins.
-- `TASKABLE_CREDENTIALS_FILE`: local MCP credential path. It is not consumed
-  by the hosted API.
+- `MOUVADAH_CREDENTIALS_FILE`: local MCP credential path. It is not consumed
+  by the hosted API. `TASKABLE_CREDENTIALS_FILE` remains a compatibility
+  alias.
 
 Never put credentials in container images, repository files, logs, migration
 configuration, or frontend build variables.

@@ -8,6 +8,7 @@ import {
   Trash2,
   LogOut,
   Settings,
+  Github,
 } from "lucide-react";
 import { MouvadahLockup } from "@/components/brand/mouvadah-brand";
 import {
@@ -196,6 +197,15 @@ export function Sidebar({
       </ScrollArea>
 
       <footer className="border-t border-border bg-surface-subtle px-3 py-3">
+        <a
+          href="https://github.com/andrewb1234/mouvadah"
+          target="_blank"
+          rel="noreferrer"
+          className="focus-ring mb-2 inline-flex min-h-9 items-center gap-2 rounded-sm px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Github className="h-3.5 w-3.5" aria-hidden="true" />
+          Source code
+        </a>
         <div className="flex items-center gap-2">
           {user?.avatar_url ? (
             <img

@@ -28,7 +28,7 @@ from api.security import (
     WRITE_SCOPE,
 )
 
-KEY_PREFIX = "taskable_"
+KEY_PREFIX = "mouvadah_"
 KEY_RANDOM_LENGTH = 32  # bytes of entropy -> ~43 URL-safe base64 characters
 
 

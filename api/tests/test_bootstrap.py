@@ -133,7 +133,7 @@ def test_windsurf_config_migrates_legacy_shared_secret(
         )
     )
     credentials_file = tmp_path / "credentials.env"
-    monkeypatch.setenv("TASKABLE_WINDSURF_CONFIG", str(target))
+    monkeypatch.setenv("MOUVADAH_WINDSURF_CONFIG", str(target))
 
     bootstrap.merge_windsurf_config(credentials_file)
 
@@ -141,7 +141,7 @@ def test_windsurf_config_migrates_legacy_shared_secret(
     assert "taskable" not in updated["mcpServers"]
     assert updated["mcpServers"]["unrelated"]["command"] == "keep-me"
     assert updated["mcpServers"]["mouvadah"]["env"] == {
-        "TASKABLE_API_URL": "http://localhost:8000/api/v1",
-        "TASKABLE_CREDENTIALS_FILE": str(credentials_file),
+        "MOUVADAH_API_URL": "http://localhost:8000/api/v1",
+        "MOUVADAH_CREDENTIALS_FILE": str(credentials_file),
     }
     assert "remove-me" not in target.read_text()
