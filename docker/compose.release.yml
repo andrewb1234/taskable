@@ -1,0 +1,46 @@
+# Published Mouvadah Community stack.
+#
+# Normally installed through the `mouvadah` release script. For a manual run,
+# write JWT_SECRET to an owner-only .env file and use:
+#   docker compose --env-file .env -f compose.release.yml up -d --wait
+
+services:
+  api:
+    image: ${MOUVADAH_API_IMAGE:-ghcr.io/andrewb1234/mouvadah-api}:${MOUVADAH_VERSION:-latest}
+    container_name: mouvadah-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:////app/data/mouvadah.db
+      MIGRATION_MODE: upgrade
+      LOCAL_AUTH_ENABLED: "true"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ${MOUVADAH_DATA_DIR:-${HOME}/.local/share/mouvadah}:/app/data
+      - ${MOUVADAH_CONFIG_DIR:-${HOME}/.config/mouvadah}:/root/.config/mouvadah
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - mouvadah
+
+  web:
+    image: ${MOUVADAH_WEB_IMAGE:-ghcr.io/andrewb1234/mouvadah-web}:${MOUVADAH_VERSION:-latest}
+    container_name: mouvadah-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - mouvadah
+
+networks:
+  mouvadah:
+    driver: bridge

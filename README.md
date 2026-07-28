@@ -128,16 +128,40 @@ TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env \
 
 # Option B — global isolated install via pipx (recommended for IDE use)
 pipx install ./mcp
-TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env taskable-mcp
+TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env mouvadah-mcp
 
 # Option C — uv tool (if you live in uv-land)
 uv tool install ./mcp
-TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env taskable-mcp
+TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env mouvadah-mcp
 ```
 
-Options B and C produce a `taskable-mcp` console script on your `$PATH` so the Windsurf MCP config can use a stable command instead of an absolute venv-relative Python path. Hook it into Windsurf by copying [`mcp/mcp.json.example`](./mcp/mcp.json.example) into your Windsurf MCP config (typically `~/.codeium/windsurf/mcp_config.json`) — or run `python3 bootstrap.py` to do it automatically.
+Options B and C produce a `mouvadah-mcp` console script on your `$PATH` so the
+Windsurf MCP config can use a stable command instead of an absolute
+venv-relative Python path. The legacy `taskable-mcp` alias remains available
+during the naming transition. Hook it into Windsurf by copying
+[`mcp/mcp.json.example`](./mcp/mcp.json.example) into your Windsurf MCP config
+(typically `~/.codeium/windsurf/mcp_config.json`) — or run
+`python3 bootstrap.py` to do it automatically.
 
-## Quick Start (Docker)
+## Packaged local install
+
+After the first GitHub Release is approved, the supported full-application
+installer will be available without cloning the repository:
+
+```bash
+curl -fsSLO https://github.com/andrewb1234/taskable/releases/latest/download/mouvadah
+curl -fsSLO https://github.com/andrewb1234/taskable/releases/latest/download/SHA256SUMS
+grep '  mouvadah$' SHA256SUMS | shasum -a 256 -c -
+chmod +x mouvadah
+./mouvadah install --email you@example.com --name "Your Name"
+```
+
+The installer verifies the release Compose checksum, binds the UI/API to
+loopback only, stores its JWT secret and MCP credential in owner-only files,
+and preserves local data on uninstall. It requires Docker with Compose v2,
+`curl`, and `openssl`.
+
+## Quick Start (Docker from source)
 
 ```bash
 python3 bootstrap.py
@@ -150,6 +174,27 @@ docker compose -f docker/docker-compose.yml up --build
 - SQLite persisted on the **host** at `~/.taskable/taskable.db` via a bind mount (back up, copy, or inspect with any desktop tool — no `docker exec` needed).
 
 The MCP server is **not** containerized — it runs on the host via stdio per `docs/deployment.md`, and points at `http://localhost:8000/api/v1` via the published API port.
+
+## Distribution and licensing
+
+Mouvadah Community—including the API, web application, and deployment
+materials—is licensed under
+[AGPL-3.0-only](./LICENSE). The independently installable
+[MCP bridge](./mcp/) is licensed under
+[Apache-2.0](./mcp/LICENSE) so local and hosted agent harnesses can integrate it
+without inheriting the server license.
+
+The first supported binary distribution is a versioned GitHub Release with
+API/web container images, a Compose manifest, checksums, and the
+`mouvadah-mcp` wheel. PyPI and Homebrew publication follow after the first
+clean-install and upgrade verification. `npx` is not the primary path because
+the connector is Python and the full application is a multi-container service.
+See the [distribution guide](./docs/distribution.md) for source installation,
+release channels, and what can and cannot be retracted after publication.
+
+The software licenses do not grant rights in the `Mouvadah` name or logo. See
+[TRADEMARKS.md](./TRADEMARKS.md). Use `Mouvadah™`, not `Mouvadah®`, unless a
+registration issues.
 
 ## Testing
 
