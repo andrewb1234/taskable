@@ -673,6 +673,53 @@ def test_project_restricted_write_key_cannot_create_unrestricted_project(
     assert "Project-restricted" in response.json()["detail"]
 
 
+def test_delete_requires_separate_api_key_scope(
+    enforce_auth_client,
+    session,
+    test_user,
+):
+    workspace = ensure_personal_workspace(session, test_user)
+    write_only_project = Project(
+        workspace_id=workspace.id,
+        name="Write only",
+    )
+    delete_project = Project(
+        workspace_id=workspace.id,
+        name="Delete enabled",
+    )
+    session.add_all([write_only_project, delete_project])
+    session.commit()
+    session.refresh(write_only_project)
+    session.refresh(delete_project)
+    _, write_key = issue_api_key(
+        session,
+        user_id=test_user.id,
+        workspace_id=workspace.id,
+        name="writer",
+        scopes=["read", "write"],
+    )
+    _, delete_key = issue_api_key(
+        session,
+        user_id=test_user.id,
+        workspace_id=workspace.id,
+        name="deliberate-delete",
+        scopes=["read", "write", "delete"],
+    )
+
+    denied = enforce_auth_client.delete(
+        f"/api/v1/projects/{write_only_project.id}",
+        headers={"Authorization": f"Bearer {write_key}"},
+    )
+    allowed = enforce_auth_client.delete(
+        f"/api/v1/projects/{delete_project.id}",
+        headers={"Authorization": f"Bearer {delete_key}"},
+    )
+
+    assert denied.status_code == 403
+    assert "required scope: delete" in denied.json()["detail"]
+    assert allowed.status_code == 204
+
+
 def test_restricted_key_cannot_escalate_into_local_browser_session(
     enforce_auth_client,
     session,

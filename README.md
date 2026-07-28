@@ -7,7 +7,7 @@ web interface; agents use the same state through a local
 
 **Current status:** Mouvadah is an alpha. You can evaluate the hosted
 application at [mouvadah.com](https://mouvadah.com), install Mouvadah Community
-`v0.1.0`, or run it from source. The hosted application does not yet carry
+`v0.1.1`, or run it from source. The hosted application does not yet carry
 production availability, recovery, security-assessment, or support guarantees.
 
 ## What Mouvadah does
@@ -31,8 +31,8 @@ mouvadah install --email you@example.com --name "Your Name"
 Or download and verify the release command directly:
 
 ```bash
-curl -fsSLO https://github.com/andrewb1234/mouvadah/releases/download/v0.1.0/mouvadah
-curl -fsSLO https://github.com/andrewb1234/mouvadah/releases/download/v0.1.0/SHA256SUMS
+curl -fsSLO https://github.com/andrewb1234/mouvadah/releases/download/v0.1.1/mouvadah
+curl -fsSLO https://github.com/andrewb1234/mouvadah/releases/download/v0.1.1/SHA256SUMS
 grep '  mouvadah$' SHA256SUMS | shasum -a 256 -c -
 chmod +x mouvadah
 ./mouvadah install --email you@example.com --name "Your Name"
@@ -46,7 +46,7 @@ If you only need the agent bridge, install the independently licensed Python
 package:
 
 ```bash
-pipx install mouvadah-mcp==0.1.0
+pipx install mouvadah-mcp==0.1.1
 ```
 
 ## Develop from source
@@ -135,7 +135,7 @@ installation options.
 | --- | --- | --- |
 | Source + local dev servers | Supported alpha path | You are evaluating or developing Mouvadah locally. |
 | Docker Compose from source | Supported alpha path | You want the API and web application in containers. |
-| GitHub Release installer | Published for `v0.1.0` | Install the full local application without cloning. |
+| GitHub Release installer | Published for `v0.1.1` | Install the full local application without cloning. |
 | PyPI | Published as `mouvadah-mcp` | Install only the MCP bridge for an agent harness. |
 | Homebrew | Published through `andrewb1234/tap` | Install and update the full-application release command. |
 | Hosted alpha | Available at [mouvadah.com](https://mouvadah.com) | Evaluate the product without treating it as a production service. |
@@ -197,16 +197,18 @@ invalidations.
 
 Local mode remains authenticated: bootstrap creates a real owner, an HttpOnly
 browser session, and a revocable per-user API key. Project data is
-workspace-scoped, and API keys may be limited by workspace, read/write scope,
-project, expiry, and revocation.
+workspace-scoped, and API keys may be limited by workspace, read, write, and
+separate delete scopes, project, expiry, and revocation.
 
 Mouvadah is still an alpha and must not be represented as a production-ready
 public SaaS. The repository has verified application-layer tenant checks,
 session revocation, exact-Origin protection for cookie writes, migration
 checks, encrypted backup/restore tooling, security headers, CI, CodeQL, and
-supply-chain checks. Production backup-provider configuration, recurring
-restore evidence, distributed abuse controls, hosted failover evidence, and
-independent security assessment remain release gates.
+supply-chain checks. Published release manifests pin container images by
+digest; runtime dependencies and base images are locked; and release images run
+without root privileges. Production backup-provider configuration, recurring
+restore evidence, distributed abuse controls, hosted failover evidence,
+artifact signing, and independent security assessment remain release gates.
 
 Read [`docs/security_and_trust.md`](./docs/security_and_trust.md) before any
 hosted deployment. Operator configuration is documented in

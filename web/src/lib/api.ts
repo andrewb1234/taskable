@@ -499,7 +499,7 @@ export const listApiKeys = () => request<ApiKey[]>("/apikeys");
 export const createApiKey = (payload: {
   name: string;
   workspace_id?: number;
-  scopes?: Array<"read" | "write">;
+  scopes?: Array<"read" | "write" | "delete">;
   project_ids?: number[];
   expires_in_days?: number;
 }) =>

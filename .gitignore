@@ -39,6 +39,7 @@ data/
 .env
 .env.local
 .env.*.local
+.gmail_info
 
 # IDE / OS
 .DS_Store

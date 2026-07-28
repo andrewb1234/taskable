@@ -151,7 +151,7 @@ before adding replicas or claiming denial-of-service resistance.
 ### API
 
 - Base: `python:3.12-slim`.
-- Installs `api/requirements.txt`, including Alembic.
+- Installs the hash-locked `api/requirements-runtime.txt`, including Alembic.
 - Copies the API package, migration environment, and immutable revisions.
 - Exposes port 8000 and runs `uvicorn api.main:app`.
 - Persists `/app/data` for the local SQLite profile.

@@ -211,8 +211,8 @@ async def _initialize(client: MCPClient) -> dict:
 async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
     """Full MCP wire test: handshake + tools/list + tools/call + DB check.
 
-    This single test covers all five MCP tools via one happy-path scenario,
-    mirroring how an agent would actually use them: list → context →
+    This test covers the default non-destructive MCP surface via one happy-path
+    scenario, mirroring how an agent would actually use it: list → context →
     update → comment → link MR.
     """
     # Seed a user + API key, then a project with one ticket through the HTTP API.
@@ -296,11 +296,6 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
             "claim_ticket",
             "heartbeat_ticket",
             "requeue_expired",
-            # Delete
-            "delete_project",
-            "delete_subproject",
-            "delete_ticket",
-            "delete_knowledge_node",
             # Knowledge tree
             "list_knowledge_nodes",
             "read_knowledge_node",

@@ -82,7 +82,9 @@ export function ProfilePage({
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyExpiry, setNewKeyExpiry] = useState("");
   const [newKeyWorkspaceId, setNewKeyWorkspaceId] = useState("");
-  const [newKeyAccess, setNewKeyAccess] = useState<"read" | "read-write">(
+  const [newKeyAccess, setNewKeyAccess] = useState<
+    "read" | "read-write" | "destructive"
+  >(
     "read-write",
   );
   const [newKeyProjectIds, setNewKeyProjectIds] = useState<number[]>([]);
@@ -184,13 +186,18 @@ export function ProfilePage({
       const payload: {
         name: string;
         workspace_id: number;
-        scopes: Array<"read" | "write">;
+        scopes: Array<"read" | "write" | "delete">;
         project_ids: number[];
         expires_in_days?: number;
       } = {
         name: newKeyName.trim(),
         workspace_id: Number(newKeyWorkspaceId),
-        scopes: newKeyAccess === "read" ? ["read"] : ["read", "write"],
+        scopes:
+          newKeyAccess === "read"
+            ? ["read"]
+            : newKeyAccess === "destructive"
+              ? ["read", "write", "delete"]
+              : ["read", "write"],
         project_ids: newKeyProjectIds,
       };
       if (newKeyExpiry) {
@@ -646,13 +653,27 @@ export function ProfilePage({
                   id="new-key-access"
                   value={newKeyAccess}
                   onChange={(event) =>
-                    setNewKeyAccess(event.target.value as "read" | "read-write")
+                    setNewKeyAccess(
+                      event.target.value as
+                        | "read"
+                        | "read-write"
+                        | "destructive",
+                    )
                   }
                   className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
                 >
                   <option value="read-write">Read and write</option>
                   <option value="read">Read only</option>
+                  <option value="destructive">
+                    Read, write, and irreversible delete
+                  </option>
                 </select>
+                {newKeyAccess === "destructive" && (
+                  <p className="mt-1 text-[11px] text-destructive">
+                    Only use this for a deliberately trusted client. Ordinary
+                    MCP keys cannot delete data.
+                  </p>
+                )}
               </div>
               <div>
                 <label
@@ -835,7 +856,12 @@ export function ProfilePage({
                       <p className="text-xs text-muted-foreground">
                         <code>{key.key_prefix}…</code>
                         {" · "}{workspaceName(key.workspace_id)}
-                        {" · "}{key.scopes.includes("write") ? "Read/write" : "Read only"}
+                        {" · "}
+                        {key.scopes.includes("delete")
+                          ? "Read/write/delete"
+                          : key.scopes.includes("write")
+                            ? "Read/write"
+                            : "Read only"}
                         {" · "}
                         {key.project_ids.length
                           ? `${key.project_ids.length} project${key.project_ids.length === 1 ? "" : "s"}`

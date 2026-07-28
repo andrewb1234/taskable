@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Stage 1: Build ----
-FROM node:20-alpine AS builder
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS builder
 
 WORKDIR /app
-COPY web/package.json web/package-lock.json* ./
-RUN npm install --no-fund --no-audit
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-fund --no-audit
 
 COPY web/ ./
 # Point the Vite client at the docker-compose API service name.
@@ -13,7 +13,7 @@ ENV VITE_API_URL=/api/v1
 RUN npm run build
 
 # ---- Stage 2: Serve via nginx ----
-FROM nginx:alpine
+FROM nginxinc/nginx-unprivileged:alpine@sha256:59ccf0943b0b8e8d9e6ea9039a39555730f544701a655c596f7df7d096c593f5
 
 ARG VCS_REF=unknown
 ARG VERSION=dev
@@ -31,7 +31,7 @@ COPY LICENSE /usr/share/nginx/html/LICENSE.txt
 COPY NOTICE /usr/share/nginx/html/NOTICE.txt
 COPY THIRD_PARTY_NOTICES.md /usr/share/nginx/html/THIRD_PARTY_NOTICES.md
 
-EXPOSE 80
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -q -O - http://127.0.0.1/ >/dev/null || exit 1
+    CMD wget -q -O - http://127.0.0.1:8080/ >/dev/null || exit 1

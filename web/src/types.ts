@@ -276,7 +276,7 @@ export interface ApiKey {
   workspace_id: number | null;
   name: string;
   key_prefix: string;
-  scopes: Array<"read" | "write">;
+  scopes: Array<"read" | "write" | "delete">;
   project_ids: number[];
   expires_at: string | null;
   last_used_at: string | null;

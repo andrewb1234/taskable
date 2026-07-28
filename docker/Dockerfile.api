@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 
 ARG VCS_REF=unknown
 ARG VERSION=dev
@@ -13,27 +13,34 @@ LABEL org.opencontainers.image.title="Mouvadah API" \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    HOME=/home/mouvadah
 
 WORKDIR /app
 
-# Install deps first for layer cache friendliness.
-COPY api/requirements.txt ./api/requirements.txt
-RUN pip install --upgrade pip && pip install -r api/requirements.txt
+# Install only the hash-locked runtime dependency graph.
+COPY api/requirements-runtime.txt ./api/requirements-runtime.txt
+RUN pip install --require-hashes -r api/requirements-runtime.txt
 
-# Copy the api package and pytest config.
+# Copy the API package.
 COPY api ./api
-COPY pytest.ini ./pytest.ini
 COPY LICENSE /usr/share/licenses/mouvadah/LICENSE
 COPY NOTICE /usr/share/licenses/mouvadah/NOTICE
 COPY THIRD_PARTY_NOTICES.md /usr/share/licenses/mouvadah/THIRD_PARTY_NOTICES.md
 
-# Persistent state mount point. docker-compose maps a named volume here.
-RUN mkdir -p /app/data
+# Keep the runtime unprivileged. Compose may map this UID/GID to the invoking
+# local user so bind-mounted data and credentials remain owner-writable.
+RUN groupadd --gid 10001 mouvadah \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin mouvadah \
+    && mkdir -p /app/data /home/mouvadah/.config/mouvadah \
+    && chown -R 10001:10001 /app/data /home/mouvadah \
+    && chmod 0755 /home/mouvadah /home/mouvadah/.config
 VOLUME ["/app/data"]
 
 ENV DATABASE_URL=sqlite:////app/data/taskable.db \
     MIGRATION_MODE=upgrade
+
+USER 10001:10001
 
 EXPOSE 8000
 

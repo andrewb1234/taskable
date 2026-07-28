@@ -427,9 +427,10 @@ messages and ticket creation are not value metrics.
 - Configure the production provider snapshot schedule and independent backup
   job, then run recurring production-environment restore exercises before
   publishing RPO/RTO.
-- Add hash-locked Python dependencies, container scanning, SBOMs, artifact
-  signing, and build provenance.
-- License, privacy policy, terms, and a security contact.
+- Maintain hash-locked runtime dependencies, container scanning, SBOMs, and
+  build provenance; add artifact signing and independent reproducibility.
+- Maintain the published licenses and private security reporting channel;
+  publish privacy policy, service terms, and subprocessors before paid Cloud.
 
 ### P1: complete team beta
 

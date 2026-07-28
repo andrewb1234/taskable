@@ -7,7 +7,7 @@ response payloads can embed relations without accidental recursion.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +23,23 @@ from api.models.enums import (
     WorkspaceLifecycleAction,
     WorkspaceRole,
 )
+
+MAX_LONG_TEXT_LENGTH = 100_000
+MAX_COMMENT_LENGTH = 20_000
+MAX_REFERENCE_LENGTH = 2_048
+MAX_REFERENCES = 100
+MAX_DEPENDENCIES = 100
+MAX_SESSION_NODE_IDS = 500
+
+LongText = Annotated[str, Field(max_length=MAX_LONG_TEXT_LENGTH)]
+CommentText = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_COMMENT_LENGTH),
+]
+SourceReference = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_REFERENCE_LENGTH),
+]
 
 
 # ---- Workspace ------------------------------------------------------------
@@ -155,7 +172,7 @@ class WorkspaceMembershipEventRead(BaseModel):
 class ProjectCreate(BaseModel):
     workspace_id: Optional[int] = None
     name: str = Field(min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: Optional[LongText] = None
 
 
 class ProjectRead(BaseModel):
@@ -215,13 +232,13 @@ class ControlRoomSummary(BaseModel):
 
 class SubprojectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    context_brief: str = ""
+    context_brief: LongText = ""
     status: SubprojectStatus = SubprojectStatus.PLANNING
 
 
 class SubprojectUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    context_brief: Optional[str] = None
+    context_brief: Optional[LongText] = None
     status: Optional[SubprojectStatus] = None
 
 
@@ -253,23 +270,39 @@ class TicketRef(BaseModel):
 
 class TicketCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: Optional[LongText] = None
     assignee: TicketAssignee = TicketAssignee.UNASSIGNED
     status: TicketStatus = TicketStatus.TODO
-    source_refs: list[str] = Field(default_factory=list)
-    depends_on: list[int] = Field(default_factory=list)
+    source_refs: list[SourceReference] = Field(
+        default_factory=list,
+        max_length=MAX_REFERENCES,
+    )
+    depends_on: list[int] = Field(
+        default_factory=list,
+        max_length=MAX_DEPENDENCIES,
+    )
 
 
 class TicketUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: Optional[LongText] = None
     status: Optional[TicketStatus] = None
     assignee: Optional[TicketAssignee] = None
-    mr_link: Optional[str] = None
+    mr_link: Optional[str] = Field(
+        default=None,
+        max_length=MAX_REFERENCE_LENGTH,
+        pattern=r"^https?://",
+    )
     blocked_by: Optional[BlockedByCategory] = None
-    blocked_reason: Optional[str] = None
-    source_refs: Optional[list[str]] = None
-    depends_on: Optional[list[int]] = None
+    blocked_reason: Optional[CommentText] = None
+    source_refs: Optional[list[SourceReference]] = Field(
+        default=None,
+        max_length=MAX_REFERENCES,
+    )
+    depends_on: Optional[list[int]] = Field(
+        default=None,
+        max_length=MAX_DEPENDENCIES,
+    )
 
 
 class TicketRead(BaseModel):
@@ -294,7 +327,11 @@ class TicketRead(BaseModel):
 
 
 class MRLinkPayload(BaseModel):
-    url: str = Field(min_length=1)
+    url: str = Field(
+        min_length=1,
+        max_length=MAX_REFERENCE_LENGTH,
+        pattern=r"^https?://",
+    )
 
 
 # ---- Comment --------------------------------------------------------------
@@ -302,7 +339,7 @@ class MRLinkPayload(BaseModel):
 
 class CommentCreate(BaseModel):
     author: ActorRole
-    content: str = Field(min_length=1)
+    content: CommentText
 
 
 class CommentRead(BaseModel):
@@ -359,9 +396,12 @@ class HeartbeatPayload(BaseModel):
 class KnowledgeNodeCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     node_type: KnowledgeNodeType = KnowledgeNodeType.RAW
-    content: str = ""
+    content: LongText = ""
     parent_id: Optional[int] = None
-    source_refs: list[str] = Field(default_factory=list)
+    source_refs: list[SourceReference] = Field(
+        default_factory=list,
+        max_length=MAX_REFERENCES,
+    )
 
 
 class KnowledgeNodeUpdate(BaseModel):
@@ -369,9 +409,12 @@ class KnowledgeNodeUpdate(BaseModel):
     node_type: Optional[KnowledgeNodeType] = None
     status: Optional[KnowledgeNodeStatus] = None
     superseded_by: Optional[int] = None
-    content: Optional[str] = None
+    content: Optional[LongText] = None
     parent_id: Optional[int] = None
-    source_refs: Optional[list[str]] = None
+    source_refs: Optional[list[SourceReference]] = Field(
+        default=None,
+        max_length=MAX_REFERENCES,
+    )
 
 
 class KnowledgeNodeRead(BaseModel):
@@ -441,12 +484,12 @@ class ContextTrailRead(BaseModel):
 
 class KnowledgeProposalCreate(BaseModel):
     proposed_changes: dict
-    rationale: str = ""
+    rationale: LongText = ""
 
 
 class KnowledgeProposalReview(BaseModel):
-    action: str  # "accept" or "reject"
-    reviewed_by: str = "HUMAN"
+    action: Literal["accept", "reject"]
+    reviewed_by: str = Field(default="HUMAN", max_length=200)
 
 
 class KnowledgeProposalRead(BaseModel):
@@ -467,14 +510,20 @@ class KnowledgeProposalRead(BaseModel):
 
 
 class AgentSessionCreate(BaseModel):
-    intent: str = ""
-    loaded_node_ids: list[int] = Field(default_factory=list)
+    intent: LongText = ""
+    loaded_node_ids: list[int] = Field(
+        default_factory=list,
+        max_length=MAX_SESSION_NODE_IDS,
+    )
 
 
 class AgentSessionUpdate(BaseModel):
-    loaded_node_ids: Optional[list[int]] = None
-    handoff_note: Optional[str] = None
-    status: Optional[str] = None
+    loaded_node_ids: Optional[list[int]] = Field(
+        default=None,
+        max_length=MAX_SESSION_NODE_IDS,
+    )
+    handoff_note: Optional[LongText] = None
+    status: Optional[str] = Field(default=None, max_length=40)
 
 
 class AgentSessionRead(BaseModel):

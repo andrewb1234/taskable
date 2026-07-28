@@ -42,10 +42,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Audit Python manifests
+      - name: Audit Python development and MCP manifests
         uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
         with:
           inputs: api/requirements.txt mcp/requirements.txt
+      - name: Audit hash-locked API runtime
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: api/requirements-runtime.txt
 
   npm-audit:
     name: npm dependency audit

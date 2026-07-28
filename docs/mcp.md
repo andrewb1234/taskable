@@ -9,10 +9,9 @@ API to agentic IDEs (Windsurf, Claude Desktop, etc.) over a `stdio` transport.
 ## Dependencies
 * `mcp >=1.1` (Official Python SDK)
 * `httpx` (Async HTTP client for REST calls)
-* `python-dotenv` (reads non-secret MCP configuration from the environment)
 
 See `mcp/pyproject.toml` for the packaging manifest. Install via
-`pipx install mouvadah-mcp==0.1.0`, `uv tool install mouvadah-mcp==0.1.0`, or
+`pipx install mouvadah-mcp==0.1.1`, `uv tool install mouvadah-mcp==0.1.1`, or
 `pip install -e ./mcp` to get the `mouvadah-mcp` console script.
 
 ## Configuration
@@ -24,6 +23,10 @@ See `mcp/pyproject.toml` for the packaging manifest. Install via
   The value is a revocable per-user key stored only as a hash by the API.
   Supply it directly or point `MOUVADAH_CREDENTIALS_FILE` at the owner-only
   file created by `bootstrap.py`.
+
+Configuration is read only from the bridge process environment and the
+explicit credentials file. The bridge never searches its current or parent
+directory for `.env` files.
 
 The legacy `TASKABLE_API_URL`, `TASKABLE_API_KEY`,
 `TASKABLE_CREDENTIALS_FILE`, and `taskable-mcp` names remain accepted for
@@ -95,6 +98,11 @@ All tools return a plain-text `TextContent` frame. Error responses begin with
    * **Payload:** `{"author": "AGENT", "content": content}`
 
 ### Delete tools
+
+Delete tools are hidden by default. They are registered only when
+`MOUVADAH_ENABLE_DESTRUCTIVE_TOOLS=true`, and the API key must carry the
+separate `delete` scope. Supporting clients receive destructive-operation
+annotations and should require confirmation.
 
 10. **`delete_project(project_id: int) -> str`**
     * **Action:** `DELETE /api/v1/projects/{project_id}`
