@@ -162,7 +162,7 @@ def provision_local_owner(
 
 
 def read_credentials_file(path: Path) -> str | None:
-    """Read ``TASKABLE_API_KEY`` from a permission-restricted env file."""
+    """Read a current or legacy API key from an owner-only env file."""
     if not path.exists():
         return None
     if os.name == "posix" and stat.S_IMODE(path.stat().st_mode) & 0o077:
@@ -170,12 +170,18 @@ def read_credentials_file(path: Path) -> str | None:
             f"{path} is readable by group/other users; run "
             f"`chmod 600 {path}` before continuing."
         )
+    values: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("TASKABLE_API_KEY="):
-            value = line.split("=", 1)[1].strip()
-            if value:
-                return value
-    raise ValueError(f"{path} does not contain TASKABLE_API_KEY.")
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    for key_name in ("MOUVADAH_API_KEY", "TASKABLE_API_KEY"):
+        if values.get(key_name):
+            return values[key_name]
+    raise ValueError(
+        f"{path} does not contain MOUVADAH_API_KEY or TASKABLE_API_KEY."
+    )
 
 
 def write_credentials_file(path: Path, raw_key: str) -> None:
@@ -194,6 +200,7 @@ def write_credentials_file(path: Path, raw_key: str) -> None:
         if os.name == "posix":
             os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(f"MOUVADAH_API_KEY={raw_key}\n")
             handle.write(f"TASKABLE_API_KEY={raw_key}\n")
             handle.flush()
             os.fsync(handle.fileno())
@@ -224,9 +231,11 @@ def _parser() -> argparse.ArgumentParser:
         "--credentials-file",
         type=Path,
         default=Path(
-            os.getenv("TASKABLE_CREDENTIALS_FILE", DEFAULT_CREDENTIALS_FILE)
+            os.getenv("MOUVADAH_CREDENTIALS_FILE")
+            or os.getenv("TASKABLE_CREDENTIALS_FILE")
+            or DEFAULT_CREDENTIALS_FILE
         ).expanduser(),
-        help="Owner-only env file that stores TASKABLE_API_KEY.",
+        help="Owner-only env file that stores the Mouvadah API key.",
     )
     parser.add_argument(
         "--rotate-key",
@@ -274,7 +283,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Credentials file: {args.credentials_file} (owner-only)")
     print(
         "Use the Local API key from that file to sign in, and point MCP at "
-        "the same file with TASKABLE_CREDENTIALS_FILE."
+        "the same file with MOUVADAH_CREDENTIALS_FILE. Legacy TASKABLE_* "
+        "settings remain accepted."
     )
     return 0
 

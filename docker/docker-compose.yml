@@ -6,16 +6,16 @@
 #
 # State note: SQLite is bind-mounted from the HOST at ~/.taskable so users can
 # back it up, copy it, or open it with a desktop SQLite GUI without ever
-# needing `docker exec`. Override TASKABLE_DATA_DIR in .env if you need an
-# alternate path.
+# needing `docker exec`. Override MOUVADAH_DATA_DIR in .env if you need an
+# alternate path. TASKABLE_DATA_DIR remains a compatibility alias.
 
 services:
   api:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    image: taskable-api:latest
-    container_name: taskable-api
+    image: mouvadah-api:latest
+    container_name: mouvadah-api
     restart: unless-stopped
     environment:
       GITHUB_PAT: ${GITHUB_PAT:-}
@@ -28,7 +28,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       # ~ is not expanded by docker-compose; rely on $HOME for portability.
-      - ${TASKABLE_DATA_DIR:-${HOME}/.taskable}:/app/data
+      - ${MOUVADAH_DATA_DIR:-${TASKABLE_DATA_DIR:-${HOME}/.taskable}}:/app/data
     networks:
       - copilot_net
     healthcheck:
@@ -42,8 +42,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.web
-    image: taskable-web:latest
-    container_name: taskable-web
+    image: mouvadah-web:latest
+    container_name: mouvadah-web
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:80"

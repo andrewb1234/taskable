@@ -102,9 +102,13 @@ def test_existing_credentials_must_belong_to_requested_owner(session):
 def test_credentials_file_is_atomic_owner_only_and_round_trips(tmp_path):
     credentials_file = tmp_path / "config" / "credentials.env"
 
-    write_credentials_file(credentials_file, "taskable_test-secret")
+    write_credentials_file(credentials_file, "mouvadah_test-secret")
 
-    assert read_credentials_file(credentials_file) == "taskable_test-secret"
+    assert read_credentials_file(credentials_file) == "mouvadah_test-secret"
+    assert credentials_file.read_text(encoding="utf-8").splitlines() == [
+        "MOUVADAH_API_KEY=mouvadah_test-secret",
+        "TASKABLE_API_KEY=mouvadah_test-secret",
+    ]
     if os.name == "posix":
         assert stat.S_IMODE(credentials_file.stat().st_mode) == 0o600
         assert stat.S_IMODE(credentials_file.parent.stat().st_mode) == 0o700
@@ -114,7 +118,7 @@ def test_credentials_file_rejects_group_or_other_read_access(tmp_path):
     if os.name != "posix":
         pytest.skip("POSIX permission semantics required")
     credentials_file = tmp_path / "credentials.env"
-    write_credentials_file(credentials_file, "taskable_test-secret")
+    write_credentials_file(credentials_file, "mouvadah_test-secret")
     credentials_file.chmod(0o644)
 
     with pytest.raises(ValueError, match="readable by group/other"):
@@ -169,4 +173,4 @@ def test_local_setup_cli_is_fresh_install_safe_and_idempotent(tmp_path):
     assert "Created local owner" in first.stdout
     assert "Reused local owner" in second.stdout
     assert database_path.exists()
-    assert read_credentials_file(credentials_file).startswith("taskable_")
+    assert read_credentials_file(credentials_file).startswith("mouvadah_")

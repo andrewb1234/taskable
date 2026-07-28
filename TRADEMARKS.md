@@ -1,8 +1,8 @@
 # Mouvadah trademark policy
 
-The `Mouvadah` name and Mouvadah logo are used as unregistered trademarks of
-the official Mouvadah project. Use `Mouvadah™`, not `Mouvadah®`, unless and
-until a relevant registration issues.
+The `Mouvadah` name and Mouvadah logo are claimed as unregistered trademarks
+by Andrew Betbadal. Use `Mouvadah™`, not `Mouvadah®`, unless and until a
+relevant registration issues.
 
 The software licenses in this repository do not grant trademark rights. They
 do not permit a modified distribution, hosted service, company, product, or

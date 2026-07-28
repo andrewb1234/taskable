@@ -1,393 +1,265 @@
-# Mouvadah — Human-Agent Control Plane
+# Mouvadah — shared control and memory for humans and coding agents
 
-A local-first control and memory plane for **human-agent software delivery**.
-Humans work in the React UI, agents work through MCP, and both use the same
-FastAPI state machine for durable project context, dependency-safe execution,
-reviewable knowledge, and handoffs across short-lived agent sessions.
-Real-time invalidations flow back to the UI through Server-Sent Events.
-PostgreSQL deployments share them across API processes through direct
-LISTEN/NOTIFY; SQLite deployments retain the lightweight local broadcaster.
+Mouvadah gives a software team and its agents one durable place for project
+knowledge, dependency-aware work, claims, handoffs, and review. Humans use the
+web interface; agents use the same state through a local
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) bridge.
 
-> Full specifications live in [`docs/`](./docs). Architectural decisions and frictions are logged in [`learnings.md`](./learnings.md).
-> The current company direction, offerings, competitive position, and release
-> gates live in [`docs/company_blueprint.md`](./docs/company_blueprint.md).
-> Verified security controls and explicit non-guarantees live in
-> [`docs/security_and_trust.md`](./docs/security_and_trust.md).
-> Backup, restore, export, and recoverable deletion operations live in
-> [`docs/recovery.md`](./docs/recovery.md) and incident operations in
-> [`docs/incident_response.md`](./docs/incident_response.md).
+**Current status:** Mouvadah is an alpha. You can evaluate the hosted
+application at [mouvadah.com](https://mouvadah.com), install Mouvadah Community
+`v0.1.0`, or run it from source. The hosted application does not yet carry
+production availability, recovery, security-assessment, or support guarantees.
 
-## Architecture
+## What Mouvadah does
 
-```
-┌──────────┐   REST + SSE    ┌─────────────┐   HTTP (bearer)   ┌─────────────┐
-│ React UI │◄───────────────►│  FastAPI +  │◄──────────────────│ MCP stdio   │
-│ (Vite)   │                 │  SQLModel + │                   │ server      │
-│  :5173   │                 │  SQLite     │                   │ (agent)     │
-└──────────┘                 │   :8000     │                   └─────────────┘
-                             └─────────────┘
-                                    │
-                                    ▼
-                          ~/.taskable/taskable.db
-```
+- Preserves project knowledge across short-lived agent sessions.
+- Makes ticket dependencies, readiness, ownership, and blockers explicit.
+- Prevents duplicate agent work with atomic claims, leases, and recovery.
+- Keeps human and agent activity in one reviewable workflow.
+- Connects local agent harnesses through a vendor-neutral MCP server.
 
-- `api/` — FastAPI backend (SQLModel entities, routes, SSE broadcaster, pytest).
-- `web/` — Vite + React + Tailwind UI with `useSSE` reactive refetch.
-- `mcp/` — Python MCP stdio server exposing the agent tool catalogue.
-- `docker/` — local two-service Compose stack plus the isolated backup runner.
+## Install without cloning
 
-## Agent authentication
-
-The current authenticated flow uses a workspace-bound Mouvadah API key:
-
-1. Sign in through the web application.
-2. Open the profile page and choose its workspace, read/read-write scope,
-   optional project restrictions, and expiry.
-3. Put the returned one-time value in the MCP process as
-   `TASKABLE_API_KEY`, or put it in the owner-only credentials file selected
-   by `TASKABLE_CREDENTIALS_FILE`.
-4. Revoke or replace the key from the profile page when needed.
-
-For a loopback-only local install, `bootstrap.py` creates the first local owner
-and per-user API key before the UI starts. The browser exchanges that key for
-an HttpOnly session and does not store it. Local auth is disabled by default
-and is rejected for non-loopback or HTTPS origins.
-
-## Authenticated ten-minute setup
-
-Prerequisites:
-
-- Python 3.12 or newer. The bootstrap detects an older macOS/Linux `python3`
-  and automatically restarts with `python3.12`–`python3.15` when one is
-  installed; otherwise it stops with an installation hint before changing
-  local state.
-- Node.js 20 or newer with `npm`.
-
-From a clean clone:
+The packaged Community installation requires Docker with Compose v2. On macOS
+or Linux, install the release command with Homebrew:
 
 ```bash
+brew install andrewb1234/tap/mouvadah
+mouvadah install --email you@example.com --name "Your Name"
+```
+
+Or download and verify the release command directly:
+
+```bash
+curl -fsSLO https://github.com/andrewb1234/mouvadah/releases/download/v0.1.0/mouvadah
+curl -fsSLO https://github.com/andrewb1234/mouvadah/releases/download/v0.1.0/SHA256SUMS
+grep '  mouvadah$' SHA256SUMS | shasum -a 256 -c -
+chmod +x mouvadah
+./mouvadah install --email you@example.com --name "Your Name"
+```
+
+The command downloads the checksummed Compose manifest, binds the UI and API
+to loopback, creates an authenticated local owner, and preserves its data when
+you run `mouvadah uninstall`.
+
+If you only need the agent bridge, install the independently licensed Python
+package:
+
+```bash
+pipx install mouvadah-mcp==0.1.0
+```
+
+## Develop from source
+
+The commands below are the recommended macOS/Linux development path.
+
+### Prerequisites
+
+- Git
+- Python 3.12 or newer
+- Node.js 20 or newer with `npm`
+
+### 1. Install
+
+```bash
+git clone https://github.com/andrewb1234/mouvadah.git
+cd mouvadah
 python3 bootstrap.py
 ```
 
-This script will:
+The interactive bootstrap asks for a local display name and email, then
+installs the pinned dependencies and creates an authenticated local owner. It
+does not start the application.
 
-1. Create `.venv/` and install the pinned API, MCP, and frontend dependencies.
-2. Write an owner-only `.env` with a strong local JWT secret and
-   `LOCAL_AUTH_ENABLED=true`.
-3. Apply the ordered Alembic migrations.
-4. Create or reuse a local owner, personal workspace, and revocable per-user
-   API key.
-5. Store the full key in `~/.config/mouvadah/credentials.env` with mode 0600.
-6. Configure Windsurf MCP, when detected, to read that credentials file
-   without copying the key into its JSON.
-7. Print the bare-metal and Docker start commands plus the login/MCP
-   verification.
+<details>
+<summary>Files and settings created by bootstrap</summary>
 
-Re-running the command reuses the same owner and active key. Rotation is
-explicit through `python -m api.local_setup --rotate-key`.
+- `.venv/` for the API and MCP Python dependencies
+- `web/node_modules/` from the committed npm lockfile
+- `.env` with a generated local JWT secret and loopback-only authentication
+- `~/.taskable/taskable.db` for the local SQLite database
+- `~/.config/mouvadah/credentials.env` for the revocable local API key
+- a `mouvadah` entry in the Windsurf MCP configuration, when Windsurf is
+  detected
 
-## Quick Start (local dev, no Docker)
+The configuration and credential files are written with owner-only permissions
+on the verified macOS/Linux path. Re-running bootstrap reuses the local owner
+and active bootstrap key.
 
-The bootstrap path above is recommended. To run each component after setup:
+</details>
 
-### 1. Backend
+### 2. Start
+
+Start the API in one terminal:
 
 ```bash
 source .venv/bin/activate
 uvicorn api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The SQLite database lives at `~/.taskable/taskable.db` by default — survives
-`git clean`, is easy to back up, and is inspectable with any SQLite GUI. Local
-startup applies ordered Alembic revisions and creates a timestamped
-pre-migration backup before changing an existing file-backed database. See
-[`docs/migrations.md`](./docs/migrations.md) for hosted PostgreSQL and rollback
-procedures, and [`docs/recovery.md`](./docs/recovery.md) for encrypted backups
-and restore drills.
-
-Visit `http://127.0.0.1:8000/docs` for the OpenAPI explorer.
-
-### 2. Frontend
+Start the web interface in a second terminal:
 
 ```bash
 cd web
-npm install
-npm run dev   # http://127.0.0.1:5173
+npm run dev
 ```
 
-The Vite dev server proxies `/api/v1/*` to `http://localhost:8000`, so the UI works without CORS or env setup.
+Open [http://localhost:5173](http://localhost:5173). On the local sign-in
+screen:
 
-### 3. MCP Agent Server
+1. Copy the `MOUVADAH_API_KEY` value from
+   `~/.config/mouvadah/credentials.env`.
+2. Paste it into **Local API key**.
+3. Choose **Continue locally**.
 
-Pick **one** of three install styles:
+The API runs at [http://127.0.0.1:8000](http://127.0.0.1:8000), and its OpenAPI
+explorer is at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+Press `Ctrl+C` in each terminal to stop the servers.
 
-```bash
-# Option A — same venv as the API (simplest)
-TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env \
-  python mcp/mcp_server.py
+### 3. Connect an agent
 
-# Option B — global isolated install via pipx (recommended for IDE use)
-pipx install ./mcp
-TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env mouvadah-mcp
+If bootstrap detected Windsurf, restart Windsurf and invoke the Mouvadah
+`get_all_projects` tool.
 
-# Option C — uv tool (if you live in uv-land)
-uv tool install ./mcp
-TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env mouvadah-mcp
-```
+For another MCP client, adapt [`mcp/mcp.json.example`](./mcp/mcp.json.example).
+The installed local command is `.venv/bin/mouvadah-mcp`; it reads the API key
+from the credentials file instead of embedding the secret in client JSON.
+The MCP bridge uses `stdio` and opens no listening port.
 
-Options B and C produce a `mouvadah-mcp` console script on your `$PATH` so the
-Windsurf MCP config can use a stable command instead of an absolute
-venv-relative Python path. The legacy `taskable-mcp` alias remains available
-during the naming transition. Hook it into Windsurf by copying
-[`mcp/mcp.json.example`](./mcp/mcp.json.example) into your Windsurf MCP config
-(typically `~/.codeium/windsurf/mcp_config.json`) — or run
-`python3 bootstrap.py` to do it automatically.
+See [`mcp/README.md`](./mcp/README.md) for standalone `pipx` and `uv` tool
+installation options.
 
-## Packaged local install
+## Other ways to run
 
-After the first GitHub Release is approved, the supported full-application
-installer will be available without cloning the repository:
+| Path | Availability | Use it when |
+| --- | --- | --- |
+| Source + local dev servers | Supported alpha path | You are evaluating or developing Mouvadah locally. |
+| Docker Compose from source | Supported alpha path | You want the API and web application in containers. |
+| GitHub Release installer | Published for `v0.1.0` | Install the full local application without cloning. |
+| PyPI | Published as `mouvadah-mcp` | Install only the MCP bridge for an agent harness. |
+| Homebrew | Published through `andrewb1234/tap` | Install and update the full-application release command. |
+| Hosted alpha | Available at [mouvadah.com](https://mouvadah.com) | Evaluate the product without treating it as a production service. |
 
-```bash
-curl -fsSLO https://github.com/andrewb1234/taskable/releases/latest/download/mouvadah
-curl -fsSLO https://github.com/andrewb1234/taskable/releases/latest/download/SHA256SUMS
-grep '  mouvadah$' SHA256SUMS | shasum -a 256 -c -
-chmod +x mouvadah
-./mouvadah install --email you@example.com --name "Your Name"
-```
-
-The installer verifies the release Compose checksum, binds the UI/API to
-loopback only, stores its JWT secret and MCP credential in owner-only files,
-and preserves local data on uninstall. It requires Docker with Compose v2,
-`curl`, and `openssl`.
-
-## Quick Start (Docker from source)
+To run the application containers after completing bootstrap:
 
 ```bash
-python3 bootstrap.py
 docker compose -f docker/docker-compose.yml up --build
 ```
 
-- API: `http://localhost:8000`
-- UI: `http://localhost:3000`
-- Both published ports are loopback-only.
-- SQLite persisted on the **host** at `~/.taskable/taskable.db` via a bind mount (back up, copy, or inspect with any desktop tool — no `docker exec` needed).
+Then open [http://localhost:3000](http://localhost:3000). The Compose profile
+binds both published ports to loopback, reuses the local owner and SQLite
+database, and keeps the MCP server on the host. Stop it with:
 
-The MCP server is **not** containerized — it runs on the host via stdio per `docs/deployment.md`, and points at `http://localhost:8000/api/v1` via the published API port.
+```bash
+docker compose -f docker/docker-compose.yml down
+```
 
-## Distribution and licensing
+Distribution plans, licensing boundaries, and release retraction limits are in
+[`docs/distribution.md`](./docs/distribution.md).
 
-Mouvadah Community—including the API, web application, and deployment
-materials—is licensed under
-[AGPL-3.0-only](./LICENSE). The independently installable
-[MCP bridge](./mcp/) is licensed under
-[Apache-2.0](./mcp/LICENSE) so local and hosted agent harnesses can integrate it
+## The core model
+
+```text
+Workspace
+├── Projects
+│   ├── Knowledge tree (evidence → summaries → PRD/TDD)
+│   └── Subprojects
+│       └── Tickets (dependencies → claim → work → review)
+└── Members and scoped API keys
+```
+
+Knowledge sits upstream of work: humans and agents curate durable context,
+derive project plans, and then execute dependency-aware tickets. Claims and
+leases coordinate concurrent workers; comments, audit events, source
+references, and handoffs preserve how the result was reached.
+
+## Architecture
+
+```text
+React web UI ── REST + SSE ── FastAPI + SQLModel ── SQLite (local)
+                                  │
+MCP client ── stdio bridge ── bearer-authenticated REST
+                                  │
+                            PostgreSQL (hosted profile)
+```
+
+- `web/` contains the Vite/React interface.
+- `api/` contains the FastAPI application, authorization, migrations, and
+  tests.
+- `mcp/` contains the independently installable Python MCP bridge.
+- `docker/` contains the local and release container profiles.
+
+SQLite is the default local database. PostgreSQL deployments use Alembic
+migrations and direct `LISTEN/NOTIFY` for cross-process realtime
+invalidations.
+
+## Security and maturity boundary
+
+Local mode remains authenticated: bootstrap creates a real owner, an HttpOnly
+browser session, and a revocable per-user API key. Project data is
+workspace-scoped, and API keys may be limited by workspace, read/write scope,
+project, expiry, and revocation.
+
+Mouvadah is still an alpha and must not be represented as a production-ready
+public SaaS. The repository has verified application-layer tenant checks,
+session revocation, exact-Origin protection for cookie writes, migration
+checks, encrypted backup/restore tooling, security headers, CI, CodeQL, and
+supply-chain checks. Production backup-provider configuration, recurring
+restore evidence, distributed abuse controls, hosted failover evidence, and
+independent security assessment remain release gates.
+
+Read [`docs/security_and_trust.md`](./docs/security_and_trust.md) before any
+hosted deployment. Operator configuration is documented in
+[`docs/deployment.md`](./docs/deployment.md),
+[`docs/migrations.md`](./docs/migrations.md),
+[`docs/recovery.md`](./docs/recovery.md), and
+[`docs/incident_response.md`](./docs/incident_response.md).
+
+## Develop and test
+
+Run bootstrap once before using these commands:
+
+```bash
+.venv/bin/python -m pytest api/tests/ -v  # backend and MCP test suite
+cd web && npm run build                   # TypeScript + production web build
+cd web && npm run test:e2e                # authenticated Chromium tests
+.venv/bin/python scripts/seed_demo.py     # add local demonstration data
+```
+
+The `Makefile` provides `make dev`, `make test`, `make build-web`, `make e2e`,
+`make seed`, and `make docker` as optional shortcuts.
+
+CI verifies Python 3.12 and 3.14, the frontend build, package and container
+assembly, PostgreSQL migrations and recovery, authenticated realtime browser
+behavior, dependency and secret scanning, and CodeQL.
+
+For non-trivial changes, read [`docs/protocol.md`](./docs/protocol.md),
+[`CONTRIBUTING.md`](./CONTRIBUTING.md), and [`learnings.md`](./learnings.md).
+
+## Documentation map
+
+| If you want to… | Read |
+| --- | --- |
+| Understand the product direction | [`docs/company_blueprint.md`](./docs/company_blueprint.md) |
+| Install or distribute Mouvadah | [`docs/distribution.md`](./docs/distribution.md) |
+| Connect an MCP client | [`mcp/README.md`](./mcp/README.md) |
+| Understand client/server behavior | [`docs/client_server.md`](./docs/client_server.md) |
+| Operate or host the application | [`docs/deployment.md`](./docs/deployment.md) |
+| Review security guarantees and gaps | [`docs/security_and_trust.md`](./docs/security_and_trust.md) |
+| Work with migrations and recovery | [`docs/migrations.md`](./docs/migrations.md) and [`docs/recovery.md`](./docs/recovery.md) |
+| Contribute code | [`CONTRIBUTING.md`](./CONTRIBUTING.md) |
+
+## Licensing
+
+Mouvadah Community—the API, web application, deployment materials, and
+repository default—is licensed under
+[AGPL-3.0-only](./LICENSE). The independently installable MCP bridge is
+licensed under [Apache-2.0](./mcp/LICENSE) so agent harnesses can integrate
 without inheriting the server license.
 
-The first supported binary distribution is a versioned GitHub Release with
-API/web container images, a Compose manifest, checksums, and the
-`mouvadah-mcp` wheel. PyPI and Homebrew publication follow after the first
-clean-install and upgrade verification. `npx` is not the primary path because
-the connector is Python and the full application is a multi-container service.
-See the [distribution guide](./docs/distribution.md) for source installation,
-release channels, and what can and cannot be retracted after publication.
-
-The software licenses do not grant rights in the `Mouvadah` name or logo. See
-[TRADEMARKS.md](./TRADEMARKS.md). Use `Mouvadah™`, not `Mouvadah®`, unless a
+The software licenses do not grant rights to the Mouvadah name or logo. See
+[`TRADEMARKS.md`](./TRADEMARKS.md). Use `Mouvadah™`, not `Mouvadah®`, unless a
 registration issues.
 
-## Testing
-
-```bash
-# Backend (unit + agent simulator subprocess)
-pytest api/tests/ -v
-
-# Migration head and ORM schema parity for DATABASE_URL
-python -m api.migrations check
-
-# Frontend type-check + production build
-cd web && npm run build
-
-# End-to-end SSE realtime test (boots API + UI, drives Chromium)
-cd web && npx playwright install chromium  # one-time
-cd web && npm run test:e2e
-```
-
-The pytest suite covers CRUD, state transitions, local-owner provisioning,
-agent endpoints, and SSE broadcasting against isolated databases. The
-`test_mcp_simulator.py` module also proves the complete fresh-install path:
-run local setup, start a real API, load the generated credentials file in the
-MCP subprocess, complete JSON-RPC initialization, and create an authenticated
-project. Playwright verifies local-key browser sign-in and that agent updates
-propagate to the live React DOM via SSE. Required CI also performs a real
-encrypted `pg_dump`/`pg_restore` cycle against PostgreSQL 17 and verifies
-restored tenant data plus exact schema parity.
-
-Quick aliases via the `Makefile`:
-
-```bash
-make bootstrap    # python3 bootstrap.py
-make dev          # spin up API + UI in two background tabs
-make seed         # load demo project/subproject/tickets
-make test         # pytest
-make e2e          # playwright realtime spec
-```
-
-## API surface (v1)
-
-| Verb   | Path                                                | Notes                         |
-| ------ | --------------------------------------------------- | ----------------------------- |
-| GET    | `/api/v1/workspaces`                                | Caller memberships and roles. |
-| POST   | `/api/v1/workspaces`                                | Creates an owned workspace.   |
-| GET    | `/api/v1/workspaces/{id}/members`                   | OWNER/ADMIN only.             |
-| GET    | `/api/v1/workspaces/{id}/export`                    | Owner export + SHA-256.       |
-| POST   | `/api/v1/workspaces/{id}/deletion`                  | Export-gated recovery window. |
-| POST   | `/api/v1/workspaces/{id}/restore`                   | Owner restore before expiry.  |
-| GET    | `/api/v1/workspaces/{id}/lifecycle-events`          | Owner lifecycle evidence.     |
-| GET    | `/api/v1/projects`                                  |                               |
-| POST   | `/api/v1/projects`                                  |                               |
-| GET    | `/api/v1/projects/{id}`                             |                               |
-| DELETE | `/api/v1/projects/{id}`                             | Cascades subprojects + knowledge. |
-| GET    | `/api/v1/projects/{id}/subprojects`                 |                               |
-| POST   | `/api/v1/projects/{id}/subprojects`                 |                               |
-| GET    | `/api/v1/subprojects/{id}`                          | Returns nested tickets.       |
-| PATCH  | `/api/v1/subprojects/{id}`                          |                               |
-| DELETE | `/api/v1/subprojects/{id}`                          | Cascades tickets + audit.     |
-| POST   | `/api/v1/subprojects/{id}/tickets`                  |                               |
-| GET    | `/api/v1/tickets/{id}`                              | Nested comments + audit logs. |
-| PATCH  | `/api/v1/tickets/{id}`                              | Writes audit entries.         |
-| DELETE | `/api/v1/tickets/{id}`                              | Cascades comments + audit.    |
-| POST   | `/api/v1/tickets/{id}/mr`                           | Attach MR, emits `MR_LINKED`. |
-| GET    | `/api/v1/tickets/{id}/comments`                     |                               |
-| POST   | `/api/v1/tickets/{id}/comments`                     |                               |
-| GET    | `/api/v1/projects/{id}/knowledge`                   | Flat list; client builds tree.|
-| GET    | `/api/v1/projects/{id}/knowledge/context-trail`     | Query-scored knowledge trail. |
-| POST   | `/api/v1/projects/{id}/knowledge`                   | Creates a `KnowledgeNode`.    |
-| GET    | `/api/v1/knowledge/{id}`                            | Single node detail.           |
-| PATCH  | `/api/v1/knowledge/{id}`                            | Re-parent / retype / edit.    |
-| DELETE | `/api/v1/knowledge/{id}`                            | Cascades to descendants.      |
-| GET    | `/api/v1/events`                                    | SSE stream (heartbeat 15s).   |
-| GET    | `/api/v1/agent/context/{id}`                        | **Bearer required.**          |
-| GET    | `/api/v1/agent/projects/{id}/knowledge`             | **Bearer required** (outline).|
-| GET    | `/api/v1/agent/projects/{id}/context-trail`         | **Bearer required** (trail).  |
-| GET    | `/api/v1/agent/knowledge/{id}`                      | **Bearer required** (detail). |
-
-### Knowledge tree (upstream of tickets)
-
-Each project owns a tree of `KnowledgeNode` entries — `RAW` pastes, `SUMMARY`
-compressions, and drafted `PRD` / `TDD` specifications — that sits between "I
-have an idea" and "break it into tickets." The agent drives it through MCP
-tools (`list_knowledge_nodes`, `find_context_trail`, `read_knowledge_node`,
-`create_knowledge_node`, `update_knowledge_node`); the human reviews and edits the same nodes in the
-`Workspace` **Knowledge** tab. Mutations broadcast
-`KNOWLEDGE_NODE_CREATED|UPDATED|DELETED` over SSE so the tree panel stays live
-without a reload. Design rationale and friction log: `learnings.md`.
-
-### Context trails
-
-The Knowledge tab includes a **Find context trail** box. A human or agent can
-query a task intent like `battle component`; Taskable scores the knowledge tree,
-returns a suggested load order, and shows matched branches with child hints. The
-MCP tool `find_context_trail` exposes the same trail to fresh agent windows so
-they can load scoped memory instead of rereading the whole project.
-
-The trail UI can also save a **Context checkpoint** node with `node:<id>`
-breadcrumbs for everything loaded. When the human sees stale or incorrect
-context, the node editor's **Correction request** box creates a child summary
-under the bad node so the agent can find and resolve it later.
-
-`GET /tickets/{id}` was added beyond the original spec so the client-side SSE-driven targeted refetch described in `docs/client_server.md` has a route to hit. Logged in `learnings.md`.
-
-### Resizable panels
-
-Three draggable gutters let the human reshape the layout:
-
-- **Sidebar ↔ workspace** — horizontal, persisted as `taskable.sidebar.width`.
-- **Knowledge tree ↔ editor** — horizontal, persisted as `taskable.knowledge.treeWidth`.
-- **Subproject header ↔ Kanban** — vertical, persisted as `taskable.kanban.headerHeight`.
-
-All three share one primitive, `ResizableSplit` (`web/src/components/ui/resizable-split.tsx`),
-which is dependency-free and stores sizes in `localStorage`. Min/max bounds
-keep panes from collapsing past usefulness.
-
-### Deletion
-
-Every layer (project, subproject, ticket, knowledge node) supports hard
-delete via the REST API, MCP tools (`delete_project`, `delete_subproject`,
-`delete_ticket`, `delete_knowledge_node`), and hover-revealed trash icons in
-the UI. Deletes cascade through SQLModel relationships and broadcast
-`PROJECT_DELETED | SUBPROJECT_DELETED | TICKET_DELETED | KNOWLEDGE_NODE_DELETED`
-over SSE so other panes reconcile immediately.
-
-Workspace deletion is deliberately different. Profile → Data & Recovery
-requires a fresh owner export and the exact workspace slug, revokes all
-workspace API keys immediately, hides the workspace graph for the recovery
-window, and allows owner restoration before the purge deadline. Permanent
-purge is an operator job gated on a newly uploaded and download-verified
-encrypted backup. Restoring a workspace never reactivates its old API keys.
-
-### Live source-reference chips
-
-Knowledge-node `source_refs` entries of the form `node:<id>` render above the
-textarea as clickable pills showing the target node's live title and type
-badge. Clicking a pill selects that node; if the referenced node has been
-deleted, the pill turns red and is marked `GONE`. Non-`node:` entries (file
-paths, URLs) render as muted monospace chips.
-
-## Auth model
-
-- **UI:** Google authorization-code sign-in issues an HttpOnly session cookie.
-- **MCP server:** Injects a per-user API key as an Authorization bearer token.
-- **Audit attribution:** Cookie-authenticated writes are currently tagged
-  `HUMAN`; API-key writes are tagged `AGENT`.
-- **Tenant boundary:** Projects belong to workspaces, descendants inherit that
-  boundary, and centralized authorization checks the caller's membership.
-  Ambiguous legacy projects fail closed until an owner is configured.
-- **Alpha boundary:** Do not expose the current build as a production public
-  SaaS. Browser sessions are server-revocable, unsafe cookie writes require
-  the exact trusted Origin, API keys are scoped, and baseline rate/security
-  headers are active. Encrypted recovery automation and owner workspace
-  lifecycle controls are implemented and tested, but the production backup
-  bucket/provider schedule and recurring restore evidence are not yet
-  configured. Shared PostgreSQL realtime is implemented and tested, but hosted
-  failover evidence, distributed abuse controls, and operational monitoring
-  remain open.
-  See `docs/security_and_trust.md`.
-
-## Working directory layout
-
-```
-taskable/
-├── api/                # FastAPI app + SQLModel + pytest suite
-│   ├── main.py
-│   ├── config.py
-│   ├── database.py
-│   ├── dependencies.py
-│   ├── events.py
-│   ├── schemas.py
-│   ├── models/
-│   ├── routes/
-│   ├── tests/
-│   └── utils/
-├── web/                # Vite + React + Tailwind UI
-│   ├── src/
-│   │   ├── components/
-│   │   ├── context/
-│   │   ├── hooks/
-│   │   ├── lib/
-│   │   ├── App.tsx
-│   │   └── main.tsx
-│   └── vite.config.ts
-├── mcp/                # MCP stdio server
-│   ├── mcp_server.py
-│   ├── mcp.json.example
-│   └── README.md
-├── docker/             # Dockerfile.api, Dockerfile.web, compose, nginx
-├── docs/               # Product + architecture specs (read-only)
-├── learnings.md        # Append-only ledger of decisions / frictions
-└── README.md
-```
-
-## Working on this codebase
-
-Read `docs/protocol.md` and `learnings.md` before every non-trivial change. Commit functional milestones individually (`feat(scope): description`). Append every divergence or workaround to `learnings.md`.
+Copyright (C) 2026 Andrew Betbadal and contributors. See [`NOTICE`](./NOTICE)
+for the repository’s copyright and license boundary.

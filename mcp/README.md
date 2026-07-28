@@ -2,13 +2,13 @@
 
 A Model Context Protocol server that exposes the Mouvadah REST API to agentic
 IDEs over `stdio`. The FastAPI backend must be running on the URL you supply
-via `TASKABLE_API_URL` (default `http://localhost:8000/api/v1`).
+via `MOUVADAH_API_URL` (default `http://localhost:8000/api/v1`).
 
 ## Install
 
 ```bash
-# Published package, after the first registry release:
-pipx install mouvadah-mcp
+# Published package:
+pipx install mouvadah-mcp==0.1.0
 
 # Or install a checked-out source tree:
 pipx install ./mcp
@@ -23,8 +23,8 @@ also installed during the naming transition.
 ## Run locally (smoke test)
 
 ```bash
-TASKABLE_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env \
-  TASKABLE_API_URL=http://localhost:8000/api/v1 \
+MOUVADAH_CREDENTIALS_FILE=~/.config/mouvadah/credentials.env \
+  MOUVADAH_API_URL=http://localhost:8000/api/v1 \
   mouvadah-mcp
 ```
 
@@ -35,8 +35,10 @@ Stdio input/output is MCP protocol; use an MCP-aware client to interact.
 Run `python3 bootstrap.py` from a source checkout to configure Windsurf
 automatically, or add the
 contents of `mcp.json.example` to its MCP config. The server reads a per-user
-database-backed key from `TASKABLE_API_KEY` or from the owner-only
-`TASKABLE_CREDENTIALS_FILE`; the backend never shares a static bypass secret.
+database-backed key from `MOUVADAH_API_KEY` or from the owner-only
+`MOUVADAH_CREDENTIALS_FILE`; the backend never shares a static bypass secret.
+The legacy `TASKABLE_API_URL`, `TASKABLE_API_KEY`, and
+`TASKABLE_CREDENTIALS_FILE` names remain accepted for existing installations.
 
 ## Exposed Tools
 
@@ -65,12 +67,13 @@ database-backed key from `TASKABLE_API_KEY` or from the owner-only
 
 - Transport is `stdio`; no network ports are opened by this process.
 - Every HTTP call injects the authenticated user's
-  `Authorization: Bearer <TASKABLE_API_KEY>` header. The key is revocable and
+  `Authorization: Bearer <MOUVADAH_API_KEY>` header. The key is revocable and
   inherits only its owning user's workspace memberships.
 - Error payloads from the API bubble up verbatim so the LLM can self-correct.
 
 ## License
 
 The Mouvadah MCP bridge is licensed under
-[Apache-2.0](./LICENSE). The server and web application in the parent
-repository are separately licensed under AGPL-3.0-only.
+[Apache-2.0](./LICENSE). Copyright and attribution information is in
+[`NOTICE`](./NOTICE). The server and web application in the parent repository
+are separately licensed under AGPL-3.0-only.

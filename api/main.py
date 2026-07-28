@@ -74,7 +74,7 @@ def create_app() -> FastAPI:
     settings.validate_production()
     configure_runtime(settings)
     app = FastAPI(
-        title="Taskable Co-Pilot Workspace API",
+        title="Mouvadah API",
         version=__version__,
         lifespan=lifespan,
     )
@@ -106,7 +106,7 @@ def create_app() -> FastAPI:
     app.add_middleware(ObservabilityMiddleware)
 
     # --- API v1 ---
-    api_v1 = FastAPI(title="Taskable API v1", version=__version__)
+    api_v1 = FastAPI(title="Mouvadah API v1", version=__version__)
 
     # Public routes (no auth).
     api_v1.include_router(auth.router)

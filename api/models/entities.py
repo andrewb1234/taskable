@@ -1,4 +1,4 @@
-"""SQLModel persistent entities for Taskable.
+"""SQLModel persistent entities for Mouvadah.
 
 Schema aligned to ``docs/db_schema.md``. Relationships are defined so
 ``GET /subprojects/{id}`` can return nested tickets and ``GET /tickets/{id}``

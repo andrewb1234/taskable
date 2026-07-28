@@ -75,6 +75,7 @@ def live_api(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str
     db_path = temp_dir / "live.db"
     credentials_file = temp_dir / "credentials.env"
     credentials_file.write_text(
+        f"MOUVADAH_API_KEY={TEST_AGENT_KEY}\n"
         f"TASKABLE_API_KEY={TEST_AGENT_KEY}\n",
         encoding="utf-8",
     )
@@ -156,12 +157,24 @@ class MCPClient:
 async def _spawn_mcp(
     api_url: str,
     credentials_file: str,
+    *,
+    legacy_environment: bool = False,
 ) -> asyncio.subprocess.Process:
+    if legacy_environment:
+        mcp_environment = {
+            "TASKABLE_API_KEY": "",
+            "TASKABLE_CREDENTIALS_FILE": credentials_file,
+            "TASKABLE_API_URL": api_url,
+        }
+    else:
+        mcp_environment = {
+            "MOUVADAH_API_KEY": "",
+            "MOUVADAH_CREDENTIALS_FILE": credentials_file,
+            "MOUVADAH_API_URL": api_url,
+        }
     env = {
         **os.environ,
-        "TASKABLE_API_KEY": "",
-        "TASKABLE_CREDENTIALS_FILE": credentials_file,
-        "TASKABLE_API_URL": api_url,
+        **mcp_environment,
         "PYTHONUNBUFFERED": "1",
     }
     return await asyncio.create_subprocess_exec(
@@ -256,7 +269,7 @@ async def test_mcp_simulator_roundtrip(live_api: dict[str, str]) -> None:
     try:
         client = MCPClient(proc)
         init_response = await _initialize(client)
-        assert init_response["result"]["serverInfo"]["name"] == "copilot-workspace"
+        assert init_response["result"]["serverInfo"]["name"] == "mouvadah"
         instructions = init_response["result"]["instructions"]
         assert "authoritative project-management" in instructions
         assert "deletion cascades" in instructions
@@ -655,6 +668,27 @@ async def test_mcp_simulator_knowledge_flow(live_api: dict[str, str]) -> None:
         assert row == ("RAW", summary_id)
     finally:
         conn.close()
+
+
+@pytest.mark.integration
+async def test_legacy_mcp_environment_aliases_remain_accepted(
+    live_api: dict[str, str],
+) -> None:
+    proc = await _spawn_mcp(
+        live_api["base_url"],
+        live_api["credentials_file"],
+        legacy_environment=True,
+    )
+    try:
+        client = MCPClient(proc)
+        response = await _initialize(client)
+        assert response["result"]["serverInfo"]["name"] == "mouvadah"
+    finally:
+        proc.terminate()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            proc.kill()
 
 
 @pytest.mark.integration

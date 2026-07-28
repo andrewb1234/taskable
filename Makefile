@@ -11,7 +11,7 @@ UVICORN := .venv/bin/uvicorn
 .DEFAULT_GOAL := help
 
 help:
-	@echo "Taskable make targets:"
+	@echo "Mouvadah make targets:"
 	@echo "  bootstrap  - interactive setup (venv, .env, Windsurf MCP config)"
 	@echo "  dev        - start API + UI in parallel (Ctrl+C kills both)"
 	@echo "  api        - uvicorn reload server only"

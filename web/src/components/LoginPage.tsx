@@ -169,7 +169,7 @@ export function LoginPage({
                   onChange={(event) => setApiKey(event.target.value)}
                   aria-describedby="local-api-key-help"
                   aria-invalid={error ? true : undefined}
-                  placeholder="taskable_…"
+                  placeholder="mouvadah_…"
                   className="focus-ring min-h-11 w-full rounded-sm border border-input bg-background px-3 font-mono text-sm outline-none"
                 />
                 {error && (

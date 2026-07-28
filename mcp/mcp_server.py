@@ -1,8 +1,13 @@
+# Copyright 2026 Andrew Betbadal and contributors.
+# SPDX-License-Identifier: Apache-2.0
+
 """Mouvadah MCP server.
 
 Exposes the Mouvadah REST API to agentic IDEs (Windsurf, Claude Desktop, etc.)
 over MCP stdio. The underlying REST API must be reachable on
-``TASKABLE_API_URL`` (default ``http://localhost:8000/api/v1``).
+``MOUVADAH_API_URL`` (default ``http://localhost:8000/api/v1``).
+The legacy ``TASKABLE_*`` names remain accepted during the compatibility
+window.
 
 Tools — kept in lock-step with ``docs/mcp.md``:
     Read:
@@ -53,19 +58,40 @@ from mcp.types import TextContent, Tool
 load_dotenv()
 load_dotenv("../.env")
 
-API_URL = os.getenv("TASKABLE_API_URL", "http://localhost:8000/api/v1").rstrip("/")
+
+def _environment_value(
+    current_name: str,
+    legacy_name: str,
+    default: str = "",
+) -> str:
+    """Return a current Mouvadah setting, then its Taskable compatibility alias."""
+    return os.getenv(current_name) or os.getenv(legacy_name) or default
+
+
+API_URL = _environment_value(
+    "MOUVADAH_API_URL",
+    "TASKABLE_API_URL",
+    "http://localhost:8000/api/v1",
+).rstrip("/")
 DEFAULT_CREDENTIALS_FILE = (
     Path.home() / ".config" / "mouvadah" / "credentials.env"
 )
 
 
 def _load_api_key() -> str:
-    direct_key = os.getenv("TASKABLE_API_KEY", "").strip()
+    direct_key = _environment_value(
+        "MOUVADAH_API_KEY",
+        "TASKABLE_API_KEY",
+    ).strip()
     if direct_key:
         return direct_key
 
     credentials_file = Path(
-        os.getenv("TASKABLE_CREDENTIALS_FILE", DEFAULT_CREDENTIALS_FILE)
+        _environment_value(
+            "MOUVADAH_CREDENTIALS_FILE",
+            "TASKABLE_CREDENTIALS_FILE",
+            str(DEFAULT_CREDENTIALS_FILE),
+        )
     ).expanduser()
     if not credentials_file.exists():
         return ""
@@ -77,9 +103,15 @@ def _load_api_key() -> str:
             f"{credentials_file} must be owner-only; run "
             f"`chmod 600 {credentials_file}`."
         )
+    values: dict[str, str] = {}
     for line in credentials_file.read_text(encoding="utf-8").splitlines():
-        if line.startswith("TASKABLE_API_KEY="):
-            return line.split("=", 1)[1].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    for key_name in ("MOUVADAH_API_KEY", "TASKABLE_API_KEY"):
+        if values.get(key_name):
+            return values[key_name]
     return ""
 
 
@@ -99,7 +131,7 @@ deleting a knowledge node, inspect its descendants and references because
 deletion cascades."""
 
 server: Server = Server(
-    "copilot-workspace",
+    "mouvadah",
     instructions=MOUVADAH_INSTRUCTIONS,
 )
 
@@ -1228,8 +1260,9 @@ async def amain() -> None:
 def main() -> None:
     if not API_KEY:
         raise SystemExit(
-            "TASKABLE_API_KEY is missing. Run `python3 bootstrap.py`, set "
-            "TASKABLE_API_KEY, or set TASKABLE_CREDENTIALS_FILE."
+            "MOUVADAH_API_KEY is missing. Run `python3 bootstrap.py`, set "
+            "MOUVADAH_API_KEY, or set MOUVADAH_CREDENTIALS_FILE. Legacy "
+            "TASKABLE_* aliases remain accepted."
         )
     asyncio.run(amain())
 

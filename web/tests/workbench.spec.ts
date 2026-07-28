@@ -205,7 +205,7 @@ test("execution workbench preserves CRUD, metadata, dependencies, and claim stat
 
   await dialog
     .getByLabel("Merge request URL")
-    .fill("https://github.com/andrewb1234/taskable/pull/33");
+    .fill("https://github.com/andrewb1234/mouvadah/pull/33");
   await dialog.getByRole("button", { name: "Attach MR" }).click();
   await expect(
     dialog.getByRole("link", { name: "Open linked merge request" }),
