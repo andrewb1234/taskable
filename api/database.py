@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
+from sqlalchemy.engine import make_url
 from sqlmodel import Session, create_engine
 
 from api.config import get_settings
@@ -20,8 +21,11 @@ from api.observability import instrument_database_metrics
 
 def _engine_kwargs(url: str) -> dict:
     kwargs: dict = {"echo": False}
-    if url.startswith("sqlite"):
+    backend = make_url(url).get_backend_name()
+    if backend == "sqlite":
         kwargs["connect_args"] = {"check_same_thread": False}
+    elif backend == "postgresql":
+        kwargs["pool_pre_ping"] = True
     return kwargs
 
 
